@@ -1,0 +1,269 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Paper,
+  Typography,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Grid,
+  Chip,
+  IconButton,
+  Alert,
+} from '@mui/material';
+import { Add, Edit, Delete } from '@mui/icons-material';
+import { useApp } from '../context/AppContext';
+import api from '../api';
+import LoadingSpinner from '../components/Common/LoadingSpinner';
+import ConfirmDialog from '../components/Common/ConfirmDialog';
+
+const SeasonManagement = () => {
+  const { institution, seasons, refreshSeasons } = useApp();
+  const [loading, setLoading] = useState(false);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [openConfirm, setOpenConfirm] = useState(false);
+  const [selectedSeason, setSelectedSeason] = useState(null);
+  const [error, setError] = useState('');
+  const [formData, setFormData] = useState({
+    name: '',
+    startDate: '',
+    endDate: '',
+    isActive: false,
+  });
+
+  const handleOpenDialog = (season = null) => {
+    if (season) {
+      setSelectedSeason(season);
+      setFormData({
+        name: season.name,
+        startDate: season.startDate.split('T')[0],
+        endDate: season.endDate.split('T')[0],
+        isActive: season.isActive,
+      });
+    } else {
+      setSelectedSeason(null);
+      setFormData({
+        name: '',
+        startDate: '',
+        endDate: '',
+        isActive: false,
+      });
+    }
+    setOpenDialog(true);
+  };
+
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setSelectedSeason(null);
+    setError('');
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
+    try {
+      const seasonData = {
+        ...formData,
+        institution: institution._id,
+      };
+
+      if (selectedSeason) {
+        await api.put(`/seasons/${selectedSeason._id}`, seasonData);
+      } else {
+        await api.post('/seasons', seasonData);
+      }
+
+      await refreshSeasons();
+      handleCloseDialog();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Bir hata oluştu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
+      await api.delete(`/seasons/${selectedSeason._id}`);
+      await refreshSeasons();
+      setOpenConfirm(false);
+      setSelectedSeason(null);
+    } catch (error) {
+      setError(error.response?.data?.message || 'Silme işlemi başarısız');
+    }
+  };
+
+  if (!institution) {
+    return (
+      <Box sx={{ textAlign: 'center', mt: 4 }}>
+        <Typography variant="h5" color="text.secondary">
+          Lütfen bir kurum seçin
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4">Sezon Yönetimi</Typography>
+        <Button
+          variant="contained"
+          startIcon={<Add />}
+          onClick={() => handleOpenDialog()}
+        >
+          Yeni Sezon
+        </Button>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+          {error}
+        </Alert>
+      )}
+
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Sezon Adı</TableCell>
+              <TableCell>Başlangıç Tarihi</TableCell>
+              <TableCell>Bitiş Tarihi</TableCell>
+              <TableCell>Durum</TableCell>
+              <TableCell align="right">İşlemler</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {seasons.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} align="center">
+                  <Typography color="text.secondary">Henüz sezon eklenmedi</Typography>
+                </TableCell>
+              </TableRow>
+            ) : (
+              seasons.map((season) => (
+                <TableRow key={season._id}>
+                  <TableCell>{season.name}</TableCell>
+                  <TableCell>
+                    {new Date(season.startDate).toLocaleDateString('tr-TR')}
+                  </TableCell>
+                  <TableCell>
+                    {new Date(season.endDate).toLocaleDateString('tr-TR')}
+                  </TableCell>
+                  <TableCell>
+                    {season.isActive ? (
+                      <Chip label="Aktif" color="success" size="small" />
+                    ) : (
+                      <Chip label="Pasif" size="small" />
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleOpenDialog(season)}
+                      color="primary"
+                    >
+                      <Edit />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => {
+                        setSelectedSeason(season);
+                        setOpenConfirm(true);
+                      }}
+                      color="error"
+                    >
+                      <Delete />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
+
+      {/* Season Form Dialog */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <form onSubmit={handleSubmit}>
+          <DialogTitle>
+            {selectedSeason ? 'Sezon Düzenle' : 'Yeni Sezon'}
+          </DialogTitle>
+          <DialogContent>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Sezon Adı"
+                  name="name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Başlangıç Tarihi"
+                  name="startDate"
+                  type="date"
+                  value={formData.startDate}
+                  onChange={handleChange}
+                  InputLabelProps={{ shrink: true }}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Bitiş Tarihi"
+                  name="endDate"
+                  type="date"
+                  value={formData.endDate}
+                  onChange={handleChange}
+                  InputLabelProps={{ shrink: true }}
+                  required
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog}>İptal</Button>
+            <Button type="submit" variant="contained" disabled={loading}>
+              {loading ? 'Kaydediliyor...' : 'Kaydet'}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        open={openConfirm}
+        onClose={() => setOpenConfirm(false)}
+        onConfirm={handleDelete}
+        title="Sezon Sil"
+        message="Bu sezonu silmek istediğinizden emin misiniz?"
+        confirmText="Sil"
+        confirmColor="error"
+      />
+    </Box>
+  );
+};
+
+export default SeasonManagement;

@@ -1,0 +1,36 @@
+# RENDER.COM - BACKEND ENVIRONMENT VARIABLES
+# Bu değerleri Render.com'da backend deploy ederken "Environment Variables" kısmına ekle
+
+NODE_ENV=production
+
+PORT=5000
+
+MONGODB_URI=mongodb+srv://fofenk_db:fofenkfofenk@fofenk.rfztasq.mongodb.net/fofora-theatre?retryWrites=true&w=majority
+
+SMTP_HOST=smtp.gmail.com
+
+SMTP_PORT=587
+
+SMTP_SECURE=false
+
+SMTP_USER=<GMAIL_ADRESIN_BURAYA>
+
+SMTP_PASS=yavxhigqsfvsswjh
+
+EMAIL_FROM=Fofora Tiyatro <noreply@fofora.com>
+
+
+# NOT: SMTP_USER kısmına kendi Gmail adresini yaz (örn: senin@gmail.com)
+# NOT: SMTP_PASS zaten hazır (Google App Password: yavx higq sfvs swjh - boşluksuz)
+
+
+# ===================================================================
+# RENDER.COM - FRONTEND ENVIRONMENT VARIABLES
+# Bu değeri Render.com'da frontend deploy ederken ekle
+# Backend deploy edildikten SONRA backend URL'ini buraya yazacaksın
+# ===================================================================
+
+REACT_APP_API_URL=https://fofora-backend.onrender.com/api
+
+# NOT: Backend deploy olduktan sonra URL'ini buraya yaz!
+# Örnek: https://senin-backend-adin.onrender.com/api
