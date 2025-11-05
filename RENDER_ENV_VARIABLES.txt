@@ -7,6 +7,8 @@ PORT=5000
 
 MONGODB_URI=mongodb+srv://fofenk_db:fofenkfofenk@fofenk.rfztasq.mongodb.net/fofora-theatre?retryWrites=true&w=majority
 
+JWT_SECRET=your-super-secret-jwt-key-here-change-in-production
+
 SMTP_HOST=smtp.gmail.com
 
 SMTP_PORT=587

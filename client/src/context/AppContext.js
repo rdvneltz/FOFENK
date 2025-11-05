@@ -12,6 +12,8 @@ export const useApp = () => {
 };
 
 export const AppProvider = ({ children }) => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [institution, setInstitution] = useState(null);
@@ -22,19 +24,42 @@ export const AppProvider = ({ children }) => {
 
   // Load initial data
   useEffect(() => {
-    loadInitialData();
+    checkAuth();
   }, []);
 
-  const loadInitialData = async () => {
+  // Check authentication status
+  const checkAuth = async () => {
     try {
       setLoading(true);
+      const token = localStorage.getItem('token');
 
-      // Load user from localStorage (no authentication)
-      const savedUser = localStorage.getItem('selectedUser');
-      if (savedUser) {
-        setUser(savedUser);
+      if (!token) {
+        setIsAuthenticated(false);
+        setLoading(false);
+        return;
       }
 
+      // Verify token with backend
+      const response = await api.get('/auth/me');
+      const { user } = response.data;
+
+      setIsAuthenticated(true);
+      setCurrentUser(user);
+
+      // Load initial data after authentication
+      await loadInitialData(user);
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      localStorage.removeItem('token');
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadInitialData = async (authenticatedUser) => {
+    try {
       // Load institutions
       const institutionsResponse = await api.get('/institutions');
       setInstitutions(institutionsResponse.data);
@@ -88,8 +113,43 @@ export const AppProvider = ({ children }) => {
       }
     } catch (error) {
       console.error('Error loading initial data:', error);
+    }
+  };
+
+  // Login function
+  const login = (token, user) => {
+    localStorage.setItem('token', token);
+    setIsAuthenticated(true);
+    setCurrentUser(user);
+
+    // Set institution and load data
+    if (user.institution) {
+      setInstitution(user.institution);
+      localStorage.setItem('selectedInstitution', user.institution._id);
+    }
+
+    loadInitialData(user);
+  };
+
+  // Logout function
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch (error) {
+      console.error('Logout error:', error);
     } finally {
-      setLoading(false);
+      localStorage.removeItem('token');
+      localStorage.removeItem('selectedUser');
+      localStorage.removeItem('selectedInstitution');
+      localStorage.removeItem('selectedSeason');
+      setIsAuthenticated(false);
+      setCurrentUser(null);
+      setUser(null);
+      setInstitution(null);
+      setSeason(null);
+      setInstitutions([]);
+      setSeasons([]);
+      setUsers([]);
     }
   };
 
@@ -166,6 +226,8 @@ export const AppProvider = ({ children }) => {
   }, [institution]);
 
   const value = {
+    isAuthenticated,
+    currentUser,
     user,
     setUser,
     users,
@@ -180,6 +242,9 @@ export const AppProvider = ({ children }) => {
     changeSeason,
     refreshSeasons,
     loadInitialData,
+    login,
+    logout,
+    checkAuth,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -28,10 +28,12 @@ import {
   Settings as SettingsIcon,
   Assessment as ReportIcon,
   Layers as SeasonIcon,
+  Business as BusinessIcon,
 } from '@mui/icons-material';
 
 const menuItems = [
   { text: 'Panel', icon: <DashboardIcon />, path: '/' },
+  { text: 'Kurum Yönetimi', icon: <BusinessIcon />, path: '/institutions' },
   { text: 'Kurum Ayarları', icon: <SchoolIcon />, path: '/institution-setup' },
   { text: 'Sezon Yönetimi', icon: <SeasonIcon />, path: '/seasons' },
   { divider: true },

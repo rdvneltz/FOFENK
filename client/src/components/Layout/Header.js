@@ -21,7 +21,7 @@ import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 
 const Header = ({ handleDrawerToggle }) => {
-  const { institution, season, institutions, seasons, changeInstitution, changeSeason, user, users, changeUser } = useApp();
+  const { institution, season, institutions, seasons, changeInstitution, changeSeason, currentUser, logout } = useApp();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState(null);
 
@@ -34,28 +34,27 @@ const Header = ({ handleDrawerToggle }) => {
   };
 
   const getUserDisplay = () => {
-    if (!user) return 'Kullanıcı Seçin';
-    const userObj = users.find(u => u.username === user);
-    return userObj ? userObj.fullName : user;
+    return currentUser?.fullName || 'User';
   };
 
   const getUserInitials = () => {
-    if (!user) return '?';
-    const userObj = users.find(u => u.username === user);
-    if (userObj) {
-      return userObj.fullName
-        .split(' ')
-        .map(n => n[0])
-        .join('')
-        .toUpperCase()
-        .substring(0, 2);
-    }
-    return user.substring(0, 2).toUpperCase();
+    if (!currentUser?.fullName) return '?';
+    return currentUser.fullName
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
   };
 
   const getUserColor = () => {
-    const userObj = users.find(u => u.username === user);
-    return userObj?.avatarColor || '#1976d2';
+    return currentUser?.avatarColor || '#1976d2';
+  };
+
+  const handleLogout = async () => {
+    handleClose();
+    await logout();
+    navigate('/login');
   };
 
   return (
@@ -111,36 +110,6 @@ const Header = ({ handleDrawerToggle }) => {
               </Select>
             </FormControl>
           )}
-
-          {/* User Selector */}
-          {users.length > 0 && (
-            <FormControl size="small" sx={{ minWidth: 150 }}>
-              <Select
-                value={user || ''}
-                onChange={(e) => changeUser(e.target.value)}
-                displayEmpty
-                renderValue={(selected) => {
-                  if (!selected) return 'Kullanıcı Seçin';
-                  const userObj = users.find(u => u.username === selected);
-                  return userObj?.fullName || selected;
-                }}
-              >
-                <MenuItem value="" disabled>
-                  Kullanıcı Seçin
-                </MenuItem>
-                {users.map((u) => (
-                  <MenuItem key={u._id} value={u.username}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Avatar sx={{ width: 24, height: 24, bgcolor: u.avatarColor, fontSize: 12 }}>
-                        {u.fullName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)}
-                      </Avatar>
-                      {u.fullName}
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
         </Box>
 
         {/* User Menu */}
@@ -178,9 +147,9 @@ const Header = ({ handleDrawerToggle }) => {
               <AccountCircle sx={{ mr: 1 }} />
               Aktivite Logları
             </MenuItemMui>
-            <MenuItemMui onClick={handleClose}>
+            <MenuItemMui onClick={handleLogout}>
               <Logout sx={{ mr: 1 }} />
-              Kullanıcı Değiştir
+              Çıkış Yap
             </MenuItemMui>
           </Menu>
         </Box>

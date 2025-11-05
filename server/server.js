@@ -31,6 +31,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/fofora-th
 .catch(err => console.error('MongoDB bağlantı hatası:', err));
 
 // Routes
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/institutions', require('./routes/institutions'));
 app.use('/api/seasons', require('./routes/seasons'));
 app.use('/api/users', require('./routes/users'));
