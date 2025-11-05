@@ -77,6 +77,32 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// Toggle season active status
+router.put('/:id/toggle-active', async (req, res) => {
+  try {
+    const season = await Season.findById(req.params.id);
+    if (!season) {
+      return res.status(404).json({ message: 'Sezon bulunamadı' });
+    }
+
+    season.isActive = !season.isActive;
+    await season.save();
+
+    await ActivityLog.create({
+      user: req.body.updatedBy || 'System',
+      action: 'update',
+      entity: 'Season',
+      entityId: season._id,
+      description: `Sezon ${season.isActive ? 'aktif' : 'pasif'} edildi: ${season.name}`,
+      institution: season.institution
+    });
+
+    res.json(season);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 // Delete season
 router.delete('/:id', async (req, res) => {
   try {

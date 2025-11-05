@@ -19,8 +19,10 @@ import {
   Chip,
   IconButton,
   Alert,
+  Switch,
+  Tooltip,
 } from '@mui/material';
-import { Add, Edit, Delete } from '@mui/icons-material';
+import { Add, Edit, Delete, ToggleOn, ToggleOff } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -109,6 +111,18 @@ const SeasonManagement = () => {
     }
   };
 
+  const handleToggleActive = async (season) => {
+    try {
+      setLoading(true);
+      await api.put(`/seasons/${season._id}/toggle-active`);
+      await refreshSeasons();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Durum değiştirme başarısız');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!institution) {
     return (
       <Box sx={{ textAlign: 'center', mt: 4 }}>
@@ -167,11 +181,21 @@ const SeasonManagement = () => {
                     {new Date(season.endDate).toLocaleDateString('tr-TR')}
                   </TableCell>
                   <TableCell>
-                    {season.isActive ? (
-                      <Chip label="Aktif" color="success" size="small" />
-                    ) : (
-                      <Chip label="Pasif" size="small" />
-                    )}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {season.isActive ? (
+                        <Chip label="Aktif" color="success" size="small" />
+                      ) : (
+                        <Chip label="Pasif" size="small" />
+                      )}
+                      <Tooltip title={season.isActive ? 'Pasif Yap' : 'Aktif Yap'}>
+                        <Switch
+                          checked={season.isActive}
+                          onChange={() => handleToggleActive(season)}
+                          size="small"
+                          color="success"
+                        />
+                      </Tooltip>
+                    </Box>
                   </TableCell>
                   <TableCell align="right">
                     <IconButton

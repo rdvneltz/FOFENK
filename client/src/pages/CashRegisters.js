@@ -21,7 +21,7 @@ import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 
 const CashRegisters = () => {
-  const { institution } = useApp();
+  const { institution, season } = useApp();
   const [cashRegisters, setCashRegisters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -92,6 +92,7 @@ const CashRegisters = () => {
       const registerData = {
         ...formData,
         institution: institution._id,
+        season: season._id,
         initialBalance: parseFloat(formData.initialBalance),
       };
 

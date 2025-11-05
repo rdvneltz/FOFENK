@@ -18,6 +18,7 @@ import { ArrowBack } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter';
 
 const StudentForm = () => {
   const { id } = useParams();
@@ -28,17 +29,22 @@ const StudentForm = () => {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
-    tcNumber: '',
-    birthDate: '',
+    tcNo: '',
+    dateOfBirth: '',
     phone: '',
     email: '',
     address: '',
-    parentName: '',
-    parentPhone: '',
-    parentEmail: '',
-    emergencyContact: '',
-    emergencyPhone: '',
-    status: 'trial',
+    motherName: '',
+    motherSurname: '',
+    motherPhone: '',
+    fatherName: '',
+    fatherSurname: '',
+    fatherPhone: '',
+    emergencyContactName: '',
+    emergencyContactPhone: '',
+    emergencyContactEmail: '',
+    emergencyContactRelationship: 'Diğer',
+    healthNotes: '',
     notes: '',
   });
 
@@ -53,20 +59,31 @@ const StudentForm = () => {
       setLoading(true);
       const response = await api.get(`/students/${id}`);
       const student = response.data;
+
+      // Extract parent contacts
+      const mother = student.parentContacts?.find(p => p.relationship === 'Anne') || {};
+      const father = student.parentContacts?.find(p => p.relationship === 'Baba') || {};
+      const emergency = student.emergencyContact || {};
+
       setFormData({
         firstName: student.firstName || '',
         lastName: student.lastName || '',
-        tcNumber: student.tcNumber || '',
-        birthDate: student.birthDate ? student.birthDate.split('T')[0] : '',
+        tcNo: student.tcNo || '',
+        dateOfBirth: student.dateOfBirth ? student.dateOfBirth.split('T')[0] : '',
         phone: student.phone || '',
         email: student.email || '',
         address: student.address || '',
-        parentName: student.parentName || '',
-        parentPhone: student.parentPhone || '',
-        parentEmail: student.parentEmail || '',
-        emergencyContact: student.emergencyContact || '',
-        emergencyPhone: student.emergencyPhone || '',
-        status: student.status || 'trial',
+        motherName: mother.name?.split(' ')[0] || '',
+        motherSurname: mother.name?.split(' ').slice(1).join(' ') || '',
+        motherPhone: mother.phone || '',
+        fatherName: father.name?.split(' ')[0] || '',
+        fatherSurname: father.name?.split(' ').slice(1).join(' ') || '',
+        fatherPhone: father.phone || '',
+        emergencyContactName: emergency.name || '',
+        emergencyContactPhone: emergency.phone || '',
+        emergencyContactEmail: emergency.email || '',
+        emergencyContactRelationship: emergency.relationship || 'Diğer',
+        healthNotes: student.healthNotes || '',
         notes: student.notes || '',
       });
     } catch (error) {
@@ -78,7 +95,13 @@ const StudentForm = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    // Telefon alanları için formatlama
+    if (name === 'phone' || name === 'motherPhone' || name === 'fatherPhone' || name === 'emergencyContactPhone') {
+      setFormData((prev) => ({ ...prev, [name]: formatPhoneNumber(value) }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -87,8 +110,53 @@ const StudentForm = () => {
     setLoading(true);
 
     try {
+      // Build parentContacts array
+      const parentContacts = [];
+
+      if (formData.motherName || formData.motherSurname || formData.motherPhone) {
+        parentContacts.push({
+          name: `${formData.motherName} ${formData.motherSurname}`.trim(),
+          phone: formData.motherPhone,
+          email: '',
+          relationship: 'Anne'
+        });
+      }
+
+      if (formData.fatherName || formData.fatherSurname || formData.fatherPhone) {
+        parentContacts.push({
+          name: `${formData.fatherName} ${formData.fatherSurname}`.trim(),
+          phone: formData.fatherPhone,
+          email: '',
+          relationship: 'Baba'
+        });
+      }
+
+      // Build emergencyContact object
+      const emergencyContact = {
+        name: formData.emergencyContactName,
+        phone: formData.emergencyContactPhone,
+        email: formData.emergencyContactEmail,
+        relationship: formData.emergencyContactRelationship
+      };
+
       const studentData = {
-        ...formData,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        tcNo: formData.tcNo,
+        dateOfBirth: formData.dateOfBirth,
+        phone: unformatPhoneNumber(formData.phone),
+        email: formData.email,
+        address: formData.address,
+        parentContacts: parentContacts.map(p => ({
+          ...p,
+          phone: unformatPhoneNumber(p.phone)
+        })),
+        emergencyContact: {
+          ...emergencyContact,
+          phone: unformatPhoneNumber(emergencyContact.phone)
+        },
+        healthNotes: formData.healthNotes,
+        notes: formData.notes,
         institution: institution._id,
         season: season._id,
       };
@@ -162,8 +230,8 @@ const StudentForm = () => {
               <TextField
                 fullWidth
                 label="TC Kimlik No"
-                name="tcNumber"
-                value={formData.tcNumber}
+                name="tcNo"
+                value={formData.tcNo}
                 onChange={handleChange}
                 inputProps={{ maxLength: 11 }}
               />
@@ -173,9 +241,9 @@ const StudentForm = () => {
               <TextField
                 fullWidth
                 label="Doğum Tarihi"
-                name="birthDate"
+                name="dateOfBirth"
                 type="date"
-                value={formData.birthDate}
+                value={formData.dateOfBirth}
                 onChange={handleChange}
                 InputLabelProps={{ shrink: true }}
               />
@@ -213,56 +281,75 @@ const StudentForm = () => {
                 rows={2}
               />
             </Grid>
+          </Grid>
 
-            <Grid item xs={12}>
-              <FormControl fullWidth>
-                <InputLabel>Durum</InputLabel>
-                <Select
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
-                  label="Durum"
-                >
-                  <MenuItem value="trial">Deneme</MenuItem>
-                  <MenuItem value="active">Aktif</MenuItem>
-                  <MenuItem value="passive">Pasif</MenuItem>
-                </Select>
-              </FormControl>
+          <Typography variant="h6" sx={{ mt: 4, mb: 2 }}>
+            Anne Bilgileri
+          </Typography>
+
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                label="Anne Adı"
+                name="motherName"
+                value={formData.motherName}
+                onChange={handleChange}
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                label="Anne Soyadı"
+                name="motherSurname"
+                value={formData.motherSurname}
+                onChange={handleChange}
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={4}>
+              <TextField
+                fullWidth
+                label="Anne Telefon"
+                name="motherPhone"
+                value={formData.motherPhone}
+                onChange={handleChange}
+              />
             </Grid>
           </Grid>
 
           <Typography variant="h6" sx={{ mt: 4, mb: 2 }}>
-            Veli Bilgileri
+            Baba Bilgileri
           </Typography>
 
           <Grid container spacing={3}>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
-                label="Veli Adı Soyadı"
-                name="parentName"
-                value={formData.parentName}
+                label="Baba Adı"
+                name="fatherName"
+                value={formData.fatherName}
                 onChange={handleChange}
               />
             </Grid>
 
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
-                label="Veli Telefon"
-                name="parentPhone"
-                value={formData.parentPhone}
+                label="Baba Soyadı"
+                name="fatherSurname"
+                value={formData.fatherSurname}
                 onChange={handleChange}
               />
             </Grid>
 
-            <Grid item xs={12}>
+            <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
-                label="Veli E-posta"
-                name="parentEmail"
-                type="email"
-                value={formData.parentEmail}
+                label="Baba Telefon"
+                name="fatherPhone"
+                value={formData.fatherPhone}
                 onChange={handleChange}
               />
             </Grid>
@@ -276,9 +363,9 @@ const StudentForm = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Acil Durum Kişisi"
-                name="emergencyContact"
-                value={formData.emergencyContact}
+                label="Acil Durum Kişisi Adı"
+                name="emergencyContactName"
+                value={formData.emergencyContactName}
                 onChange={handleChange}
               />
             </Grid>
@@ -287,21 +374,62 @@ const StudentForm = () => {
               <TextField
                 fullWidth
                 label="Acil Durum Telefon"
-                name="emergencyPhone"
-                value={formData.emergencyPhone}
+                name="emergencyContactPhone"
+                value={formData.emergencyContactPhone}
                 onChange={handleChange}
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Acil Durum E-posta"
+                name="emergencyContactEmail"
+                type="email"
+                value={formData.emergencyContactEmail}
+                onChange={handleChange}
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Yakınlık Derecesi</InputLabel>
+                <Select
+                  name="emergencyContactRelationship"
+                  value={formData.emergencyContactRelationship}
+                  onChange={handleChange}
+                  label="Yakınlık Derecesi"
+                >
+                  <MenuItem value="Anne">Anne</MenuItem>
+                  <MenuItem value="Baba">Baba</MenuItem>
+                  <MenuItem value="Vasi">Vasi</MenuItem>
+                  <MenuItem value="Diğer">Diğer</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Sağlık Notları"
+                name="healthNotes"
+                value={formData.healthNotes}
+                onChange={handleChange}
+                multiline
+                rows={2}
+                placeholder="Alerjiler, kronik hastalıklar vb."
               />
             </Grid>
 
             <Grid item xs={12}>
               <TextField
                 fullWidth
-                label="Notlar"
+                label="Diğer Notlar"
                 name="notes"
                 value={formData.notes}
                 onChange={handleChange}
                 multiline
-                rows={4}
+                rows={3}
               />
             </Grid>
           </Grid>

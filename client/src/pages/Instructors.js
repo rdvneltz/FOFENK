@@ -19,6 +19,10 @@ import {
   IconButton,
   Alert,
   Avatar,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import { Add, Edit, Delete, Phone, Email } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
@@ -27,7 +31,7 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 
 const Instructors = () => {
-  const { institution } = useApp();
+  const { institution, season } = useApp();
   const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -35,11 +39,15 @@ const Instructors = () => {
   const [selectedInstructor, setSelectedInstructor] = useState(null);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     phone: '',
     email: '',
-    specialty: '',
-    hourlyRate: '',
+    tcNo: '',
+    address: '',
+    paymentType: 'monthly',
+    paymentAmount: '',
+    notes: '',
   });
 
   useEffect(() => {
@@ -66,20 +74,28 @@ const Instructors = () => {
     if (instructor) {
       setSelectedInstructor(instructor);
       setFormData({
-        name: instructor.name || '',
+        firstName: instructor.firstName || '',
+        lastName: instructor.lastName || '',
         phone: instructor.phone || '',
         email: instructor.email || '',
-        specialty: instructor.specialty || '',
-        hourlyRate: instructor.hourlyRate || '',
+        tcNo: instructor.tcNo || '',
+        address: instructor.address || '',
+        paymentType: instructor.paymentType || 'monthly',
+        paymentAmount: instructor.paymentAmount || '',
+        notes: instructor.notes || '',
       });
     } else {
       setSelectedInstructor(null);
       setFormData({
-        name: '',
+        firstName: '',
+        lastName: '',
         phone: '',
         email: '',
-        specialty: '',
-        hourlyRate: '',
+        tcNo: '',
+        address: '',
+        paymentType: 'monthly',
+        paymentAmount: '',
+        notes: '',
       });
     }
     setOpenDialog(true);
@@ -105,6 +121,7 @@ const Instructors = () => {
       const instructorData = {
         ...formData,
         institution: institution._id,
+        season: season._id,
       };
 
       if (selectedInstructor) {
@@ -169,8 +186,8 @@ const Instructors = () => {
               <TableCell>Eğitmen</TableCell>
               <TableCell>Telefon</TableCell>
               <TableCell>E-posta</TableCell>
-              <TableCell>Uzmanlık</TableCell>
-              <TableCell>Saat Ücreti</TableCell>
+              <TableCell>Ödeme Tipi</TableCell>
+              <TableCell>Ödeme Tutarı</TableCell>
               <TableCell align="right">İşlemler</TableCell>
             </TableRow>
           </TableHead>
@@ -186,15 +203,20 @@ const Instructors = () => {
                 <TableRow key={instructor._id}>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <Avatar>{instructor.name.charAt(0)}</Avatar>
-                      <Typography>{instructor.name}</Typography>
+                      <Avatar>{instructor.firstName?.charAt(0) || 'E'}</Avatar>
+                      <Typography>{instructor.firstName} {instructor.lastName}</Typography>
                     </Box>
                   </TableCell>
                   <TableCell>{instructor.phone || '-'}</TableCell>
                   <TableCell>{instructor.email || '-'}</TableCell>
-                  <TableCell>{instructor.specialty || '-'}</TableCell>
                   <TableCell>
-                    {instructor.hourlyRate ? `₺${instructor.hourlyRate}` : '-'}
+                    {instructor.paymentType === 'monthly' ? 'Aylık' :
+                     instructor.paymentType === 'perLesson' ? 'Ders Başı' :
+                     instructor.paymentType === 'hourly' ? 'Saatlik' :
+                     instructor.paymentType === 'perStudent' ? 'Öğrenci Başı' : '-'}
+                  </TableCell>
+                  <TableCell>
+                    {instructor.paymentAmount ? `₺${instructor.paymentAmount}` : '-'}
                   </TableCell>
                   <TableCell align="right">
                     <IconButton
@@ -229,14 +251,34 @@ const Instructors = () => {
           </DialogTitle>
           <DialogContent>
             <Grid container spacing={2} sx={{ mt: 1 }}>
-              <Grid item xs={12}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="Ad Soyad"
-                  name="name"
-                  value={formData.name}
+                  label="Ad"
+                  name="firstName"
+                  value={formData.firstName}
                   onChange={handleChange}
                   required
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Soyad"
+                  name="lastName"
+                  value={formData.lastName}
+                  onChange={handleChange}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="TC Kimlik No"
+                  name="tcNo"
+                  value={formData.tcNo}
+                  onChange={handleChange}
+                  inputProps={{ maxLength: 11 }}
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
@@ -248,7 +290,7 @@ const Instructors = () => {
                   onChange={handleChange}
                 />
               </Grid>
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12}>
                 <TextField
                   fullWidth
                   label="E-posta"
@@ -261,20 +303,50 @@ const Instructors = () => {
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Uzmanlık Alanı"
-                  name="specialty"
-                  value={formData.specialty}
+                  label="Adres"
+                  name="address"
+                  value={formData.address}
                   onChange={handleChange}
+                  multiline
+                  rows={2}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth required>
+                  <InputLabel>Ödeme Tipi</InputLabel>
+                  <Select
+                    name="paymentType"
+                    value={formData.paymentType}
+                    onChange={handleChange}
+                    label="Ödeme Tipi"
+                  >
+                    <MenuItem value="monthly">Aylık Maaş</MenuItem>
+                    <MenuItem value="perLesson">Ders Başı</MenuItem>
+                    <MenuItem value="hourly">Saat Başı</MenuItem>
+                    <MenuItem value="perStudent">Öğrenci Başı</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Ödeme Tutarı (₺)"
+                  name="paymentAmount"
+                  type="number"
+                  value={formData.paymentAmount}
+                  onChange={handleChange}
+                  required
                 />
               </Grid>
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Saat Ücreti (₺)"
-                  name="hourlyRate"
-                  type="number"
-                  value={formData.hourlyRate}
+                  label="Notlar"
+                  name="notes"
+                  value={formData.notes}
                   onChange={handleChange}
+                  multiline
+                  rows={3}
                 />
               </Grid>
             </Grid>

@@ -44,7 +44,10 @@ const Courses = () => {
     description: '',
     instructor: '',
     capacity: '',
-    price: '',
+    pricingType: 'monthly',
+    pricePerLesson: '',
+    pricePerMonth: '',
+    isFree: false,
     duration: '',
     schedule: '',
   });
@@ -86,7 +89,10 @@ const Courses = () => {
         description: course.description || '',
         instructor: course.instructor?._id || '',
         capacity: course.capacity || '',
-        price: course.price || '',
+        pricingType: course.pricingType || 'monthly',
+        pricePerLesson: course.pricePerLesson || '',
+        pricePerMonth: course.pricePerMonth || '',
+        isFree: course.isFree || false,
         duration: course.duration || '',
         schedule: course.schedule || '',
       });
@@ -97,7 +103,10 @@ const Courses = () => {
         description: '',
         instructor: '',
         capacity: '',
-        price: '',
+        pricingType: 'monthly',
+        pricePerLesson: '',
+        pricePerMonth: '',
+        isFree: false,
         duration: '',
         schedule: '',
       });
@@ -310,15 +319,43 @@ const Courses = () => {
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
-                  label="Ücret (₺)"
-                  name="price"
-                  type="number"
-                  value={formData.price}
-                  onChange={handleChange}
-                />
+                <FormControl fullWidth required>
+                  <InputLabel>Ücretlendirme Tipi</InputLabel>
+                  <Select
+                    name="pricingType"
+                    value={formData.pricingType}
+                    onChange={handleChange}
+                    label="Ücretlendirme Tipi"
+                  >
+                    <MenuItem value="monthly">Aylık</MenuItem>
+                    <MenuItem value="perLesson">Ders Başı</MenuItem>
+                  </Select>
+                </FormControl>
               </Grid>
+              {formData.pricingType === 'perLesson' && (
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ders Başı Ücret (₺)"
+                    name="pricePerLesson"
+                    type="number"
+                    value={formData.pricePerLesson}
+                    onChange={handleChange}
+                  />
+                </Grid>
+              )}
+              {formData.pricingType === 'monthly' && (
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Aylık Ücret (₺)"
+                    name="pricePerMonth"
+                    type="number"
+                    value={formData.pricePerMonth}
+                    onChange={handleChange}
+                  />
+                </Grid>
+              )}
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth

@@ -30,6 +30,7 @@ import {
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import SetupRequired from '../components/Common/SetupRequired';
 import { exportStudents } from '../utils/exportHelpers';
 import EmailDialog from '../components/Email/EmailDialog';
 
@@ -79,14 +80,12 @@ const Students = () => {
     return <LoadingSpinner message="Öğrenciler yükleniyor..." />;
   }
 
-  if (!institution || !season) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 4 }}>
-        <Typography variant="h5" color="text.secondary">
-          Lütfen bir kurum ve sezon seçin
-        </Typography>
-      </Box>
-    );
+  if (!institution) {
+    return <SetupRequired type="institution" />;
+  }
+
+  if (!season) {
+    return <SetupRequired type="season" />;
   }
 
   const handleExportToExcel = async () => {
