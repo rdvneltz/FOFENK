@@ -12,6 +12,7 @@ import Header from './components/Layout/Header';
 // Auth Pages
 import Login from './pages/Login';
 import Setup from './pages/Setup';
+import ResetDatabase from './pages/ResetDatabase';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -140,6 +141,7 @@ function App() {
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/setup" element={<Setup />} />
+            <Route path="/reset-database" element={<ResetDatabase />} />
             <Route path="/check-setup" element={<SetupCheck />} />
 
             {/* Protected routes */}

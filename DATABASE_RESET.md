@@ -1,48 +1,30 @@
 # 🔄 Database Sıfırlama Kılavuzu
 
-## Yerel Geliştirmede (Localhost)
+## 🌐 Render.com (Production) - EN KOLAY YÖNTEM
 
-1. Server klasörüne git:
-```bash
-cd server
+### Yöntem 1: Reset Sayfası Üzerinden (ÖNERİLEN - FREE PLAN)
+
+1. Bu URL'e git:
+```
+https://fofenk-front.onrender.com/reset-database
 ```
 
-2. Reset script'ini çalıştır:
-```bash
-npm run reset-db
+2. Reset Token'ı gir:
+```
+RESET_FOFORA_2025
 ```
 
-3. Tarayıcıda `http://localhost:3000` adresine git
+3. **"TÜM VERİLERİ SİL"** butonuna tıkla
 
-4. Otomatik olarak `/setup` sayfasına yönlendirileceksin
+4. 2 kez onaylama çıkacak - kabul et
 
-5. 3 adımlı kurulumu tamamla:
-   - **Adım 1:** Admin kullanıcısı oluştur
-   - **Adım 2:** Kurum bilgilerini gir
-   - **Adım 3:** İlk sezonu oluştur
+5. ✅ Tüm veriler silindi!
 
-6. ✅ Sistem sıfırdan kullanıma hazır!
+6. Otomatik olarak `/setup` sayfasına yönlendirileceksin
+
+7. 3 adımlı kurulumu tamamla
 
 ---
-
-## Render.com'da (Production)
-
-### Yöntem 1: Render Dashboard Üzerinden
-
-1. https://dashboard.render.com adresine git
-
-2. **fofenk** backend servisine tıkla
-
-3. Üstteki **"Shell"** sekmesine tıkla
-
-4. Terminal açılacak, şu komutu çalıştır:
-```bash
-npm run reset-db
-```
-
-5. Frontend URL'ine git: `https://fofenk-front.onrender.com`
-
-6. Otomatik olarak setup sayfasına yönlendirileceksin
 
 ### Yöntem 2: MongoDB Atlas Üzerinden (Manuel)
 
