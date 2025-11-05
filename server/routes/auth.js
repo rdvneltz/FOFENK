@@ -68,14 +68,14 @@ router.post('/setup', async (req, res) => {
     });
     await newInstitution.save();
 
-    // Create admin user with all permissions
+    // Create superadmin user with all permissions
     const newUser = new User({
       username,
       password,
       fullName,
       email: institution.email || '',
       phone: institution.phone || '',
-      role: 'admin',
+      role: 'superadmin',
       permissions: {
         canManageStudents: true,
         canManageCourses: true,
@@ -84,9 +84,10 @@ router.post('/setup', async (req, res) => {
         canManageInstructors: true,
         canViewReports: true,
         canManageSettings: true,
-        canManageUsers: true
+        canManageUsers: true,
+        canManageInstitutions: true
       },
-      institution: newInstitution._id,
+      institutions: [], // Superadmin has access to all institutions
       isActive: true
     });
     await newUser.save();

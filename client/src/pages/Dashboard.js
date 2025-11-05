@@ -192,9 +192,9 @@ const Dashboard = () => {
                 <Typography variant="body1">Net Gelir:</Typography>
                 <Typography
                   variant="h6"
-                  color={stats.totalIncome - stats.totalExpense >= 0 ? 'success.main' : 'error.main'}
+                  color={(stats.totalIncome || 0) - (stats.totalExpenses || 0) >= 0 ? 'success.main' : 'error.main'}
                 >
-                  ₺{(stats.totalIncome - stats.totalExpense).toLocaleString('tr-TR')}
+                  ₺{((stats.totalIncome || 0) - (stats.totalExpenses || 0)).toLocaleString('tr-TR')}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>

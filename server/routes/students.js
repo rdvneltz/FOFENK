@@ -7,10 +7,14 @@ const ActivityLog = require('../models/ActivityLog');
 router.get('/', async (req, res) => {
   try {
     const { institutionId, seasonId } = req.query;
-    const filter = {};
 
+    // Season filter is required
+    if (!seasonId) {
+      return res.status(400).json({ message: 'Season parameter is required' });
+    }
+
+    const filter = { season: seasonId };
     if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
 
     const students = await Student.find(filter)
       .populate('institution', 'name')
