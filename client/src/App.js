@@ -38,8 +38,6 @@ import Users from './pages/Users';
 import ActivityLogs from './pages/ActivityLogs';
 import Backup from './pages/Backup';
 
-import { Box } from '@mui/material';
-
 const DRAWER_WIDTH = 260;
 
 // PrivateRoute component
