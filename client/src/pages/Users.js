@@ -49,6 +49,7 @@ const Users = () => {
     fullName: '',
     email: '',
     phone: '',
+    password: '',
     role: 'staff',
     permissions: {
       canManageStudents: true,
@@ -96,6 +97,7 @@ const Users = () => {
         fullName: user.fullName,
         email: user.email || '',
         phone: user.phone || '',
+        password: '',
         role: user.role,
         permissions: user.permissions,
         avatarColor: user.avatarColor
@@ -107,6 +109,7 @@ const Users = () => {
         fullName: '',
         email: '',
         phone: '',
+        password: '',
         role: 'staff',
         permissions: {
           canManageStudents: true,
@@ -136,6 +139,11 @@ const Users = () => {
         institution: institution._id,
         [selectedUser ? 'updatedBy' : 'createdBy']: currentUser
       };
+
+      // Düzenlemede şifre boşsa gönderme
+      if (selectedUser && !formData.password) {
+        delete data.password;
+      }
 
       if (selectedUser) {
         await api.put(`/users/${selectedUser._id}`, data);
@@ -297,6 +305,16 @@ const Users = () => {
               onChange={(e) => setFormData({ ...formData, username: e.target.value })}
               required
               fullWidth
+            />
+            <TextField
+              fullWidth
+              label="Şifre"
+              name="password"
+              type="password"
+              value={formData.password}
+              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+              required={!selectedUser}
+              helperText={selectedUser ? "Boş bırakırsanız şifre değişmez" : ""}
             />
             <TextField
               label="Ad Soyad"

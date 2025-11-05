@@ -37,7 +37,8 @@ const TrialLessons = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
-    studentName: '',
+    firstName: '',
+    lastName: '',
     phone: '',
     email: '',
     course: '',
@@ -80,7 +81,8 @@ const TrialLessons = () => {
 
   const handleOpenDialog = () => {
     setFormData({
-      studentName: '',
+      firstName: '',
+      lastName: '',
       phone: '',
       email: '',
       course: '',
@@ -184,7 +186,7 @@ const TrialLessons = () => {
               trials.map((trial) => (
                 <TableRow key={trial._id}>
                   <TableCell>
-                    <Typography variant="body1">{trial.studentName}</Typography>
+                    <Typography variant="body1">{trial.firstName} {trial.lastName}</Typography>
                     {trial.email && (
                       <Typography variant="caption" color="text.secondary">
                         {trial.email}
@@ -250,12 +252,22 @@ const TrialLessons = () => {
           <DialogTitle>Yeni Deneme Dersi</DialogTitle>
           <DialogContent>
             <Grid container spacing={2} sx={{ mt: 1 }}>
-              <Grid item xs={12}>
+              <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
-                  label="Öğrenci Adı Soyadı"
-                  name="studentName"
-                  value={formData.studentName}
+                  label="Adı"
+                  name="firstName"
+                  value={formData.firstName}
+                  onChange={handleChange}
+                  required
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Soyadı"
+                  name="lastName"
+                  value={formData.lastName}
                   onChange={handleChange}
                   required
                 />

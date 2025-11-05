@@ -21,8 +21,15 @@ import {
   Alert,
   Switch,
   Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
-import { Add, Edit, Delete, ToggleOn, ToggleOff } from '@mui/icons-material';
+import { Add, Edit, Delete, ToggleOn, ToggleOff, ContentCopy } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -33,8 +40,13 @@ const SeasonManagement = () => {
   const [loading, setLoading] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
+  const [openCopyDialog, setOpenCopyDialog] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState(null);
   const [error, setError] = useState('');
+  const [copyFormData, setCopyFormData] = useState({
+    sourceSeasonId: '',
+    dataTypes: [],
+  });
   const [formData, setFormData] = useState({
     name: '',
     startDate: '',
@@ -123,6 +135,70 @@ const SeasonManagement = () => {
     }
   };
 
+  const handleOpenCopyDialog = (season) => {
+    setSelectedSeason(season);
+    setCopyFormData({
+      sourceSeasonId: '',
+      dataTypes: [],
+    });
+    setOpenCopyDialog(true);
+  };
+
+  const handleCloseCopyDialog = () => {
+    setOpenCopyDialog(false);
+    setSelectedSeason(null);
+    setError('');
+  };
+
+  const handleCopyDataTypeToggle = (dataType) => {
+    setCopyFormData((prev) => ({
+      ...prev,
+      dataTypes: prev.dataTypes.includes(dataType)
+        ? prev.dataTypes.filter((t) => t !== dataType)
+        : [...prev.dataTypes, dataType],
+    }));
+  };
+
+  const handleCopyData = async () => {
+    if (!copyFormData.sourceSeasonId) {
+      setError('Lütfen kaynak sezon seçin');
+      return;
+    }
+    if (copyFormData.dataTypes.length === 0) {
+      setError('Lütfen en az bir veri tipi seçin');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await api.post(`/seasons/${selectedSeason._id}/copy-data`, {
+        sourceSeasonId: copyFormData.sourceSeasonId,
+        dataTypes: copyFormData.dataTypes,
+        institution: institution._id,
+      });
+
+      if (response.data.success) {
+        const resultMessages = [];
+        if (response.data.results.students) {
+          resultMessages.push(`${response.data.results.students} öğrenci`);
+        }
+        if (response.data.results.courses) {
+          resultMessages.push(`${response.data.results.courses} ders`);
+        }
+        if (response.data.results.messageTemplates) {
+          resultMessages.push(`${response.data.results.messageTemplates} mesaj şablonu`);
+        }
+
+        alert(`Başarıyla kopyalandı: ${resultMessages.join(', ')}`);
+        handleCloseCopyDialog();
+      }
+    } catch (error) {
+      setError(error.response?.data?.message || 'Veri kopyalama başarısız');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (!institution) {
     return (
       <Box sx={{ textAlign: 'center', mt: 4 }}>
@@ -175,10 +251,18 @@ const SeasonManagement = () => {
                 <TableRow key={season._id}>
                   <TableCell>{season.name}</TableCell>
                   <TableCell>
-                    {new Date(season.startDate).toLocaleDateString('tr-TR')}
+                    {new Date(season.startDate).toLocaleDateString('tr-TR', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
                   </TableCell>
                   <TableCell>
-                    {new Date(season.endDate).toLocaleDateString('tr-TR')}
+                    {new Date(season.endDate).toLocaleDateString('tr-TR', {
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
                   </TableCell>
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -198,6 +282,15 @@ const SeasonManagement = () => {
                     </Box>
                   </TableCell>
                   <TableCell align="right">
+                    <Tooltip title="Veri Kopyala">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenCopyDialog(season)}
+                        color="info"
+                      >
+                        <ContentCopy />
+                      </IconButton>
+                    </Tooltip>
                     <IconButton
                       size="small"
                       onClick={() => handleOpenDialog(season)}
@@ -286,6 +379,91 @@ const SeasonManagement = () => {
         confirmText="Sil"
         confirmColor="error"
       />
+
+      {/* Copy Data Dialog */}
+      <Dialog open={openCopyDialog} onClose={handleCloseCopyDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Sezona Veri Kopyala</DialogTitle>
+        <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+              {error}
+            </Alert>
+          )}
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Hedef Sezon: <strong>{selectedSeason?.name}</strong>
+              </Typography>
+            </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth required>
+                <InputLabel>Kaynak Sezon</InputLabel>
+                <Select
+                  value={copyFormData.sourceSeasonId}
+                  onChange={(e) =>
+                    setCopyFormData((prev) => ({ ...prev, sourceSeasonId: e.target.value }))
+                  }
+                  label="Kaynak Sezon"
+                >
+                  {seasons
+                    .filter((s) => s._id !== selectedSeason?._id)
+                    .map((season) => (
+                      <MenuItem key={season._id} value={season._id}>
+                        {season.name}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" gutterBottom>
+                Kopyalanacak Veriler
+              </Typography>
+              <FormGroup>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={copyFormData.dataTypes.includes('students')}
+                      onChange={() => handleCopyDataTypeToggle('students')}
+                    />
+                  }
+                  label="Öğrenciler (bakiyeler sıfırlanır)"
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={copyFormData.dataTypes.includes('courses')}
+                      onChange={() => handleCopyDataTypeToggle('courses')}
+                    />
+                  }
+                  label="Dersler"
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={copyFormData.dataTypes.includes('messageTemplates')}
+                      onChange={() => handleCopyDataTypeToggle('messageTemplates')}
+                    />
+                  }
+                  label="Mesaj Şablonları"
+                />
+              </FormGroup>
+            </Grid>
+            <Grid item xs={12}>
+              <Alert severity="info">
+                Seçilen veriler kaynak sezondan hedef sezona kopyalanacaktır. Eğitmenler sezonlar
+                arası paylaşıldığı için kopyalanmaz.
+              </Alert>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseCopyDialog}>İptal</Button>
+          <Button onClick={handleCopyData} variant="contained" disabled={loading}>
+            {loading ? 'Kopyalanıyor...' : 'Kopyala'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -116,4 +116,92 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Copy data from another season
+router.post('/:id/copy-data', async (req, res) => {
+  try {
+    const targetSeasonId = req.params.id;
+    const { sourceSeasonId, dataTypes } = req.body;
+
+    // Import models
+    const Student = require('../models/Student');
+    const Course = require('../models/Course');
+    const MessageTemplate = require('../models/MessageTemplate');
+
+    const results = {};
+
+    if (dataTypes.includes('students')) {
+      const students = await Student.find({ season: sourceSeasonId });
+      const copied = await Promise.all(
+        students.map(async (s) => {
+          const studentObj = s.toObject();
+          delete studentObj._id;
+          delete studentObj.__v;
+          const newStudent = new Student({
+            ...studentObj,
+            season: targetSeasonId,
+            balance: 0, // Reset balance for new season
+            createdAt: new Date()
+          });
+          return await newStudent.save();
+        })
+      );
+      results.students = copied.length;
+    }
+
+    if (dataTypes.includes('courses')) {
+      const courses = await Course.find({ season: sourceSeasonId });
+      const copied = await Promise.all(
+        courses.map(async (c) => {
+          const courseObj = c.toObject();
+          delete courseObj._id;
+          delete courseObj.__v;
+          const newCourse = new Course({
+            ...courseObj,
+            season: targetSeasonId,
+            createdAt: new Date()
+          });
+          return await newCourse.save();
+        })
+      );
+      results.courses = copied.length;
+    }
+
+    if (dataTypes.includes('instructors')) {
+      // Instructors are not season-specific, just note
+      results.instructors = 'Eğitmenler sezonlar arası paylaşılıyor';
+    }
+
+    if (dataTypes.includes('messageTemplates')) {
+      const templates = await MessageTemplate.find({ season: sourceSeasonId });
+      const copied = await Promise.all(
+        templates.map(async (t) => {
+          const templateObj = t.toObject();
+          delete templateObj._id;
+          delete templateObj.__v;
+          const newTemplate = new MessageTemplate({
+            ...templateObj,
+            season: targetSeasonId,
+            createdAt: new Date()
+          });
+          return await newTemplate.save();
+        })
+      );
+      results.messageTemplates = copied.length;
+    }
+
+    await ActivityLog.create({
+      user: req.body.updatedBy || 'System',
+      action: 'copy',
+      entity: 'Season',
+      entityId: targetSeasonId,
+      description: `Sezonlar arası veri kopyalandı (${dataTypes.join(', ')})`,
+      institution: req.body.institution
+    });
+
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

@@ -21,6 +21,7 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { tr } from 'date-fns/locale';
 import api from '../../api';
 import { useApp } from '../../context/AppContext';
 
@@ -237,7 +238,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
 
           {/* Date Range */}
           <Grid item xs={12} sm={6}>
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
               <DatePicker
                 label="Başlangıç Tarihi"
                 value={formData.startDate}
@@ -248,7 +249,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
           </Grid>
 
           <Grid item xs={12} sm={6}>
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
+            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
               <DatePicker
                 label="Bitiş Tarihi"
                 value={formData.endDate}

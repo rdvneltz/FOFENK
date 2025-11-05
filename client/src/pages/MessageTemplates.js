@@ -15,6 +15,10 @@ import {
   TextField,
   IconButton,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import { Add, Edit, Delete, ContentCopy } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
@@ -32,9 +36,10 @@ const MessageTemplates = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    category: 'general',
+    name: '',
+    type: 'general',
+    template: '',
+    variables: []
   });
 
   useEffect(() => {
@@ -61,16 +66,18 @@ const MessageTemplates = () => {
     if (template) {
       setSelectedTemplate(template);
       setFormData({
-        title: template.title || '',
-        content: template.content || '',
-        category: template.category || 'general',
+        name: template.name || '',
+        type: template.type || 'general',
+        template: template.template || '',
+        variables: template.variables || []
       });
     } else {
       setSelectedTemplate(null);
       setFormData({
-        title: '',
-        content: '',
-        category: 'general',
+        name: '',
+        type: 'general',
+        template: '',
+        variables: []
       });
     }
     setOpenDialog(true);
@@ -126,9 +133,16 @@ const MessageTemplates = () => {
     }
   };
 
-  const handleCopy = (content) => {
-    navigator.clipboard.writeText(content);
+  const handleCopy = (template) => {
+    navigator.clipboard.writeText(template);
     setSuccess('Metin kopyalandı');
+  };
+
+  const insertVariable = (variable) => {
+    setFormData(prev => ({
+      ...prev,
+      template: prev.template + ' ' + variable
+    }));
   };
 
   if (loading) {
@@ -179,7 +193,12 @@ const MessageTemplates = () => {
               <Card elevation={2}>
                 <CardContent>
                   <Typography variant="h6" gutterBottom>
-                    {template.title}
+                    {template.name}
+                  </Typography>
+                  <Typography variant="caption" color="primary" sx={{ mb: 1, display: 'block' }}>
+                    {template.type === 'general' ? 'Genel' :
+                     template.type === 'payment' ? 'Ödeme' :
+                     template.type === 'reminder' ? 'Hatırlatma' : 'Hoş Geldin'}
                   </Typography>
                   <Typography
                     variant="body2"
@@ -193,13 +212,13 @@ const MessageTemplates = () => {
                       WebkitBoxOrient: 'vertical',
                     }}
                   >
-                    {template.content}
+                    {template.template}
                   </Typography>
                 </CardContent>
                 <CardActions>
                   <IconButton
                     size="small"
-                    onClick={() => handleCopy(template.content)}
+                    onClick={() => handleCopy(template.template)}
                     color="primary"
                     title="Kopyala"
                   >
@@ -241,24 +260,56 @@ const MessageTemplates = () => {
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Şablon Başlığı"
-                  name="title"
-                  value={formData.title}
+                  label="Şablon Adı"
+                  name="name"
+                  value={formData.name}
                   onChange={handleChange}
                   required
                 />
               </Grid>
               <Grid item xs={12}>
+                <FormControl fullWidth required>
+                  <InputLabel>Tip</InputLabel>
+                  <Select
+                    name="type"
+                    value={formData.type}
+                    onChange={handleChange}
+                    label="Tip"
+                  >
+                    <MenuItem value="general">Genel</MenuItem>
+                    <MenuItem value="payment">Ödeme</MenuItem>
+                    <MenuItem value="reminder">Hatırlatma</MenuItem>
+                    <MenuItem value="welcome">Hoş Geldin</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Kullanılabilir Değişkenler (Tıklayın):
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
+                    {['(Ad)', '(Soyad)', '(Telefon)', '(Email)', '(Tutar)', '(Tarih)'].map((variable) => (
+                      <Button
+                        key={variable}
+                        size="small"
+                        variant="outlined"
+                        onClick={() => insertVariable(variable)}
+                      >
+                        {variable}
+                      </Button>
+                    ))}
+                  </Box>
+                </Box>
                 <TextField
                   fullWidth
-                  label="Mesaj İçeriği"
-                  name="content"
-                  value={formData.content}
+                  label="Mesaj Şablonu"
+                  name="template"
+                  value={formData.template}
                   onChange={handleChange}
                   multiline
-                  rows={8}
+                  rows={4}
                   required
-                  helperText="Değişkenler: {ad}, {soyad}, {ders}, {tarih}, {saat}"
                 />
               </Grid>
             </Grid>
