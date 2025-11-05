@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -9,7 +9,8 @@ import {
   Alert,
   Container,
   InputAdornment,
-  IconButton
+  IconButton,
+  CircularProgress
 } from '@mui/material';
 import { Visibility, VisibilityOff, Login as LoginIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -26,6 +27,25 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [checkingSetup, setCheckingSetup] = useState(true);
+
+  // Check if system needs setup
+  useEffect(() => {
+    const checkSetup = async () => {
+      try {
+        const response = await api.get('/auth/check-setup');
+        if (response.data.needsSetup) {
+          navigate('/setup');
+        }
+      } catch (error) {
+        console.error('Setup check failed:', error);
+      } finally {
+        setCheckingSetup(false);
+      }
+    };
+
+    checkSetup();
+  }, [navigate]);
 
   const handleChange = (e) => {
     setFormData({
@@ -61,6 +81,22 @@ const Login = () => {
       setLoading(false);
     }
   };
+
+  // Show loading while checking setup
+  if (checkingSetup) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Container maxWidth="sm">
