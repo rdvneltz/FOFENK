@@ -21,7 +21,7 @@ import {
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import axios from 'axios';
+import api from '../../api';
 import { useApp } from '../../context/AppContext';
 
 const DAYS_OF_WEEK = [
@@ -67,10 +67,10 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
 
   const fetchCourses = async () => {
     try {
-      const response = await axios.get('/api/courses', {
+      const response = await api.get('/courses', {
         params: {
-          institutionId: institution._id,
-          seasonId: season._id
+          institution: institution._id,
+          season: season._id
         }
       });
       setCourses(response.data);
@@ -81,9 +81,9 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
 
   const fetchInstructors = async () => {
     try {
-      const response = await axios.get('/api/instructors', {
+      const response = await api.get('/instructors', {
         params: {
-          institutionId: institution._id
+          institution: institution._id
         }
       });
       setInstructors(response.data);
@@ -142,7 +142,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
 
     try {
       setLoading(true);
-      const response = await axios.post('/api/scheduled-lessons/generate-schedule', {
+      const response = await api.post('/scheduled-lessons/generate-schedule', {
         courseId: formData.courseId,
         instructorId: formData.instructorId || null,
         startDate: formData.startDate,
@@ -151,8 +151,8 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
         startTime: formData.startTime,
         endTime: formData.endTime,
         frequency: formData.frequency,
-        seasonId: season._id,
-        institutionId: institution._id,
+        season: season._id,
+        institution: institution._id,
         skipHolidays: formData.skipHolidays,
         createdBy: 'user' // TODO: Get from auth context
       });

@@ -33,7 +33,7 @@ const Calendar = () => {
   const loadLessons = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/lessons', {
+      const response = await api.get('/scheduled-lessons', {
         params: {
           institution: institution._id,
           season: season._id,

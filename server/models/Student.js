@@ -49,6 +49,12 @@ const studentSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Öğrenci durumu: deneme, kayıtlı, pasif
+  status: {
+    type: String,
+    enum: ['trial', 'active', 'passive'],
+    default: 'trial'
+  },
   createdAt: {
     type: Date,
     default: Date.now

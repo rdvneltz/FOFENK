@@ -29,6 +29,7 @@ import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter';
 
 const Instructors = () => {
   const { institution, season } = useApp();
@@ -109,7 +110,13 @@ const Instructors = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    // Format phone number
+    if (name === 'phone') {
+      setFormData((prev) => ({ ...prev, [name]: formatPhoneNumber(value) }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -120,6 +127,7 @@ const Instructors = () => {
     try {
       const instructorData = {
         ...formData,
+        phone: unformatPhoneNumber(formData.phone),
         institution: institution._id,
         season: season._id,
       };

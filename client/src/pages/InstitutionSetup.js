@@ -12,6 +12,7 @@ import {
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter';
 
 const InstitutionSetup = () => {
   const { institution, loadInitialData } = useApp();
@@ -44,7 +45,13 @@ const InstitutionSetup = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+
+    // Format phone number
+    if (name === 'phone') {
+      setFormData((prev) => ({ ...prev, [name]: formatPhoneNumber(value) }));
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -54,11 +61,16 @@ const InstitutionSetup = () => {
     setLoading(true);
 
     try {
+      const institutionData = {
+        ...formData,
+        phone: unformatPhoneNumber(formData.phone),
+      };
+
       if (institution) {
-        await api.put(`/institutions/${institution._id}`, formData);
+        await api.put(`/institutions/${institution._id}`, institutionData);
         setSuccess('Kurum bilgileri güncellendi');
       } else {
-        await api.post('/institutions', formData);
+        await api.post('/institutions', institutionData);
         setSuccess('Kurum başarıyla oluşturuldu');
       }
       await loadInitialData();

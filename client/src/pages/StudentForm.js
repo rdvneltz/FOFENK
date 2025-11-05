@@ -26,6 +26,20 @@ const StudentForm = () => {
   const { institution, season } = useApp();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Calculate age from date of birth
+  const calculateAge = (dateOfBirth) => {
+    if (!dateOfBirth) return null;
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -46,6 +60,7 @@ const StudentForm = () => {
     emergencyContactRelationship: 'Diğer',
     healthNotes: '',
     notes: '',
+    status: 'trial',
   });
 
   useEffect(() => {
@@ -85,6 +100,7 @@ const StudentForm = () => {
         emergencyContactRelationship: emergency.relationship || 'Diğer',
         healthNotes: student.healthNotes || '',
         notes: student.notes || '',
+        status: student.status || 'trial',
       });
     } catch (error) {
       setError('Öğrenci bilgileri yüklenirken bir hata oluştu');
@@ -157,6 +173,7 @@ const StudentForm = () => {
         },
         healthNotes: formData.healthNotes,
         notes: formData.notes,
+        status: formData.status,
         institution: institution._id,
         season: season._id,
       };
@@ -246,6 +263,11 @@ const StudentForm = () => {
                 value={formData.dateOfBirth}
                 onChange={handleChange}
                 InputLabelProps={{ shrink: true }}
+                helperText={
+                  formData.dateOfBirth
+                    ? `${calculateAge(formData.dateOfBirth)} yaşında`
+                    : ''
+                }
               />
             </Grid>
 
@@ -268,6 +290,22 @@ const StudentForm = () => {
                 value={formData.email}
                 onChange={handleChange}
               />
+            </Grid>
+
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Durum</InputLabel>
+                <Select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleChange}
+                  label="Durum"
+                >
+                  <MenuItem value="trial">Deneme</MenuItem>
+                  <MenuItem value="active">Kayıtlı</MenuItem>
+                  <MenuItem value="passive">Pasif</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
 
             <Grid item xs={12}>

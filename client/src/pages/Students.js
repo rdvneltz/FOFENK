@@ -43,6 +43,19 @@ const Students = () => {
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
 
+  // Calculate age from date of birth
+  const calculateAge = (dateOfBirth) => {
+    if (!dateOfBirth) return null;
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   useEffect(() => {
     if (institution && season) {
       loadStudents();
@@ -206,6 +219,7 @@ const Students = () => {
               <TableCell>Öğrenci</TableCell>
               <TableCell>Telefon</TableCell>
               <TableCell>E-posta</TableCell>
+              <TableCell>Yaş</TableCell>
               <TableCell>Durum</TableCell>
               <TableCell>Bakiye</TableCell>
               <TableCell align="right">İşlemler</TableCell>
@@ -214,7 +228,7 @@ const Students = () => {
           <TableBody>
             {filteredStudents.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} align="center">
+                <TableCell colSpan={8} align="center">
                   <Typography color="text.secondary">
                     {searchTerm ? 'Öğrenci bulunamadı' : 'Henüz öğrenci eklenmedi'}
                   </Typography>
@@ -249,8 +263,13 @@ const Students = () => {
                   <TableCell>{student.phone || '-'}</TableCell>
                   <TableCell>{student.email || '-'}</TableCell>
                   <TableCell>
+                    {student.dateOfBirth
+                      ? calculateAge(student.dateOfBirth)
+                      : '-'}
+                  </TableCell>
+                  <TableCell>
                     {student.status === 'active' ? (
-                      <Chip label="Aktif" color="success" size="small" />
+                      <Chip label="Kayıtlı" color="success" size="small" />
                     ) : student.status === 'passive' ? (
                       <Chip label="Pasif" color="default" size="small" />
                     ) : (

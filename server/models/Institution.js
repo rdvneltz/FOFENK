@@ -10,6 +10,7 @@ const institutionSchema = new mongoose.Schema({
   email: String,
   taxNumber: String,
   taxOffice: String,
+  website: String,
   logo: String, // path to uploaded logo
   letterhead: String, // path to uploaded letterhead
   createdAt: {
