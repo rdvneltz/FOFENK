@@ -44,9 +44,13 @@ const Dashboard = () => {
     totalStudents: 0,
     activeStudents: 0,
     totalIncome: 0,
-    totalExpense: 0,
-    cashBalance: 0,
-    expectedPayments: 0,
+    totalExpenses: 0,
+    netIncome: 0,
+    cashRegisters: [],
+    totalCashRegisterBalance: 0,
+    activeEnrollments: 0,
+    totalCourses: 0,
+    totalInstructors: 0,
   });
   const [incomeExpenseData, setIncomeExpenseData] = useState([]);
   const [studentGrowthData, setStudentGrowthData] = useState([]);
@@ -136,7 +140,7 @@ const Dashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Toplam Gelir"
-            value={`₺${stats.totalIncome.toLocaleString('tr-TR')}`}
+            value={`₺${(stats.totalIncome || 0).toLocaleString('tr-TR')}`}
             icon={<IncomeIcon />}
             color="success"
           />
@@ -145,7 +149,7 @@ const Dashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Toplam Gider"
-            value={`₺${stats.totalExpense.toLocaleString('tr-TR')}`}
+            value={`₺${(stats.totalExpenses || 0).toLocaleString('tr-TR')}`}
             icon={<ExpenseIcon />}
             color="error"
           />
@@ -154,25 +158,25 @@ const Dashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Kasa Bakiyesi"
-            value={`₺${stats.cashBalance.toLocaleString('tr-TR')}`}
+            value={`₺${(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')}`}
             icon={<MoneyIcon />}
             color="warning"
           />
         </Grid>
 
-        {/* Expected Payments */}
+        {/* Net Income */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3, height: '100%' }}>
             <Typography variant="h6" gutterBottom>
-              Beklenen Ödemeler
+              Net Gelir
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
-              <Typography variant="h3" color="warning.main">
-                ₺{stats.expectedPayments.toLocaleString('tr-TR')}
+              <Typography variant="h3" color={stats.netIncome >= 0 ? "success.main" : "error.main"}>
+                ₺{(stats.netIncome || 0).toLocaleString('tr-TR')}
               </Typography>
             </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Bu ay tahsil edilmesi gereken toplam tutar
+              Toplam Gelir - Toplam Gider
             </Typography>
           </Paper>
         </Grid>
