@@ -63,10 +63,10 @@ const Dashboard = () => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/dashboard', {
+      const response = await api.get('/reports/dashboard', {
         params: {
-          institution: institution._id,
-          season: season._id,
+          institutionId: institution._id,
+          seasonId: season._id,
         },
       });
       setStats(response.data);
