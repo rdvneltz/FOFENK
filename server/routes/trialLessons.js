@@ -23,7 +23,6 @@ router.get('/', async (req, res) => {
     const trialLessons = await TrialLesson.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('branch', 'name')
       .sort({ scheduledDate: -1 });
 
     res.json(trialLessons);
@@ -37,8 +36,7 @@ router.get('/:id', async (req, res) => {
   try {
     const trialLesson = await TrialLesson.findById(req.params.id)
       .populate('institution', 'name')
-      .populate('season', 'name startDate endDate')
-      .populate('branch', 'name');
+      .populate('season', 'name startDate endDate');
 
     if (!trialLesson) {
       return res.status(404).json({ message: 'Deneme dersi bulunamadı' });
@@ -68,8 +66,7 @@ router.post('/', async (req, res) => {
 
     const populatedTrialLesson = await TrialLesson.findById(newTrialLesson._id)
       .populate('institution', 'name')
-      .populate('season', 'name startDate endDate')
-      .populate('branch', 'name');
+      .populate('season', 'name startDate endDate');
 
     res.status(201).json(populatedTrialLesson);
   } catch (error) {
@@ -85,8 +82,7 @@ router.put('/:id', async (req, res) => {
       { ...req.body, updatedBy: req.body.updatedBy },
       { new: true }
     ).populate('institution', 'name')
-     .populate('season', 'name startDate endDate')
-     .populate('branch', 'name');
+     .populate('season', 'name startDate endDate');
 
     if (!trialLesson) {
       return res.status(404).json({ message: 'Deneme dersi bulunamadı' });

@@ -10,9 +10,13 @@ import {
   Container,
   InputAdornment,
   IconButton,
-  CircularProgress
+  CircularProgress,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel
 } from '@mui/material';
-import { Visibility, VisibilityOff, Login as LoginIcon } from '@mui/icons-material';
+import { Visibility, VisibilityOff, Login as LoginIcon, ArrowBack, ArrowForward } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -28,6 +32,13 @@ const Login = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [checkingSetup, setCheckingSetup] = useState(true);
+
+  // Two-step login states
+  const [step, setStep] = useState(1);
+  const [userInstitutions, setUserInstitutions] = useState([]);
+  const [selectedInstitutionId, setSelectedInstitutionId] = useState('');
+  const [tempToken, setTempToken] = useState('');
+  const [tempUser, setTempUser] = useState(null);
 
   // Check if system needs setup
   useEffect(() => {
@@ -68,18 +79,89 @@ const Login = () => {
 
     try {
       const response = await api.post('/auth/login', formData);
-      const { token, user } = response.data;
+      const { token, user, institutions } = response.data;
 
-      // Store token and user in context
-      login(token, user);
-
-      // Redirect to dashboard
-      navigate('/');
+      // Check different scenarios
+      if (user.role === 'superadmin') {
+        // Superadmin - direct login, no institution selection needed
+        login(token, user);
+        navigate('/');
+      } else if (!institutions || institutions.length === 0) {
+        // No institutions accessible
+        setError('Hicbir kuruma erisim yetkiniz yok');
+        setLoading(false);
+      } else if (institutions.length === 1) {
+        // Only one institution - direct login with that institution
+        const userWithInstitution = {
+          ...user,
+          institution: institutions[0]
+        };
+        login(token, userWithInstitution);
+        navigate('/');
+      } else {
+        // Multiple institutions - go to step 2 for selection
+        setTempToken(token);
+        setTempUser(user);
+        setUserInstitutions(institutions);
+        setStep(2);
+        setLoading(false);
+      }
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please try again.');
-    } finally {
       setLoading(false);
     }
+  };
+
+  const handleInstitutionSelect = (e) => {
+    setSelectedInstitutionId(e.target.value);
+    setError('');
+  };
+
+  const handleInstitutionSubmit = (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!selectedInstitutionId) {
+      setError('Lutfen bir kurum secin');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Find the selected institution object
+      const selectedInstitution = userInstitutions.find(
+        inst => inst._id === selectedInstitutionId
+      );
+
+      if (!selectedInstitution) {
+        setError('Secilen kurum bulunamadi');
+        setLoading(false);
+        return;
+      }
+
+      // Add institution to user object
+      const userWithInstitution = {
+        ...tempUser,
+        institution: selectedInstitution
+      };
+
+      // Complete login
+      login(tempToken, userWithInstitution);
+      navigate('/');
+    } catch (err) {
+      setError('Bir hata olustu. Lutfen tekrar deneyin.');
+      setLoading(false);
+    }
+  };
+
+  const handleBackToStep1 = () => {
+    setStep(1);
+    setSelectedInstitutionId('');
+    setUserInstitutions([]);
+    setTempToken('');
+    setTempUser(null);
+    setError('');
   };
 
   // Show loading while checking setup
@@ -118,7 +200,7 @@ const Login = () => {
                 Theatre Management System
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Sign in to continue
+                {step === 1 ? 'Sign in to continue' : 'Select your institution'}
               </Typography>
             </Box>
 
@@ -128,55 +210,103 @@ const Login = () => {
               </Alert>
             )}
 
-            <form onSubmit={handleSubmit}>
-              <TextField
-                fullWidth
-                label="Username"
-                name="username"
-                value={formData.username}
-                onChange={handleChange}
-                margin="normal"
-                autoComplete="username"
-                autoFocus
-                disabled={loading}
-              />
+            {step === 1 ? (
+              // Step 1: Username and Password
+              <form onSubmit={handleSubmit}>
+                <TextField
+                  fullWidth
+                  label="Username"
+                  name="username"
+                  value={formData.username}
+                  onChange={handleChange}
+                  margin="normal"
+                  autoComplete="username"
+                  autoFocus
+                  disabled={loading}
+                />
 
-              <TextField
-                fullWidth
-                label="Password"
-                name="password"
-                type={showPassword ? 'text' : 'password'}
-                value={formData.password}
-                onChange={handleChange}
-                margin="normal"
-                autoComplete="current-password"
-                disabled={loading}
-                InputProps={{
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <IconButton
-                        onClick={() => setShowPassword(!showPassword)}
-                        edge="end"
-                      >
-                        {showPassword ? <VisibilityOff /> : <Visibility />}
-                      </IconButton>
-                    </InputAdornment>
-                  )
-                }}
-              />
+                <TextField
+                  fullWidth
+                  label="Password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={handleChange}
+                  margin="normal"
+                  autoComplete="current-password"
+                  disabled={loading}
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                        >
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
+                />
 
-              <Button
-                fullWidth
-                type="submit"
-                variant="contained"
-                size="large"
-                disabled={loading}
-                startIcon={<LoginIcon />}
-                sx={{ mt: 3, mb: 2 }}
-              >
-                {loading ? 'Signing in...' : 'Sign In'}
-              </Button>
-            </form>
+                <Button
+                  fullWidth
+                  type="submit"
+                  variant="contained"
+                  size="large"
+                  disabled={loading}
+                  startIcon={<LoginIcon />}
+                  sx={{ mt: 3, mb: 2 }}
+                >
+                  {loading ? 'Signing in...' : 'Sign In'}
+                </Button>
+              </form>
+            ) : (
+              // Step 2: Institution Selection
+              <form onSubmit={handleInstitutionSubmit}>
+                <FormControl fullWidth margin="normal">
+                  <InputLabel id="institution-select-label">Kurum Secin</InputLabel>
+                  <Select
+                    labelId="institution-select-label"
+                    id="institution-select"
+                    value={selectedInstitutionId}
+                    label="Kurum Secin"
+                    onChange={handleInstitutionSelect}
+                    disabled={loading}
+                    autoFocus
+                  >
+                    {userInstitutions.map((institution) => (
+                      <MenuItem key={institution._id} value={institution._id}>
+                        {institution.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <Box sx={{ display: 'flex', gap: 2, mt: 3, mb: 2 }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    size="large"
+                    onClick={handleBackToStep1}
+                    disabled={loading}
+                    startIcon={<ArrowBack />}
+                  >
+                    Geri
+                  </Button>
+                  <Button
+                    fullWidth
+                    type="submit"
+                    variant="contained"
+                    size="large"
+                    disabled={loading}
+                    endIcon={<ArrowForward />}
+                  >
+                    {loading ? 'Devam ediliyor...' : 'Devam Et'}
+                  </Button>
+                </Box>
+              </form>
+            )}
 
             <Box sx={{ mt: 3, textAlign: 'center' }}>
               <Typography variant="body2" color="text.secondary">

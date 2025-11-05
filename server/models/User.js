@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
   phone: String,
   role: {
     type: String,
-    enum: ['admin', 'manager', 'accountant', 'staff'],
+    enum: ['superadmin', 'admin', 'manager', 'accountant', 'staff'],
     default: 'staff'
   },
   // Yetkiler (basit yetki sistemi)
@@ -32,12 +32,18 @@ const userSchema = new mongoose.Schema({
     canManageInstructors: { type: Boolean, default: true },
     canViewReports: { type: Boolean, default: true },
     canManageSettings: { type: Boolean, default: false },
-    canManageUsers: { type: Boolean, default: false }
+    canManageUsers: { type: Boolean, default: false },
+    canManageInstitutions: { type: Boolean, default: false }
   },
+  // Kullanıcının erişebildiği kurumlar (superadmin hariç)
+  institutions: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Institution'
+  }],
+  // Eski institution alanı - geriye dönük uyumluluk için
   institution: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Institution',
-    required: true
+    ref: 'Institution'
   },
   isActive: {
     type: Boolean,

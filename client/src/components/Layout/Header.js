@@ -77,24 +77,14 @@ const Header = ({ handleDrawerToggle }) => {
         </IconButton>
 
         <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Institution Selector */}
-          {institutions.length > 0 && (
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <Select
-                value={institution?._id || ''}
-                onChange={(e) => changeInstitution(e.target.value)}
-                displayEmpty
-              >
-                {institutions.map((inst) => (
-                  <MenuItem key={inst._id} value={inst._id}>
-                    {inst.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+          {/* Institution Display (no longer selectable, selected at login) */}
+          {institution && (
+            <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
+              {institution.name}
+            </Typography>
           )}
 
-          {/* Season Selector */}
+          {/* Season Selector - still changeable */}
           {seasons.length > 0 && (
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <Select

@@ -6,18 +6,18 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all courses with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, branchId } = req.query;
+    const { institution, season, institutionId, seasonId } = req.query;
     const filter = {};
 
+    // Support both 'institution' and 'institutionId' parameter names
+    if (institution) filter.institution = institution;
     if (institutionId) filter.institution = institutionId;
+    if (season) filter.season = season;
     if (seasonId) filter.season = seasonId;
-    if (branchId) filter.branch = branchId;
 
     const courses = await Course.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('branch', 'name')
-      .populate('instructor', 'firstName lastName')
       .sort({ name: 1 });
 
     res.json(courses);
@@ -31,9 +31,7 @@ router.get('/:id', async (req, res) => {
   try {
     const course = await Course.findById(req.params.id)
       .populate('institution', 'name')
-      .populate('season', 'name startDate endDate')
-      .populate('branch', 'name')
-      .populate('instructor', 'firstName lastName email phone');
+      .populate('season', 'name startDate endDate');
 
     if (!course) {
       return res.status(404).json({ message: 'Kurs bulunamadı' });
@@ -63,9 +61,7 @@ router.post('/', async (req, res) => {
 
     const populatedCourse = await Course.findById(newCourse._id)
       .populate('institution', 'name')
-      .populate('season', 'name startDate endDate')
-      .populate('branch', 'name')
-      .populate('instructor', 'firstName lastName');
+      .populate('season', 'name startDate endDate');
 
     res.status(201).json(populatedCourse);
   } catch (error) {
@@ -81,9 +77,7 @@ router.put('/:id', async (req, res) => {
       { ...req.body, updatedBy: req.body.updatedBy },
       { new: true }
     ).populate('institution', 'name')
-     .populate('season', 'name startDate endDate')
-     .populate('branch', 'name')
-     .populate('instructor', 'firstName lastName');
+     .populate('season', 'name startDate endDate');
 
     if (!course) {
       return res.status(404).json({ message: 'Kurs bulunamadı' });

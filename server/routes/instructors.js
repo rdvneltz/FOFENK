@@ -6,15 +6,15 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all instructors with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, branchId } = req.query;
+    const { institution, institutionId } = req.query;
     const filter = {};
 
+    // Support both 'institution' and 'institutionId' parameter names
+    if (institution) filter.institution = institution;
     if (institutionId) filter.institution = institutionId;
-    if (branchId) filter.branches = branchId;
 
     const instructors = await Instructor.find(filter)
       .populate('institution', 'name')
-      .populate('branches', 'name')
       .sort({ lastName: 1, firstName: 1 });
 
     res.json(instructors);
@@ -27,8 +27,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const instructor = await Instructor.findById(req.params.id)
-      .populate('institution', 'name')
-      .populate('branches', 'name');
+      .populate('institution', 'name');
 
     if (!instructor) {
       return res.status(404).json({ message: 'Eğitmen bulunamadı' });
@@ -56,8 +55,7 @@ router.post('/', async (req, res) => {
     });
 
     const populatedInstructor = await Instructor.findById(newInstructor._id)
-      .populate('institution', 'name')
-      .populate('branches', 'name');
+      .populate('institution', 'name');
 
     res.status(201).json(populatedInstructor);
   } catch (error) {
@@ -72,8 +70,7 @@ router.put('/:id', async (req, res) => {
       req.params.id,
       { ...req.body, updatedBy: req.body.updatedBy },
       { new: true }
-    ).populate('institution', 'name')
-     .populate('branches', 'name');
+    ).populate('institution', 'name');
 
     if (!instructor) {
       return res.status(404).json({ message: 'Eğitmen bulunamadı' });
