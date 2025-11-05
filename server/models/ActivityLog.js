@@ -16,7 +16,10 @@ const activityLogSchema = new mongoose.Schema({
       'payment',
       'expense',
       'enrollment',
-      'attendance'
+      'attendance',
+      'setup',
+      'login',
+      'logout'
     ]
   },
   entity: {
@@ -35,7 +38,9 @@ const activityLogSchema = new mongoose.Schema({
       'Attendance',
       'PaymentPlan',
       'TrialLesson',
-      'Settings'
+      'Settings',
+      'System',
+      'User'
     ]
   },
   entityId: {
@@ -48,8 +53,7 @@ const activityLogSchema = new mongoose.Schema({
   metadata: mongoose.Schema.Types.Mixed,
   institution: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Institution',
-    required: true
+    ref: 'Institution'
   },
   createdAt: {
     type: Date,
