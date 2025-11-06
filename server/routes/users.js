@@ -66,15 +66,21 @@ router.post('/', async (req, res) => {
 // Update user
 router.put('/:id', async (req, res) => {
   try {
-    const user = await User.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
+    const user = await User.findById(req.params.id);
 
     if (!user) {
       return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
     }
+
+    // Update fields
+    Object.keys(req.body).forEach(key => {
+      if (key !== 'password' || (key === 'password' && req.body.password)) {
+        user[key] = req.body[key];
+      }
+    });
+
+    // Save will trigger pre('save') middleware to hash password
+    await user.save();
 
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
