@@ -56,11 +56,19 @@ const Dashboard = () => {
   const [studentGrowthData, setStudentGrowthData] = useState([]);
   const [paymentMethodsData, setPaymentMethodsData] = useState([]);
   const [expenseCategoriesData, setExpenseCategoriesData] = useState([]);
+  const [expectedPayments, setExpectedPayments] = useState({
+    today: [],
+    thisWeek: [],
+    thisMonth: [],
+    nextMonth: [],
+    overdue: []
+  });
 
   useEffect(() => {
     if (institution && season) {
       loadDashboardData();
       loadChartData();
+      loadExpectedPayments();
     }
   }, [institution, season]);
 
@@ -102,6 +110,71 @@ const Dashboard = () => {
       setExpenseCategoriesData(expenseCategories.data);
     } catch (error) {
       console.error('Error loading chart data:', error);
+    }
+  };
+
+  const loadExpectedPayments = async () => {
+    try {
+      const params = {
+        institutionId: institution._id,
+        seasonId: season._id,
+      };
+
+      const response = await api.get('/payment-plans', params);
+      const paymentPlans = response.data;
+
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const endOfToday = new Date(startOfToday);
+      endOfToday.setDate(endOfToday.getDate() + 1);
+
+      const endOfWeek = new Date(startOfToday);
+      endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const endOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+
+      const categorized = {
+        today: [],
+        thisWeek: [],
+        thisMonth: [],
+        nextMonth: [],
+        overdue: []
+      };
+
+      paymentPlans.forEach(plan => {
+        plan.installments?.forEach(installment => {
+          if (!installment.isPaid) {
+            const dueDate = new Date(installment.dueDate);
+            const remaining = installment.amount - (installment.paidAmount || 0);
+
+            const payment = {
+              student: plan.student,
+              course: plan.course,
+              installmentNumber: installment.installmentNumber,
+              amount: remaining,
+              dueDate: dueDate,
+              paymentPlanId: plan._id
+            };
+
+            if (dueDate < startOfToday) {
+              categorized.overdue.push(payment);
+            } else if (dueDate >= startOfToday && dueDate < endOfToday) {
+              categorized.today.push(payment);
+            } else if (dueDate >= endOfToday && dueDate < endOfWeek) {
+              categorized.thisWeek.push(payment);
+            } else if (dueDate >= endOfWeek && dueDate <= endOfMonth) {
+              categorized.thisMonth.push(payment);
+            } else if (dueDate > endOfMonth && dueDate <= endOfNextMonth) {
+              categorized.nextMonth.push(payment);
+            }
+          }
+        });
+      });
+
+      setExpectedPayments(categorized);
+    } catch (error) {
+      console.error('Error loading expected payments:', error);
     }
   };
 
@@ -207,6 +280,86 @@ const Dashboard = () => {
                 </Typography>
               </Box>
             </Box>
+          </Paper>
+        </Grid>
+
+        {/* Expected Payments Widget */}
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Beklenen Ödemeler
+            </Typography>
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12} sm={6} md={2.4}>
+                <Box sx={{ p: 2, bgcolor: 'error.light', borderRadius: 1 }}>
+                  <Typography variant="body2" color="error.dark" gutterBottom>
+                    Gecikmiş
+                  </Typography>
+                  <Typography variant="h5" color="error.dark">
+                    {expectedPayments.overdue.length}
+                  </Typography>
+                  <Typography variant="body2" color="error.dark">
+                    ₺{expectedPayments.overdue.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={2.4}>
+                <Box sx={{ p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
+                  <Typography variant="body2" color="warning.dark" gutterBottom>
+                    Bugün
+                  </Typography>
+                  <Typography variant="h5" color="warning.dark">
+                    {expectedPayments.today.length}
+                  </Typography>
+                  <Typography variant="body2" color="warning.dark">
+                    ₺{expectedPayments.today.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={2.4}>
+                <Box sx={{ p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+                  <Typography variant="body2" color="info.dark" gutterBottom>
+                    Bu Hafta
+                  </Typography>
+                  <Typography variant="h5" color="info.dark">
+                    {expectedPayments.thisWeek.length}
+                  </Typography>
+                  <Typography variant="body2" color="info.dark">
+                    ₺{expectedPayments.thisWeek.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={2.4}>
+                <Box sx={{ p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
+                  <Typography variant="body2" color="success.dark" gutterBottom>
+                    Bu Ay
+                  </Typography>
+                  <Typography variant="h5" color="success.dark">
+                    {expectedPayments.thisMonth.length}
+                  </Typography>
+                  <Typography variant="body2" color="success.dark">
+                    ₺{expectedPayments.thisMonth.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={2.4}>
+                <Box sx={{ p: 2, bgcolor: 'grey.300', borderRadius: 1 }}>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Gelecek Ay
+                  </Typography>
+                  <Typography variant="h5" color="text.primary">
+                    {expectedPayments.nextMonth.length}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    ₺{expectedPayments.nextMonth.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
           </Paper>
         </Grid>
 

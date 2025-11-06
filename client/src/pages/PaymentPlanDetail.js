@@ -43,6 +43,14 @@ const PaymentPlanDetail = () => {
   const [editDateDialog, setEditDateDialog] = useState({ open: false, installment: null });
   const [paymentDialog, setPaymentDialog] = useState({ open: false, installment: null });
   const [deleteDialog, setDeleteDialog] = useState(false);
+  const [editPlanDialog, setEditPlanDialog] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    totalAmount: '',
+    discountType: 'none',
+    discountValue: 0,
+    isInvoiced: false,
+    notes: ''
+  });
 
   useEffect(() => {
     loadPaymentPlan();
@@ -84,7 +92,7 @@ const PaymentPlanDetail = () => {
   const handlePayment = async () => {
     try {
       const installment = paymentDialog.installment;
-      const paymentAmount = parseFloat(paymentDialog.amount);
+      let paymentAmount = parseFloat(paymentDialog.amount);
 
       // Get student ID properly
       const studentId = paymentPlan.student?._id || paymentPlan.student;
@@ -117,17 +125,33 @@ const PaymentPlanDetail = () => {
         createdBy: user?.username || 'System'
       });
 
-      // Update installment
-      const updatedInstallments = paymentPlan.installments.map(inst =>
-        inst.installmentNumber === installment.installmentNumber
-          ? {
-              ...inst,
-              paidAmount: (inst.paidAmount || 0) + paymentAmount,
-              isPaid: (inst.paidAmount || 0) + paymentAmount >= inst.amount,
-              paidDate: new Date()
-            }
-          : inst
+      // Update installments with overpayment cascade
+      const updatedInstallments = [...paymentPlan.installments];
+      let remainingPayment = paymentAmount;
+
+      // Find the current installment index
+      const currentIndex = updatedInstallments.findIndex(
+        inst => inst.installmentNumber === installment.installmentNumber
       );
+
+      // Apply payment starting from current installment and cascade to next ones
+      for (let i = currentIndex; i < updatedInstallments.length && remainingPayment > 0; i++) {
+        const inst = updatedInstallments[i];
+        const currentPaid = inst.paidAmount || 0;
+        const remaining = inst.amount - currentPaid;
+
+        if (remaining > 0) {
+          const paymentForThisInstallment = Math.min(remainingPayment, remaining);
+          inst.paidAmount = currentPaid + paymentForThisInstallment;
+          inst.isPaid = inst.paidAmount >= inst.amount;
+
+          if (inst.isPaid && !inst.paidDate) {
+            inst.paidDate = new Date();
+          }
+
+          remainingPayment -= paymentForThisInstallment;
+        }
+      }
 
       const totalPaid = updatedInstallments.reduce((sum, inst) => sum + (inst.paidAmount || 0), 0);
       const isCompleted = totalPaid >= paymentPlan.discountedAmount;
@@ -139,7 +163,12 @@ const PaymentPlanDetail = () => {
         updatedBy: user?.username
       });
 
-      setSuccess('Ödeme kaydedildi');
+      if (remainingPayment > 0) {
+        setSuccess(`Ödeme kaydedildi. ${remainingPayment.toFixed(2)} TL fazla ödeme yapıldı ve sonraki taksitlere uygulandı.`);
+      } else {
+        setSuccess('Ödeme kaydedildi');
+      }
+
       setPaymentDialog({ open: false, installment: null });
       loadPaymentPlan();
     } catch (error) {
@@ -153,6 +182,57 @@ const PaymentPlanDetail = () => {
       navigate(`/students/${paymentPlan.student._id}`);
     } catch (error) {
       setError('Ödeme planı silinirken hata oluştu');
+    }
+  };
+
+  const openEditDialog = () => {
+    setEditFormData({
+      totalAmount: paymentPlan.totalAmount || '',
+      discountType: paymentPlan.discountType || 'none',
+      discountValue: paymentPlan.discountValue || 0,
+      isInvoiced: paymentPlan.isInvoiced || false,
+      notes: paymentPlan.notes || ''
+    });
+    setEditPlanDialog(true);
+  };
+
+  const handleEditPlan = async () => {
+    try {
+      const totalAmount = parseFloat(editFormData.totalAmount);
+
+      // Calculate discount
+      let discountAmount = 0;
+      if (editFormData.discountType === 'percentage') {
+        discountAmount = (totalAmount * parseFloat(editFormData.discountValue)) / 100;
+      } else if (editFormData.discountType === 'fixed') {
+        discountAmount = parseFloat(editFormData.discountValue) || 0;
+      }
+
+      let discountedAmount = totalAmount - discountAmount;
+
+      // Recalculate installment amounts based on new total
+      const installmentCount = paymentPlan.installments.length;
+      const installmentAmount = discountedAmount / installmentCount;
+
+      const updatedInstallments = paymentPlan.installments.map((inst) => ({
+        ...inst,
+        amount: installmentAmount
+      }));
+
+      await api.put(`/payment-plans/${id}`, {
+        totalAmount: totalAmount,
+        discountedAmount: discountedAmount,
+        installments: updatedInstallments,
+        isInvoiced: editFormData.isInvoiced,
+        notes: editFormData.notes,
+        updatedBy: user?.username
+      });
+
+      setSuccess('Ödeme planı güncellendi');
+      setEditPlanDialog(false);
+      loadPaymentPlan();
+    } catch (error) {
+      setError('Ödeme planı güncellenirken hata oluştu');
     }
   };
 
@@ -177,14 +257,23 @@ const PaymentPlanDetail = () => {
         >
           Geri
         </Button>
-        <Button
-          variant="outlined"
-          color="error"
-          startIcon={<Delete />}
-          onClick={() => setDeleteDialog(true)}
-        >
-          Ödeme Planını Sil
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<Edit />}
+            onClick={openEditDialog}
+          >
+            Planı Düzenle
+          </Button>
+          <Button
+            variant="outlined"
+            color="error"
+            startIcon={<Delete />}
+            onClick={() => setDeleteDialog(true)}
+          >
+            Ödeme Planını Sil
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -367,11 +456,9 @@ const PaymentPlanDetail = () => {
               onChange={(e) => setPaymentDialog({ ...paymentDialog, amount: e.target.value })}
               sx={{ mt: 2 }}
               inputProps={{
-                min: 0,
-                max: paymentDialog.installment ?
-                  paymentDialog.installment.amount - (paymentDialog.installment.paidAmount || 0) :
-                  0
+                min: 0
               }}
+              helperText="Fazla ödeme yapılması durumunda kalan tutar sonraki taksitlere otomatik olarak aktarılır"
             />
           </Box>
         </DialogContent>
@@ -380,6 +467,78 @@ const PaymentPlanDetail = () => {
           <Button onClick={handlePayment} variant="contained" color="primary">
             Ödemeyi Kaydet
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Plan Dialog */}
+      <Dialog open={editPlanDialog} onClose={() => setEditPlanDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Ödeme Planını Düzenle</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Toplam Tutar (₺)"
+                  type="number"
+                  value={editFormData.totalAmount}
+                  onChange={(e) => setEditFormData({ ...editFormData, totalAmount: e.target.value })}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>İndirim Tipi</InputLabel>
+                  <Select
+                    value={editFormData.discountType}
+                    onChange={(e) => setEditFormData({ ...editFormData, discountType: e.target.value })}
+                    label="İndirim Tipi"
+                  >
+                    <MenuItem value="none">İndirimsiz</MenuItem>
+                    <MenuItem value="percentage">Yüzde (%)</MenuItem>
+                    <MenuItem value="fixed">Tutar (₺)</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              {editFormData.discountType !== 'none' && (
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label={editFormData.discountType === 'percentage' ? 'İndirim Yüzdesi (%)' : 'İndirim Tutarı (₺)'}
+                    type="number"
+                    value={editFormData.discountValue}
+                    onChange={(e) => setEditFormData({ ...editFormData, discountValue: e.target.value })}
+                  />
+                </Grid>
+              )}
+              <Grid item xs={12}>
+                <FormControl fullWidth>
+                  <InputLabel>Fatura</InputLabel>
+                  <Select
+                    value={editFormData.isInvoiced}
+                    onChange={(e) => setEditFormData({ ...editFormData, isInvoiced: e.target.value === 'true' })}
+                    label="Fatura"
+                  >
+                    <MenuItem value={false}>Faturasız</MenuItem>
+                    <MenuItem value={true}>Faturalı</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Notlar"
+                  multiline
+                  rows={3}
+                  value={editFormData.notes}
+                  onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditPlanDialog(false)}>İptal</Button>
+          <Button onClick={handleEditPlan} variant="contained">Kaydet</Button>
         </DialogActions>
       </Dialog>
 

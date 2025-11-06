@@ -40,6 +40,10 @@ const PaymentPlan = () => {
     paymentType: 'cashFull',
     installmentCount: 1,
     firstInstallmentDate: new Date(),
+    installmentFrequency: 'monthly', // 'monthly', 'weekly', 'custom'
+    customFrequencyDays: 30,
+    useCustomAmounts: false,
+    customInstallments: [],
     isInvoiced: false,
     description: '',
   });
@@ -140,21 +144,57 @@ const PaymentPlan = () => {
         creditCardCommission.amount = (discountedAmount * commissionRate) / 100;
         discountedAmount += creditCardCommission.amount;
       }
-      const installmentAmount = discountedAmount / installmentCount;
-
       // Create installment array
       const installments = [];
       const startDate = new Date(formData.firstInstallmentDate);
-      for (let i = 0; i < installmentCount; i++) {
-        const dueDate = new Date(startDate);
-        dueDate.setMonth(startDate.getMonth() + i);
-        installments.push({
-          installmentNumber: i + 1,
-          amount: installmentAmount,
-          dueDate: dueDate,
-          isPaid: false,
-          paidAmount: 0
-        });
+
+      if (formData.useCustomAmounts && formData.customInstallments.length > 0) {
+        // Use custom installment amounts
+        for (let i = 0; i < formData.customInstallments.length; i++) {
+          const dueDate = new Date(startDate);
+
+          // Calculate due date based on frequency
+          if (formData.installmentFrequency === 'weekly') {
+            dueDate.setDate(startDate.getDate() + (i * 7));
+          } else if (formData.installmentFrequency === 'custom') {
+            dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
+          } else {
+            // Monthly
+            dueDate.setMonth(startDate.getMonth() + i);
+          }
+
+          installments.push({
+            installmentNumber: i + 1,
+            amount: parseFloat(formData.customInstallments[i].amount),
+            dueDate: dueDate,
+            isPaid: false,
+            paidAmount: 0
+          });
+        }
+      } else {
+        // Equal installments
+        const installmentAmount = discountedAmount / installmentCount;
+        for (let i = 0; i < installmentCount; i++) {
+          const dueDate = new Date(startDate);
+
+          // Calculate due date based on frequency
+          if (formData.installmentFrequency === 'weekly') {
+            dueDate.setDate(startDate.getDate() + (i * 7));
+          } else if (formData.installmentFrequency === 'custom') {
+            dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
+          } else {
+            // Monthly
+            dueDate.setMonth(startDate.getMonth() + i);
+          }
+
+          installments.push({
+            installmentNumber: i + 1,
+            amount: installmentAmount,
+            dueDate: dueDate,
+            isPaid: false,
+            paidAmount: 0
+          });
+        }
       }
 
       const paymentPlanData = {
@@ -340,23 +380,67 @@ const PaymentPlan = () => {
             </Grid>
 
             {formData.paymentType !== 'cashFull' && (
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth required>
-                  <InputLabel>Taksit Sayısı</InputLabel>
-                  <Select
-                    name="installmentCount"
-                    value={formData.installmentCount}
-                    onChange={handleChange}
-                    label="Taksit Sayısı"
-                  >
-                    {[1, 2, 3, 4, 5, 6, 9, 12].map((num) => (
-                      <MenuItem key={num} value={num}>
-                        {num} Taksit
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
+              <>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Taksit Sayısı</InputLabel>
+                    <Select
+                      name="installmentCount"
+                      value={formData.installmentCount}
+                      onChange={(e) => {
+                        const count = parseInt(e.target.value);
+                        const installmentAmount = finalAmount / count;
+                        const customInst = Array.from({ length: count }, (_, i) => ({
+                          number: i + 1,
+                          amount: installmentAmount.toFixed(2)
+                        }));
+                        setFormData({
+                          ...formData,
+                          installmentCount: count,
+                          customInstallments: customInst
+                        });
+                      }}
+                      label="Taksit Sayısı"
+                    >
+                      {[1, 2, 3, 4, 5, 6, 9, 12].map((num) => (
+                        <MenuItem key={num} value={num}>
+                          {num} Taksit
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Ödeme Sıklığı</InputLabel>
+                    <Select
+                      name="installmentFrequency"
+                      value={formData.installmentFrequency}
+                      onChange={handleChange}
+                      label="Ödeme Sıklığı"
+                    >
+                      <MenuItem value="monthly">Aylık</MenuItem>
+                      <MenuItem value="weekly">Haftalık</MenuItem>
+                      <MenuItem value="custom">Özel</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                {formData.installmentFrequency === 'custom' && (
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Kaç günde bir?"
+                      name="customFrequencyDays"
+                      type="number"
+                      value={formData.customFrequencyDays}
+                      onChange={handleChange}
+                      inputProps={{ min: 1 }}
+                    />
+                  </Grid>
+                )}
+              </>
             )}
 
             <Grid item xs={12} sm={6}>
@@ -375,16 +459,63 @@ const PaymentPlan = () => {
             </Grid>
 
             {formData.paymentType !== 'cashFull' && (
-              <Grid item xs={12} sm={6}>
-                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
-                  <DatePicker
-                    label="İlk Taksit Tarihi"
-                    value={formData.firstInstallmentDate}
-                    onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
-                    renderInput={(params) => <TextField {...params} fullWidth />}
-                  />
-                </LocalizationProvider>
-              </Grid>
+              <>
+                <Grid item xs={12} sm={6}>
+                  <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                    <DatePicker
+                      label="İlk Taksit Tarihi"
+                      value={formData.firstInstallmentDate}
+                      onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
+                      renderInput={(params) => <TextField {...params} fullWidth />}
+                    />
+                  </LocalizationProvider>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <FormControl>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.useCustomAmounts}
+                        onChange={(e) => setFormData({ ...formData, useCustomAmounts: e.target.checked })}
+                        style={{ marginRight: '8px' }}
+                      />
+                      <Typography>Taksit tutarlarını özelleştir</Typography>
+                    </Box>
+                  </FormControl>
+                </Grid>
+
+                {formData.useCustomAmounts && formData.customInstallments.length > 0 && (
+                  <Grid item xs={12}>
+                    <Paper sx={{ p: 2 }}>
+                      <Typography variant="h6" gutterBottom>
+                        Taksit Tutarları
+                      </Typography>
+                      <Grid container spacing={2}>
+                        {formData.customInstallments.map((inst, index) => (
+                          <Grid item xs={12} sm={6} md={4} key={index}>
+                            <TextField
+                              fullWidth
+                              label={`${inst.number}. Taksit`}
+                              type="number"
+                              value={inst.amount}
+                              onChange={(e) => {
+                                const newCustomInstallments = [...formData.customInstallments];
+                                newCustomInstallments[index].amount = e.target.value;
+                                setFormData({ ...formData, customInstallments: newCustomInstallments });
+                              }}
+                              inputProps={{ min: 0, step: '0.01' }}
+                            />
+                          </Grid>
+                        ))}
+                      </Grid>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                        Toplam: ₺{formData.customInstallments.reduce((sum, inst) => sum + parseFloat(inst.amount || 0), 0).toLocaleString('tr-TR')}
+                      </Typography>
+                    </Paper>
+                  </Grid>
+                )}
+              </>
             )}
 
             <Grid item xs={12}>
