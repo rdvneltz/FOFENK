@@ -24,11 +24,12 @@ import {
   IconButton,
   Alert,
 } from '@mui/material';
-import { Add, Edit, Delete, Group } from '@mui/icons-material';
+import { Add, Edit, Delete, Group, PersonAdd } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import BulkEnrollDialog from '../components/Courses/BulkEnrollDialog';
 
 const Courses = () => {
   const { institution, season } = useApp();
@@ -37,8 +38,10 @@ const Courses = () => {
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
+  const [openBulkEnroll, setOpenBulkEnroll] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -166,6 +169,17 @@ const Courses = () => {
     }
   };
 
+  const handleBulkEnrollSuccess = (data) => {
+    setSuccessMessage(data.message);
+    setTimeout(() => setSuccessMessage(''), 3000);
+    loadData();
+  };
+
+  const handleOpenBulkEnroll = (course) => {
+    setSelectedCourse(course);
+    setOpenBulkEnroll(true);
+  };
+
   if (loading) {
     return <LoadingSpinner message="Dersler yükleniyor..." />;
   }
@@ -192,6 +206,12 @@ const Courses = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
+        </Alert>
+      )}
+
+      {successMessage && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage('')}>
+          {successMessage}
         </Alert>
       )}
 
@@ -243,8 +263,17 @@ const Courses = () => {
                   <TableCell align="right">
                     <IconButton
                       size="small"
+                      onClick={() => handleOpenBulkEnroll(course)}
+                      color="success"
+                      title="Öğrenci Ekle"
+                    >
+                      <PersonAdd />
+                    </IconButton>
+                    <IconButton
+                      size="small"
                       onClick={() => handleOpenDialog(course)}
                       color="primary"
+                      title="Düzenle"
                     >
                       <Edit />
                     </IconButton>
@@ -255,6 +284,7 @@ const Courses = () => {
                         setOpenConfirm(true);
                       }}
                       color="error"
+                      title="Sil"
                     >
                       <Delete />
                     </IconButton>
@@ -398,6 +428,17 @@ const Courses = () => {
         message="Bu dersi silmek istediğinizden emin misiniz?"
         confirmText="Sil"
         confirmColor="error"
+      />
+
+      {/* Bulk Enroll Dialog */}
+      <BulkEnrollDialog
+        open={openBulkEnroll}
+        onClose={() => {
+          setOpenBulkEnroll(false);
+          setSelectedCourse(null);
+        }}
+        course={selectedCourse}
+        onSuccess={handleBulkEnrollSuccess}
       />
     </Box>
   );

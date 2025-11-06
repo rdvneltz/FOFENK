@@ -138,4 +138,80 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Bulk enroll students to a course
+router.post('/bulk', async (req, res) => {
+  try {
+    const { courseId, studentIds, enrollmentDate, discount, customPrice, institution, season, createdBy } = req.body;
+
+    if (!courseId || !studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({ message: 'Course ID and student IDs are required' });
+    }
+
+    const enrollments = [];
+    const errors = [];
+
+    for (const studentId of studentIds) {
+      try {
+        // Check if enrollment already exists
+        const existingEnrollment = await StudentCourseEnrollment.findOne({
+          student: studentId,
+          course: courseId,
+          season: season,
+          isActive: true
+        });
+
+        if (existingEnrollment) {
+          errors.push({ studentId, message: 'Öğrenci zaten bu derse kayıtlı' });
+          continue;
+        }
+
+        // Create new enrollment
+        const enrollment = new StudentCourseEnrollment({
+          student: studentId,
+          course: courseId,
+          enrollmentDate: enrollmentDate || new Date(),
+          discount: discount || { type: 'none', value: 0 },
+          customPrice: customPrice || undefined,
+          institution,
+          season,
+          isActive: true,
+          createdBy: createdBy || 'System'
+        });
+
+        const savedEnrollment = await enrollment.save();
+        enrollments.push(savedEnrollment);
+
+        // Log activity
+        await ActivityLog.create({
+          user: createdBy || 'System',
+          action: 'create',
+          entity: 'StudentCourseEnrollment',
+          entityId: savedEnrollment._id,
+          description: `Toplu kayıt: Öğrenci derse eklendi`,
+          institution,
+          season
+        });
+      } catch (error) {
+        errors.push({ studentId, message: error.message });
+      }
+    }
+
+    // Populate the enrollments
+    const populatedEnrollments = await StudentCourseEnrollment.find({
+      _id: { $in: enrollments.map(e => e._id) }
+    })
+      .populate('student', 'firstName lastName studentId')
+      .populate('course', 'name');
+
+    res.status(201).json({
+      success: true,
+      enrolled: populatedEnrollments,
+      errors: errors,
+      message: `${enrollments.length} öğrenci başarıyla kaydedildi${errors.length > 0 ? `, ${errors.length} hata oluştu` : ''}`
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
