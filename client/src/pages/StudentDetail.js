@@ -35,6 +35,7 @@ const StudentDetail = () => {
   const [tabValue, setTabValue] = useState(0);
   const [courses, setCourses] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [paymentPlans, setPaymentPlans] = useState([]);
 
   useEffect(() => {
     loadStudent();
@@ -43,14 +44,16 @@ const StudentDetail = () => {
   const loadStudent = async () => {
     try {
       setLoading(true);
-      const [studentRes, coursesRes, paymentsRes] = await Promise.all([
+      const [studentRes, coursesRes, paymentsRes, paymentPlansRes] = await Promise.all([
         api.get(`/students/${id}`),
         api.get(`/enrollments`, { params: { studentId: id } }),
         api.get(`/payments`, { params: { studentId: id } }),
+        api.get(`/payment-plans`, { params: { studentId: id } }),
       ]);
       setStudent(studentRes.data);
       setCourses(coursesRes.data);
       setPayments(paymentsRes.data);
+      setPaymentPlans(paymentPlansRes.data);
     } catch (error) {
       console.error('Error loading student:', error);
     } finally {

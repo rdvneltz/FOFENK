@@ -6,16 +6,19 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all payment plans with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId } = req.query;
+    const { institutionId, seasonId, studentId } = req.query;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
+    if (studentId) filter.student = studentId;
 
     const paymentPlans = await PaymentPlan.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .sort({ name: 1 });
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name')
+      .sort({ createdAt: -1 });
 
     res.json(paymentPlans);
   } catch (error) {

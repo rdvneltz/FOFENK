@@ -37,6 +37,23 @@ const courseSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Eğitmen
+  instructor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Instructor'
+  },
+  // Kapasite (maksimum öğrenci sayısı)
+  capacity: {
+    type: Number,
+    default: 0
+  },
+  // Ders süresi (dakika)
+  duration: {
+    type: Number,
+    default: 60
+  },
+  // Program (Örn: "Pazartesi 10:00")
+  schedule: String,
   color: {
     type: String,
     default: '#1976d2' // Material-UI primary color

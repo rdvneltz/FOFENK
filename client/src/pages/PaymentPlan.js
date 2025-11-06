@@ -31,10 +31,16 @@ const PaymentPlan = () => {
   const [formData, setFormData] = useState({
     enrollmentId: '',
     totalAmount: '',
-    discountAmount: 0,
+    discountType: 'none', // 'none', 'percentage', 'fixed'
+    discountValue: 0,
     paymentType: 'cashFull',
     installmentCount: 1,
+    isInvoiced: false,
     description: '',
+  });
+  const [settings, setSettings] = useState({
+    vat: 10,
+    creditCardCommissionRates: {}
   });
   const [cashRegisters, setCashRegisters] = useState([]);
 
@@ -45,7 +51,7 @@ const PaymentPlan = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [studentRes, enrollmentsRes, cashRes] = await Promise.all([
+      const [studentRes, enrollmentsRes, cashRes, settingsRes] = await Promise.all([
         api.get(`/students/${studentId}`),
         api.get('/enrollments', {
           params: { studentId, seasonId: season._id },
@@ -53,10 +59,23 @@ const PaymentPlan = () => {
         api.get('/cash-registers', {
           params: { institution: institution._id },
         }),
+        api.get('/settings', {
+          params: { institutionId: institution._id },
+        }),
       ]);
       setStudent(studentRes.data);
       setEnrollments(enrollmentsRes.data);
       setCashRegisters(cashRes.data);
+
+      // Load settings (VAT and commission rates)
+      if (settingsRes.data) {
+        const vatSetting = settingsRes.data.find(s => s.key === 'vat');
+        const commissionSetting = settingsRes.data.find(s => s.key === 'creditCardCommissionRates');
+        setSettings({
+          vat: vatSetting ? parseFloat(vatSetting.value) : 10,
+          creditCardCommissionRates: commissionSetting ? JSON.parse(commissionSetting.value) : {}
+        });
+      }
 
       // Set first enrollment as default
       if (enrollmentsRes.data.length > 0) {
@@ -88,9 +107,34 @@ const PaymentPlan = () => {
       }
 
       const totalAmount = parseFloat(formData.totalAmount);
-      const discountAmount = parseFloat(formData.discountAmount) || 0;
-      const discountedAmount = totalAmount - discountAmount;
+
+      // Calculate discount
+      let discountAmount = 0;
+      if (formData.discountType === 'percentage') {
+        discountAmount = (totalAmount * parseFloat(formData.discountValue)) / 100;
+      } else if (formData.discountType === 'fixed') {
+        discountAmount = parseFloat(formData.discountValue) || 0;
+      }
+
+      let discountedAmount = totalAmount - discountAmount;
+
+      // Add VAT if invoiced
+      let vatAmount = 0;
+      if (formData.isInvoiced) {
+        vatAmount = (discountedAmount * settings.vat) / 100;
+        discountedAmount += vatAmount;
+      }
+
       const installmentCount = parseInt(formData.installmentCount);
+
+      // Add credit card commission
+      let creditCardCommission = { rate: 0, amount: 0 };
+      if (formData.paymentType === 'creditCard') {
+        const commissionRate = settings.creditCardCommissionRates[installmentCount] || 0;
+        creditCardCommission.rate = commissionRate;
+        creditCardCommission.amount = (discountedAmount * commissionRate) / 100;
+        discountedAmount += creditCardCommission.amount;
+      }
       const installmentAmount = discountedAmount / installmentCount;
 
       // Create installment array
@@ -117,6 +161,9 @@ const PaymentPlan = () => {
         discountedAmount: discountedAmount,
         installments: installments,
         creditCardInstallments: formData.paymentType === 'creditCard' ? installmentCount : undefined,
+        creditCardCommission: formData.paymentType === 'creditCard' ? creditCardCommission : undefined,
+        vat: formData.isInvoiced ? { rate: settings.vat, amount: vatAmount } : undefined,
+        isInvoiced: formData.isInvoiced,
         institution: institution._id,
         season: season._id,
         notes: formData.description,
@@ -137,10 +184,33 @@ const PaymentPlan = () => {
   }
 
   const totalAmount = parseFloat(formData.totalAmount) || 0;
-  const discountAmount = parseFloat(formData.discountAmount) || 0;
-  const discountedAmount = totalAmount - discountAmount;
+
+  // Calculate discount
+  let discountAmount = 0;
+  if (formData.discountType === 'percentage') {
+    discountAmount = (totalAmount * parseFloat(formData.discountValue)) / 100;
+  } else if (formData.discountType === 'fixed') {
+    discountAmount = parseFloat(formData.discountValue) || 0;
+  }
+
+  let subtotal = totalAmount - discountAmount;
+
+  // Calculate VAT
+  let vatAmount = 0;
+  if (formData.isInvoiced) {
+    vatAmount = (subtotal * settings.vat) / 100;
+  }
+
+  // Calculate credit card commission
+  let commissionAmount = 0;
+  if (formData.paymentType === 'creditCard' && formData.installmentCount) {
+    const commissionRate = settings.creditCardCommissionRates[formData.installmentCount] || 0;
+    commissionAmount = ((subtotal + vatAmount) * commissionRate) / 100;
+  }
+
+  const finalAmount = subtotal + vatAmount + commissionAmount;
   const installmentAmount = formData.installmentCount
-    ? (discountedAmount / parseInt(formData.installmentCount)).toFixed(2)
+    ? (finalAmount / parseInt(formData.installmentCount)).toFixed(2)
     : 0;
 
   return (
@@ -218,16 +288,35 @@ const PaymentPlan = () => {
               />
             </Grid>
 
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="İndirim Tutarı (₺)"
-                name="discountAmount"
-                type="number"
-                value={formData.discountAmount}
-                onChange={handleChange}
-              />
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth>
+                <InputLabel>İndirim Tipi</InputLabel>
+                <Select
+                  name="discountType"
+                  value={formData.discountType}
+                  onChange={handleChange}
+                  label="İndirim Tipi"
+                >
+                  <MenuItem value="none">İndirimsiz</MenuItem>
+                  <MenuItem value="percentage">Yüzde (%)</MenuItem>
+                  <MenuItem value="fixed">Tutar (₺)</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
+
+            {formData.discountType !== 'none' && (
+              <Grid item xs={12} sm={8}>
+                <TextField
+                  fullWidth
+                  label={formData.discountType === 'percentage' ? 'İndirim Yüzdesi (%)' : 'İndirim Tutarı (₺)'}
+                  name="discountValue"
+                  type="number"
+                  value={formData.discountValue}
+                  onChange={handleChange}
+                  inputProps={{ min: 0, max: formData.discountType === 'percentage' ? 100 : undefined }}
+                />
+              </Grid>
+            )}
 
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth required>
@@ -245,20 +334,37 @@ const PaymentPlan = () => {
               </FormControl>
             </Grid>
 
+            {formData.paymentType !== 'cashFull' && (
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth required>
+                  <InputLabel>Taksit Sayısı</InputLabel>
+                  <Select
+                    name="installmentCount"
+                    value={formData.installmentCount}
+                    onChange={handleChange}
+                    label="Taksit Sayısı"
+                  >
+                    {[1, 2, 3, 4, 5, 6, 9, 12].map((num) => (
+                      <MenuItem key={num} value={num}>
+                        {num} Taksit
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+
             <Grid item xs={12} sm={6}>
-              <FormControl fullWidth required>
-                <InputLabel>Taksit Sayısı</InputLabel>
+              <FormControl fullWidth>
+                <InputLabel>Fatura</InputLabel>
                 <Select
-                  name="installmentCount"
-                  value={formData.installmentCount}
-                  onChange={handleChange}
-                  label="Taksit Sayısı"
+                  name="isInvoiced"
+                  value={formData.isInvoiced}
+                  onChange={(e) => setFormData({ ...formData, isInvoiced: e.target.value === 'true' })}
+                  label="Fatura"
                 >
-                  {[1, 2, 3, 4, 5, 6, 9, 12].map((num) => (
-                    <MenuItem key={num} value={num}>
-                      {num} Taksit
-                    </MenuItem>
-                  ))}
+                  <MenuItem value={false}>Faturasız</MenuItem>
+                  <MenuItem value={true}>Faturalı (+%{settings.vat} KDV)</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -287,13 +393,27 @@ const PaymentPlan = () => {
                   </Typography>
                   {discountAmount > 0 && (
                     <Typography variant="body1" color="success.main">
-                      İndirim: -₺{discountAmount.toLocaleString('tr-TR')}
+                      İndirim ({formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}): -₺{discountAmount.toLocaleString('tr-TR')}
                     </Typography>
                   )}
-                  <Typography variant="body1" fontWeight="bold">
-                    Ödenecek: ₺{discountedAmount.toLocaleString('tr-TR')}
+                  <Typography variant="body1">
+                    Ara Toplam: ₺{subtotal.toLocaleString('tr-TR')}
                   </Typography>
-                  {formData.installmentCount > 1 && (
+                  {formData.isInvoiced && vatAmount > 0 && (
+                    <Typography variant="body1" color="warning.main">
+                      KDV (%{settings.vat}): +₺{vatAmount.toLocaleString('tr-TR')}
+                    </Typography>
+                  )}
+                  {formData.paymentType === 'creditCard' && commissionAmount > 0 && (
+                    <Typography variant="body1" color="warning.main">
+                      Kredi Kartı Komisyonu ({settings.creditCardCommissionRates[formData.installmentCount] || 0}%): +₺{commissionAmount.toLocaleString('tr-TR')}
+                    </Typography>
+                  )}
+                  <Divider sx={{ my: 1 }} />
+                  <Typography variant="h6" fontWeight="bold">
+                    Ödenecek Toplam: ₺{finalAmount.toLocaleString('tr-TR')}
+                  </Typography>
+                  {formData.paymentType !== 'cashFull' && formData.installmentCount > 1 && (
                     <>
                       <Divider sx={{ my: 1 }} />
                       <Typography variant="body2">
