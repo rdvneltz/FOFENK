@@ -28,7 +28,7 @@ router.get('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('enrollment', 'course')
+      .populate('course', 'name')
       .populate('cashRegister', 'name')
       .sort({ paymentDate: -1 });
 
@@ -45,7 +45,7 @@ router.get('/:id', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('enrollment', 'course')
+      .populate('course', 'name')
       .populate('cashRegister', 'name');
 
     if (!payment) {
@@ -92,7 +92,7 @@ router.post('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('enrollment', 'course')
+      .populate('course', 'name')
       .populate('cashRegister', 'name');
 
     res.status(201).json(populatedPayment);
@@ -128,7 +128,7 @@ router.put('/:id', async (req, res) => {
     ).populate('institution', 'name')
      .populate('season', 'name startDate endDate')
      .populate('student', 'firstName lastName studentId')
-     .populate('enrollment', 'course')
+     .populate('course', 'name')
      .populate('cashRegister', 'name');
 
     // Apply new payment effects
