@@ -19,6 +19,7 @@ const expenseSchema = new mongoose.Schema({
       'Eğitmen Ödemesi',
       'KDV',
       'Kredi Kartı Komisyonu',
+      'Ödeme İadesi',
       'Çay/Kahve',
       'Yemek',
       'Ulaşım',
