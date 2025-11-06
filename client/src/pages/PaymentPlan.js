@@ -16,6 +16,10 @@ import {
   Divider,
   Checkbox,
   FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -52,6 +56,12 @@ const PaymentPlan = () => {
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [selectedCashRegister, setSelectedCashRegister] = useState('');
+  const [rateDialog, setRateDialog] = useState({
+    open: false,
+    type: '', // 'commission' or 'vat'
+    value: '',
+    installmentCount: null
+  });
 
   useEffect(() => {
     loadData();
@@ -100,14 +110,48 @@ const PaymentPlan = () => {
   };
 
   const getCreditCardCommissionRate = (installmentCount) => {
-    if (!settings || !settings.creditCardRates) return 0;
+    if (!settings || !settings.creditCardRates) return null;
     const rateObj = settings.creditCardRates.find(r => r.installments === installmentCount);
-    return rateObj ? rateObj.rate : 0;
+    return rateObj ? rateObj.rate : null;
+  };
+
+  const getVatRate = () => {
+    if (!settings || settings.vatRate === undefined || settings.vatRate === null) return null;
+    return settings.vatRate;
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleRateDialogSubmit = () => {
+    const rateValue = parseFloat(rateDialog.value);
+    if (isNaN(rateValue) || rateValue < 0 || rateValue > 100) {
+      setError('Lütfen geçerli bir oran girin (0-100 arası)');
+      return;
+    }
+
+    // Update settings temporarily
+    if (rateDialog.type === 'commission') {
+      if (!settings.creditCardRates) {
+        settings.creditCardRates = [];
+      }
+      settings.creditCardRates.push({
+        installments: rateDialog.installmentCount,
+        rate: rateValue
+      });
+    } else if (rateDialog.type === 'vat') {
+      settings.vatRate = rateValue;
+    }
+
+    setSettings({ ...settings });
+    setRateDialog({ open: false, type: '', value: '', installmentCount: null });
+
+    // Trigger form submit again
+    setTimeout(() => {
+      document.querySelector('form').requestSubmit();
+    }, 100);
   };
 
   const handleSubmit = async (e) => {
@@ -140,6 +184,35 @@ const PaymentPlan = () => {
       }
 
       let subtotal = totalAmount - discountAmount;
+
+      // Check for commission rate if credit card
+      if (formData.paymentType === 'creditCard') {
+        const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
+        if (commissionRate === null) {
+          setRateDialog({
+            open: true,
+            type: 'commission',
+            value: '',
+            installmentCount: parseInt(formData.installmentCount)
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Check for VAT rate if invoiced
+      if (formData.isInvoiced) {
+        const vatRate = getVatRate();
+        if (vatRate === null) {
+          setRateDialog({
+            open: true,
+            type: 'vat',
+            value: ''
+          });
+          setLoading(false);
+          return;
+        }
+      }
 
       // Calculate credit card commission
       let creditCardCommission = { rate: 0, amount: 0 };
@@ -596,6 +669,40 @@ const PaymentPlan = () => {
           </Grid>
         </form>
       </Paper>
+
+      {/* Rate Dialog */}
+      <Dialog open={rateDialog.open} onClose={() => setRateDialog({ ...rateDialog, open: false })}>
+        <DialogTitle>
+          {rateDialog.type === 'commission'
+            ? `${rateDialog.installmentCount} Taksit Komisyon Oranı Tanımlı Değil`
+            : 'KDV Oranı Tanımlı Değil'}
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {rateDialog.type === 'commission'
+              ? `${rateDialog.installmentCount} taksit için kredi kartı komisyon oranı ayarlarda tanımlanmamış. Lütfen bu ödeme için kullanılacak oranı girin.`
+              : 'KDV oranı ayarlarda tanımlanmamış. Lütfen bu ödeme için kullanılacak KDV oranını girin.'}
+          </Alert>
+          <TextField
+            autoFocus
+            fullWidth
+            label={rateDialog.type === 'commission' ? 'Komisyon Oranı (%)' : 'KDV Oranı (%)'}
+            type="number"
+            value={rateDialog.value}
+            onChange={(e) => setRateDialog({ ...rateDialog, value: e.target.value })}
+            inputProps={{ min: 0, max: 100, step: 0.1 }}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRateDialog({ ...rateDialog, open: false })}>
+            İptal
+          </Button>
+          <Button onClick={handleRateDialogSubmit} variant="contained">
+            Devam Et
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

@@ -35,6 +35,7 @@ import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import PaymentDialog from '../components/Payment/PaymentDialog';
 
 const PaymentPlanDetail = () => {
   const { id } = useParams();
@@ -59,13 +60,13 @@ const PaymentPlanDetail = () => {
     isInvoiced: false,
     notes: ''
   });
-  const [settings, setSettings] = useState({
-    vat: 10
-  });
+  const [settings, setSettings] = useState(null);
+  const [cashRegisters, setCashRegisters] = useState([]);
 
   useEffect(() => {
     loadPaymentPlan();
     loadSettings();
+    loadCashRegisters();
   }, [id]);
 
   const loadPaymentPlan = async () => {
@@ -89,14 +90,26 @@ const PaymentPlanDetail = () => {
         params: { institutionId }
       });
 
-      if (response.data) {
-        const vatSetting = response.data.find(s => s.key === 'vat');
-        setSettings({
-          vat: vatSetting ? parseFloat(vatSetting.value) : 10
-        });
+      if (response.data && response.data.length > 0) {
+        setSettings(response.data[0]);
       }
     } catch (error) {
       console.error('Settings load error:', error);
+    }
+  };
+
+  const loadCashRegisters = async () => {
+    try {
+      const institutionId = paymentPlan?.institution?._id || paymentPlan?.institution;
+      if (!institutionId) return;
+
+      const response = await api.get('/cash-registers', {
+        params: { institution: institutionId }
+      });
+
+      setCashRegisters(response.data);
+    } catch (error) {
+      console.error('Cash registers load error:', error);
     }
   };
 
@@ -121,54 +134,27 @@ const PaymentPlanDetail = () => {
     }
   };
 
-  const handlePayment = async () => {
+  const handlePayInstallment = async (data) => {
     try {
-      const installment = paymentDialog.installment;
-      let paymentAmount = parseFloat(paymentDialog.amount);
-      const isInvoiced = paymentDialog.isInvoiced;
-
-      // Get student ID properly
-      const studentId = paymentPlan.student?._id || paymentPlan.student;
-      const studentName = paymentPlan.student?.firstName && paymentPlan.student?.lastName
-        ? `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}`
-        : 'Öğrenci';
-      const courseId = paymentPlan.course?._id || paymentPlan.course;
-      const courseName = paymentPlan.course?.name || 'Ders';
-      const institutionId = paymentPlan.institution?._id || paymentPlan.institution;
-      const seasonId = paymentPlan.season?._id || paymentPlan.season;
-
-      // Get cash registers to get default one
-      const cashRegResponse = await api.get('/cash-registers', {
-        params: { institution: institutionId }
+      await api.post(`/payment-plans/${id}/pay-installment`, {
+        ...data,
+        createdBy: user?.username
       });
-      const defaultCashRegister = cashRegResponse.data[0];
 
-      if (!defaultCashRegister) {
-        setError('Kasa bulunamadı. Lütfen önce bir kasa oluşturun.');
-        return;
-      }
+      setSuccess(`${data.installmentNumber}. taksit başarıyla ödendi`);
+      setPaymentDialog({ open: false, installment: null });
+      loadPaymentPlan();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Ödeme kaydedilirken hata oluştu');
+    }
+  };
 
-      // Calculate KDV if invoiced
-      let vatAmount = 0;
-      if (isInvoiced) {
-        vatAmount = (paymentAmount * settings.vat) / 100;
-      }
-
-      // Calculate commission if credit card
-      let commissionAmount = 0;
-      if (paymentPlan.paymentType === 'creditCard' && paymentPlan.creditCardCommission) {
-        commissionAmount = (paymentAmount * paymentPlan.creditCardCommission.rate) / 100;
-      }
-
-      // Create payment record
-      await api.post('/payments', {
-        student: studentId,
-        course: courseId,
-        amount: paymentAmount,
-        paymentDate: new Date(),
-        paymentType: paymentPlan.paymentType === 'creditCard' ? 'creditCard' : 'cash',
-        cashRegister: defaultCashRegister._id,
-        notes: `${courseName} - ${installment.installmentNumber}. Taksit`,
+  const handleOpenPaymentDialog = (installment) => {
+    setPaymentDialog({
+      open: true,
+      installment: installment
+    });
+  };
         institution: institutionId,
         season: seasonId,
         createdBy: user?.username || 'System'
@@ -477,12 +463,7 @@ const PaymentPlanDetail = () => {
                         <IconButton
                           size="small"
                           color="primary"
-                          onClick={() => setPaymentDialog({
-                            open: true,
-                            installment,
-                            amount: remaining.toFixed(2),
-                            isInvoiced: paymentPlan.isInvoiced || false
-                          })}
+                          onClick={() => handleOpenPaymentDialog(installment)}
                           title="Ödeme Al"
                         >
                           <Payment />
@@ -646,6 +627,17 @@ const PaymentPlanDetail = () => {
           <Button onClick={handleEditPlan} variant="contained">Kaydet</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Payment Dialog */}
+      <PaymentDialog
+        open={paymentDialog.open}
+        onClose={() => setPaymentDialog({ open: false, installment: null })}
+        installment={paymentDialog.installment}
+        paymentPlan={paymentPlan}
+        cashRegisters={cashRegisters}
+        settings={settings}
+        onSubmit={handlePayInstallment}
+      />
 
       {/* Delete Confirmation */}
       <ConfirmDialog
