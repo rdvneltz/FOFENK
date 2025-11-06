@@ -18,9 +18,25 @@ router.get('/', async (req, res) => {
     const courses = await Course.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
+      .populate('instructor', 'firstName lastName')
       .sort({ name: 1 });
 
-    res.json(courses);
+    // Add enrollment count for each course
+    const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+    const coursesWithEnrollment = await Promise.all(
+      courses.map(async (course) => {
+        const enrollmentCount = await StudentCourseEnrollment.countDocuments({
+          course: course._id,
+          isActive: true
+        });
+        return {
+          ...course.toObject(),
+          enrollmentCount
+        };
+      })
+    );
+
+    res.json(coursesWithEnrollment);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

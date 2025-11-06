@@ -45,8 +45,8 @@ const StudentDetail = () => {
       setLoading(true);
       const [studentRes, coursesRes, paymentsRes] = await Promise.all([
         api.get(`/students/${id}`),
-        api.get(`/enrollments?student=${id}`),
-        api.get(`/payments?student=${id}`),
+        api.get(`/enrollments`, { params: { studentId: id } }),
+        api.get(`/payments`, { params: { studentId: id } }),
       ]);
       setStudent(studentRes.data);
       setCourses(coursesRes.data);
