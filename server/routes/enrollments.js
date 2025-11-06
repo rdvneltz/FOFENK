@@ -19,7 +19,6 @@ router.get('/', async (req, res) => {
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
       .populate('course', 'name')
-      .populate('paymentPlan', 'name totalAmount')
       .sort({ enrollmentDate: -1 });
 
     res.json(enrollments);
@@ -35,8 +34,7 @@ router.get('/:id', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId email phone')
-      .populate('course', 'name')
-      .populate('paymentPlan', 'name totalAmount installmentCount');
+      .populate('course', 'name');
 
     if (!enrollment) {
       return res.status(404).json({ message: 'Kayıt bulunamadı' });
@@ -68,8 +66,7 @@ router.post('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('course', 'name')
-      .populate('paymentPlan', 'name totalAmount');
+      .populate('course', 'name');
 
     res.status(201).json(populatedEnrollment);
   } catch (error) {
@@ -87,8 +84,7 @@ router.put('/:id', async (req, res) => {
     ).populate('institution', 'name')
      .populate('season', 'name startDate endDate')
      .populate('student', 'firstName lastName studentId')
-     .populate('course', 'name')
-     .populate('paymentPlan', 'name totalAmount');
+     .populate('course', 'name');
 
     if (!enrollment) {
       return res.status(404).json({ message: 'Kayıt bulunamadı' });
