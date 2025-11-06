@@ -86,18 +86,35 @@ const PaymentPlanDetail = () => {
       const installment = paymentDialog.installment;
       const paymentAmount = parseFloat(paymentDialog.amount);
 
+      // Get student ID properly
+      const studentId = paymentPlan.student?._id || paymentPlan.student;
+      const courseId = paymentPlan.course?._id || paymentPlan.course;
+      const institutionId = paymentPlan.institution?._id || paymentPlan.institution;
+      const seasonId = paymentPlan.season?._id || paymentPlan.season;
+
+      // Get cash registers to get default one
+      const cashRegResponse = await api.get('/cash-registers', {
+        params: { institution: institutionId }
+      });
+      const defaultCashRegister = cashRegResponse.data[0];
+
+      if (!defaultCashRegister) {
+        setError('Kasa bulunamadı. Lütfen önce bir kasa oluşturun.');
+        return;
+      }
+
       // Create payment record
       await api.post('/payments', {
-        student: paymentPlan.student._id,
-        enrollment: paymentPlan.enrollment,
-        course: paymentPlan.course._id,
+        student: studentId,
+        course: courseId,
         amount: paymentAmount,
         paymentDate: new Date(),
-        paymentMethod: paymentPlan.paymentType === 'creditCard' ? 'creditCard' : 'cash',
-        description: `${paymentPlan.course.name} - ${installment.installmentNumber}. Taksit`,
-        institution: paymentPlan.institution._id,
-        season: paymentPlan.season._id,
-        createdBy: user?.username
+        paymentType: paymentPlan.paymentType === 'creditCard' ? 'creditCard' : 'cash',
+        cashRegister: defaultCashRegister._id,
+        notes: `${paymentPlan.course?.name || 'Ders'} - ${installment.installmentNumber}. Taksit`,
+        institution: institutionId,
+        season: seasonId,
+        createdBy: user?.username || 'System'
       });
 
       // Update installment
@@ -156,7 +173,7 @@ const PaymentPlanDetail = () => {
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Button
           startIcon={<ArrowBack />}
-          onClick={() => navigate(`/students/${paymentPlan.student._id}`)}
+          onClick={() => navigate(`/students/${paymentPlan.student?._id || paymentPlan.student}`)}
         >
           Geri
         </Button>
