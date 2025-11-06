@@ -25,7 +25,9 @@ import {
   Switch,
   FormControlLabel,
   FormGroup,
-  Alert
+  Alert,
+  Checkbox,
+  ListItemText
 } from '@mui/material';
 import { Add, Edit, Delete, Visibility } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
@@ -36,6 +38,7 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 const Users = () => {
   const { institution, user: currentUser } = useApp();
   const [users, setUsers] = useState([]);
+  const [institutions, setInstitutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [openActivitiesDialog, setOpenActivitiesDialog] = useState(false);
@@ -51,6 +54,7 @@ const Users = () => {
     phone: '',
     password: '',
     role: 'staff',
+    institutions: [],
     permissions: {
       canManageStudents: true,
       canManageCourses: true,
@@ -67,6 +71,7 @@ const Users = () => {
   useEffect(() => {
     if (institution) {
       loadUsers();
+      loadInstitutions();
     }
   }, [institution]);
 
@@ -81,6 +86,15 @@ const Users = () => {
       showAlert('Kullanıcılar yüklenirken hata oluştu', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadInstitutions = async () => {
+    try {
+      const response = await api.get('/institutions');
+      setInstitutions(response.data);
+    } catch (error) {
+      console.error('Error loading institutions:', error);
     }
   };
 
@@ -99,6 +113,7 @@ const Users = () => {
         phone: user.phone || '',
         password: '',
         role: user.role,
+        institutions: user.institutions || [],
         permissions: user.permissions,
         avatarColor: user.avatarColor
       });
@@ -111,6 +126,7 @@ const Users = () => {
         phone: '',
         password: '',
         role: 'staff',
+        institutions: [institution._id],
         permissions: {
           canManageStudents: true,
           canManageCourses: true,
@@ -134,29 +150,38 @@ const Users = () => {
 
   const handleSubmit = async () => {
     try {
-      const data = {
-        ...formData,
+      setLoading(true);
+      const userData = {
+        username: formData.username,
+        fullName: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+        role: formData.role,
+        institutions: formData.role === 'superadmin' ? [] : formData.institutions,
+        permissions: formData.permissions,
+        avatarColor: formData.avatarColor,
         institution: institution._id,
         [selectedUser ? 'updatedBy' : 'createdBy']: currentUser
       };
 
-      // Düzenlemede şifre boşsa gönderme
-      if (selectedUser && !formData.password) {
-        delete data.password;
+      if (formData.password) {
+        userData.password = formData.password;
       }
 
       if (selectedUser) {
-        await api.put(`/users/${selectedUser._id}`, data);
+        await api.put(`/users/${selectedUser._id}`, userData);
         showAlert('Kullanıcı güncellendi');
       } else {
-        await api.post('/users', data);
+        await api.post('/users', userData);
         showAlert('Kullanıcı oluşturuldu');
       }
 
-      loadUsers();
+      await loadUsers();
       handleCloseDialog();
     } catch (error) {
       showAlert(error.response?.data?.message || 'Bir hata oluştu', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -349,6 +374,43 @@ const Users = () => {
                 <MenuItem value="staff">Personel</MenuItem>
               </Select>
             </FormControl>
+
+            {/* Institutions Selection - Only for non-superadmin */}
+            {formData.role !== 'superadmin' && (
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="institutions-label">Erişebileceği Kurumlar</InputLabel>
+                <Select
+                  labelId="institutions-label"
+                  multiple
+                  value={formData.institutions}
+                  onChange={(e) => setFormData({ ...formData, institutions: e.target.value })}
+                  label="Erişebileceği Kurumlar"
+                  renderValue={(selected) => (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                      {selected.map((instId) => {
+                        const inst = institutions.find(i => i._id === instId);
+                        return (
+                          <Chip key={instId} label={inst?.name || instId} size="small" />
+                        );
+                      })}
+                    </Box>
+                  )}
+                >
+                  {institutions.map((inst) => (
+                    <MenuItem key={inst._id} value={inst._id}>
+                      <Checkbox checked={formData.institutions.includes(inst._id)} />
+                      <ListItemText primary={inst.name} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {formData.role === 'superadmin' && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                Superadmin tüm kurumlara erişebilir, kurum seçimi gerekmez.
+              </Alert>
+            )}
 
             <Typography variant="subtitle2" sx={{ mt: 2 }}>Yetkiler:</Typography>
             <FormGroup>
