@@ -188,6 +188,7 @@ const StudentDetail = () => {
           <Paper>
             <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
               <Tab label="Kurs Kayıtları" />
+              <Tab label="Ödeme Planları" />
               <Tab label="Ödeme Geçmişi" />
               <Tab label="Yoklama Geçmişi" />
             </Tabs>
@@ -227,8 +228,62 @@ const StudentDetail = () => {
                 </Box>
               )}
 
-              {/* Payments Tab */}
+              {/* Payment Plans Tab */}
               {tabValue === 1 && (
+                <Box>
+                  {paymentPlans.length === 0 ? (
+                    <Typography color="text.secondary" align="center">
+                      Henüz ödeme planı bulunmuyor
+                    </Typography>
+                  ) : (
+                    <List>
+                      {paymentPlans.map((plan) => (
+                        <React.Fragment key={plan._id}>
+                          <ListItem alignItems="flex-start">
+                            <ListItemText
+                              primary={
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <Typography variant="h6">
+                                    {plan.course?.name || 'Ders'}
+                                  </Typography>
+                                  <Typography variant="h6" color="primary">
+                                    ₺{plan.discountedAmount?.toLocaleString('tr-TR') || 0}
+                                  </Typography>
+                                </Box>
+                              }
+                              secondary={
+                                <Box sx={{ mt: 1 }}>
+                                  <Typography variant="body2" color="text.secondary">
+                                    Ödeme Tipi: {
+                                      plan.paymentType === 'cashFull' ? 'Nakit Peşin' :
+                                      plan.paymentType === 'cashInstallment' ? 'Nakit Taksitli' :
+                                      'Kredi Kartı'
+                                    }
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary">
+                                    Taksit: {plan.installments?.length || 0} /
+                                    Ödenen: {plan.installments?.filter(i => i.isPaid).length || 0}
+                                  </Typography>
+                                  <Typography variant="body2" color={plan.remainingAmount > 0 ? 'error' : 'success.main'}>
+                                    Kalan: ₺{plan.remainingAmount?.toLocaleString('tr-TR') || 0}
+                                  </Typography>
+                                  {plan.isInvoiced && (
+                                    <Chip label="Faturalı" size="small" color="info" sx={{ mt: 0.5 }} />
+                                  )}
+                                </Box>
+                              }
+                            />
+                          </ListItem>
+                          <Divider />
+                        </React.Fragment>
+                      ))}
+                    </List>
+                  )}
+                </Box>
+              )}
+
+              {/* Payments Tab */}
+              {tabValue === 2 && (
                 <Box>
                   {payments.length === 0 ? (
                     <Typography color="text.secondary" align="center">
@@ -266,7 +321,7 @@ const StudentDetail = () => {
               )}
 
               {/* Attendance Tab */}
-              {tabValue === 2 && (
+              {tabValue === 3 && (
                 <Box>
                   <Typography color="text.secondary" align="center">
                     Yoklama geçmişi yakında eklenecek
