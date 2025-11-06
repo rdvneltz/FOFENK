@@ -183,6 +183,20 @@ router.post('/login', async (req, res) => {
       institution: user.institution
     });
 
+    // Get user's accessible institutions
+    let institutions = [];
+    if (user.role === 'superadmin') {
+      // Superadmin can access all institutions
+      institutions = await Institution.find({}).select('_id name');
+    } else {
+      // Get institutions from user's institutions array
+      if (user.institutions && user.institutions.length > 0) {
+        institutions = await Institution.find({
+          _id: { $in: user.institutions }
+        }).select('_id name');
+      }
+    }
+
     // Return user without password
     const userResponse = {
       _id: user._id,
@@ -200,7 +214,8 @@ router.post('/login', async (req, res) => {
     res.json({
       message: 'Login successful',
       token,
-      user: userResponse
+      user: userResponse,
+      institutions: institutions
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
