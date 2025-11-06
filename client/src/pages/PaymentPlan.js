@@ -16,6 +16,10 @@ import {
   Divider,
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { tr } from 'date-fns/locale';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -35,6 +39,7 @@ const PaymentPlan = () => {
     discountValue: 0,
     paymentType: 'cashFull',
     installmentCount: 1,
+    firstInstallmentDate: new Date(),
     isInvoiced: false,
     description: '',
   });
@@ -139,10 +144,10 @@ const PaymentPlan = () => {
 
       // Create installment array
       const installments = [];
-      const today = new Date();
+      const startDate = new Date(formData.firstInstallmentDate);
       for (let i = 0; i < installmentCount; i++) {
-        const dueDate = new Date(today);
-        dueDate.setMonth(today.getMonth() + i);
+        const dueDate = new Date(startDate);
+        dueDate.setMonth(startDate.getMonth() + i);
         installments.push({
           installmentNumber: i + 1,
           amount: installmentAmount,
@@ -368,6 +373,19 @@ const PaymentPlan = () => {
                 </Select>
               </FormControl>
             </Grid>
+
+            {formData.paymentType !== 'cashFull' && (
+              <Grid item xs={12} sm={6}>
+                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                  <DatePicker
+                    label="İlk Taksit Tarihi"
+                    value={formData.firstInstallmentDate}
+                    onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
+                    renderInput={(params) => <TextField {...params} fullWidth />}
+                  />
+                </LocalizationProvider>
+              </Grid>
+            )}
 
             <Grid item xs={12}>
               <TextField

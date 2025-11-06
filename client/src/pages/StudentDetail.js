@@ -239,7 +239,11 @@ const StudentDetail = () => {
                     <List>
                       {paymentPlans.map((plan) => (
                         <React.Fragment key={plan._id}>
-                          <ListItem alignItems="flex-start">
+                          <ListItem
+                            alignItems="flex-start"
+                            button
+                            onClick={() => navigate(`/payment-plan-detail/${plan._id}`)}
+                          >
                             <ListItemText
                               primary={
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
