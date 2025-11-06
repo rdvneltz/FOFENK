@@ -22,6 +22,9 @@ router.get('/dashboard', async (req, res) => {
     // Total students
     const totalStudents = await Student.countDocuments(filter);
 
+    // Active students (status: 'active')
+    const activeStudents = await Student.countDocuments({ ...filter, status: 'active' });
+
     // Date filter for payments and expenses
     const dateFilter = { ...filter };
     if (startDate && endDate) {
@@ -78,6 +81,7 @@ router.get('/dashboard', async (req, res) => {
 
     res.json({
       totalStudents,
+      activeStudents,
       totalIncome: totalIncome.length > 0 ? totalIncome[0].total : 0,
       totalExpenses: totalExpenses.length > 0 ? totalExpenses[0].total : 0,
       netIncome: (totalIncome.length > 0 ? totalIncome[0].total : 0) - (totalExpenses.length > 0 ? totalExpenses[0].total : 0),

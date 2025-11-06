@@ -67,8 +67,8 @@ const Students = () => {
       setLoading(true);
       const response = await api.get('/students', {
         params: {
-          institution: institution._id,
-          season: season._id,
+          institutionId: institution._id,
+          seasonId: season._id,
         },
       });
       setStudents(response.data);
