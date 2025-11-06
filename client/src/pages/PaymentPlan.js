@@ -14,6 +14,12 @@ import {
   Alert,
   Box,
   Divider,
+  Checkbox,
+  FormControlLabel,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -27,7 +33,7 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 const PaymentPlan = () => {
   const { studentId } = useParams();
   const navigate = useNavigate();
-  const { institution, season } = useApp();
+  const { institution, season, user } = useApp();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [student, setStudent] = useState(null);
@@ -35,23 +41,27 @@ const PaymentPlan = () => {
   const [formData, setFormData] = useState({
     enrollmentId: '',
     totalAmount: '',
-    discountType: 'none', // 'none', 'percentage', 'fixed'
+    discountType: 'none',
     discountValue: 0,
     paymentType: 'cashFull',
     installmentCount: 1,
     firstInstallmentDate: new Date(),
-    installmentFrequency: 'monthly', // 'monthly', 'weekly', 'custom'
+    installmentFrequency: 'monthly',
     customFrequencyDays: 30,
     useCustomAmounts: false,
     customInstallments: [],
     isInvoiced: false,
     description: '',
   });
-  const [settings, setSettings] = useState({
-    vat: 10,
-    creditCardCommissionRates: {}
-  });
+  const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [selectedCashRegister, setSelectedCashRegister] = useState('');
+  const [rateDialog, setRateDialog] = useState({
+    open: false,
+    type: '', // 'commission' or 'vat'
+    value: '',
+    installmentCount: null
+  });
 
   useEffect(() => {
     loadData();
@@ -72,18 +82,19 @@ const PaymentPlan = () => {
           params: { institutionId: institution._id },
         }),
       ]);
+
       setStudent(studentRes.data);
       setEnrollments(enrollmentsRes.data);
       setCashRegisters(cashRes.data);
 
-      // Load settings (VAT and commission rates)
-      if (settingsRes.data) {
-        const vatSetting = settingsRes.data.find(s => s.key === 'vat');
-        const commissionSetting = settingsRes.data.find(s => s.key === 'creditCardCommissionRates');
-        setSettings({
-          vat: vatSetting ? parseFloat(vatSetting.value) : 10,
-          creditCardCommissionRates: commissionSetting ? JSON.parse(commissionSetting.value) : {}
-        });
+      // Set first cash register as default
+      if (cashRes.data.length > 0) {
+        setSelectedCashRegister(cashRes.data[0]._id);
+      }
+
+      // Load settings
+      if (settingsRes.data && settingsRes.data.length > 0) {
+        setSettings(settingsRes.data[0]);
       }
 
       // Set first enrollment as default
@@ -92,14 +103,55 @@ const PaymentPlan = () => {
       }
     } catch (error) {
       setError('Veri yüklenirken bir hata oluştu');
+      console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
+  const getCreditCardCommissionRate = (installmentCount) => {
+    if (!settings || !settings.creditCardRates) return null;
+    const rateObj = settings.creditCardRates.find(r => r.installments === installmentCount);
+    return rateObj ? rateObj.rate : null;
+  };
+
+  const getVatRate = () => {
+    if (!settings || settings.vatRate === undefined || settings.vatRate === null) return null;
+    return settings.vatRate;
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleRateDialogSubmit = () => {
+    const rateValue = parseFloat(rateDialog.value);
+    if (isNaN(rateValue) || rateValue < 0 || rateValue > 100) {
+      setError('Lütfen geçerli bir oran girin (0-100 arası)');
+      return;
+    }
+
+    // Update settings temporarily
+    if (rateDialog.type === 'commission') {
+      if (!settings.creditCardRates) {
+        settings.creditCardRates = [];
+      }
+      settings.creditCardRates.push({
+        installments: rateDialog.installmentCount,
+        rate: rateValue
+      });
+    } else if (rateDialog.type === 'vat') {
+      settings.vatRate = rateValue;
+    }
+
+    setSettings({ ...settings });
+    setRateDialog({ open: false, type: '', value: '', installmentCount: null });
+
+    // Trigger form submit again
+    setTimeout(() => {
+      document.querySelector('form').requestSubmit();
+    }, 100);
   };
 
   const handleSubmit = async (e) => {
@@ -108,6 +160,12 @@ const PaymentPlan = () => {
     setLoading(true);
 
     try {
+      if (!selectedCashRegister && formData.paymentType === 'creditCard') {
+        setError('Lütfen bir kasa seçin');
+        setLoading(false);
+        return;
+      }
+
       const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
       if (!selectedEnrollment) {
         setError('Lütfen bir ders seçin');
@@ -125,25 +183,57 @@ const PaymentPlan = () => {
         discountAmount = parseFloat(formData.discountValue) || 0;
       }
 
-      let discountedAmount = totalAmount - discountAmount;
+      let subtotal = totalAmount - discountAmount;
 
-      // Add VAT if invoiced
-      let vatAmount = 0;
+      // Check for commission rate if credit card
+      if (formData.paymentType === 'creditCard') {
+        const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
+        if (commissionRate === null) {
+          setRateDialog({
+            open: true,
+            type: 'commission',
+            value: '',
+            installmentCount: parseInt(formData.installmentCount)
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Check for VAT rate if invoiced
       if (formData.isInvoiced) {
-        vatAmount = (discountedAmount * settings.vat) / 100;
-        discountedAmount += vatAmount;
+        const vatRate = getVatRate();
+        if (vatRate === null) {
+          setRateDialog({
+            open: true,
+            type: 'vat',
+            value: ''
+          });
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Calculate credit card commission
+      let creditCardCommission = { rate: 0, amount: 0 };
+      if (formData.paymentType === 'creditCard') {
+        const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
+        creditCardCommission.rate = commissionRate;
+        creditCardCommission.amount = (subtotal * commissionRate) / 100;
+      }
+
+      // Amount to charge from student (includes commission for credit card)
+      let chargeAmount = subtotal + creditCardCommission.amount;
+
+      // Calculate VAT on the charge amount
+      let vat = { rate: 0, amount: 0 };
+      if (formData.isInvoiced && settings) {
+        vat.rate = settings.vatRate || 10;
+        vat.amount = (chargeAmount * vat.rate) / 100;
       }
 
       const installmentCount = parseInt(formData.installmentCount);
 
-      // Add credit card commission
-      let creditCardCommission = { rate: 0, amount: 0 };
-      if (formData.paymentType === 'creditCard') {
-        const commissionRate = settings.creditCardCommissionRates[installmentCount] || 0;
-        creditCardCommission.rate = commissionRate;
-        creditCardCommission.amount = (discountedAmount * commissionRate) / 100;
-        discountedAmount += creditCardCommission.amount;
-      }
       // Create installment array
       const installments = [];
       const startDate = new Date(formData.firstInstallmentDate);
@@ -153,13 +243,11 @@ const PaymentPlan = () => {
         for (let i = 0; i < formData.customInstallments.length; i++) {
           const dueDate = new Date(startDate);
 
-          // Calculate due date based on frequency
           if (formData.installmentFrequency === 'weekly') {
             dueDate.setDate(startDate.getDate() + (i * 7));
           } else if (formData.installmentFrequency === 'custom') {
             dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
           } else {
-            // Monthly
             dueDate.setMonth(startDate.getMonth() + i);
           }
 
@@ -168,22 +256,21 @@ const PaymentPlan = () => {
             amount: parseFloat(formData.customInstallments[i].amount),
             dueDate: dueDate,
             isPaid: false,
-            paidAmount: 0
+            paidAmount: 0,
+            isInvoiced: formData.isInvoiced
           });
         }
       } else {
         // Equal installments
-        const installmentAmount = discountedAmount / installmentCount;
+        const installmentAmount = chargeAmount / installmentCount;
         for (let i = 0; i < installmentCount; i++) {
           const dueDate = new Date(startDate);
 
-          // Calculate due date based on frequency
           if (formData.installmentFrequency === 'weekly') {
             dueDate.setDate(startDate.getDate() + (i * 7));
           } else if (formData.installmentFrequency === 'custom') {
             dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
           } else {
-            // Monthly
             dueDate.setMonth(startDate.getMonth() + i);
           }
 
@@ -192,7 +279,8 @@ const PaymentPlan = () => {
             amount: installmentAmount,
             dueDate: dueDate,
             isPaid: false,
-            paidAmount: 0
+            paidAmount: 0,
+            isInvoiced: formData.isInvoiced
           });
         }
       }
@@ -203,22 +291,26 @@ const PaymentPlan = () => {
         course: selectedEnrollment.course._id,
         paymentType: formData.paymentType,
         totalAmount: totalAmount,
-        discountedAmount: discountedAmount,
+        discountedAmount: chargeAmount,
         installments: installments,
         creditCardInstallments: formData.paymentType === 'creditCard' ? installmentCount : undefined,
         creditCardCommission: formData.paymentType === 'creditCard' ? creditCardCommission : undefined,
-        vat: formData.isInvoiced ? { rate: settings.vat, amount: vatAmount } : undefined,
+        vat: formData.isInvoiced ? vat : undefined,
         isInvoiced: formData.isInvoiced,
         institution: institution._id,
         season: season._id,
         notes: formData.description,
-        createdBy: 'user'
+        createdBy: user?.username || 'user',
+        // For credit card payments, auto-create payment
+        autoCreatePayment: formData.paymentType === 'creditCard',
+        cashRegister: formData.paymentType === 'creditCard' ? selectedCashRegister : undefined
       };
 
       await api.post('/payment-plans', paymentPlanData);
       navigate(`/students/${studentId}`);
     } catch (error) {
       setError(error.response?.data?.message || 'Bir hata oluştu');
+      console.error(error);
     } finally {
       setLoading(false);
     }
@@ -240,20 +332,25 @@ const PaymentPlan = () => {
 
   let subtotal = totalAmount - discountAmount;
 
-  // Calculate VAT
-  let vatAmount = 0;
-  if (formData.isInvoiced) {
-    vatAmount = (subtotal * settings.vat) / 100;
-  }
-
   // Calculate credit card commission
+  let commissionRate = 0;
   let commissionAmount = 0;
   if (formData.paymentType === 'creditCard' && formData.installmentCount) {
-    const commissionRate = settings.creditCardCommissionRates[formData.installmentCount] || 0;
-    commissionAmount = ((subtotal + vatAmount) * commissionRate) / 100;
+    commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
+    commissionAmount = (subtotal * commissionRate) / 100;
   }
 
-  const finalAmount = subtotal + vatAmount + commissionAmount;
+  // Amount to charge from student
+  const chargeAmount = subtotal + commissionAmount;
+
+  // Calculate VAT on charge amount
+  let vatRate = settings?.vatRate || 10;
+  let vatAmount = 0;
+  if (formData.isInvoiced) {
+    vatAmount = (chargeAmount * vatRate) / 100;
+  }
+
+  const finalAmount = chargeAmount;
   const installmentAmount = formData.installmentCount
     ? (finalAmount / parseInt(formData.installmentCount)).toFixed(2)
     : 0;
@@ -379,6 +476,37 @@ const PaymentPlan = () => {
               </FormControl>
             </Grid>
 
+            <Grid item xs={12} sm={6}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={formData.isInvoiced}
+                    onChange={(e) => setFormData({ ...formData, isInvoiced: e.target.checked })}
+                  />
+                }
+                label={`Faturalı (+%${vatRate} KDV)`}
+              />
+            </Grid>
+
+            {formData.paymentType === 'creditCard' && (
+              <Grid item xs={12}>
+                <FormControl fullWidth required>
+                  <InputLabel>Kasa</InputLabel>
+                  <Select
+                    value={selectedCashRegister}
+                    onChange={(e) => setSelectedCashRegister(e.target.value)}
+                    label="Kasa"
+                  >
+                    {cashRegisters.map((register) => (
+                      <MenuItem key={register._id} value={register._id}>
+                        {register.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+
             {formData.paymentType !== 'cashFull' && (
               <>
                 <Grid item xs={12} sm={6}>
@@ -402,7 +530,7 @@ const PaymentPlan = () => {
                       }}
                       label="Taksit Sayısı"
                     >
-                      {[1, 2, 3, 4, 5, 6, 9, 12].map((num) => (
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
                         <MenuItem key={num} value={num}>
                           {num} Taksit
                         </MenuItem>
@@ -440,26 +568,7 @@ const PaymentPlan = () => {
                     />
                   </Grid>
                 )}
-              </>
-            )}
 
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Fatura</InputLabel>
-                <Select
-                  name="isInvoiced"
-                  value={formData.isInvoiced}
-                  onChange={(e) => setFormData({ ...formData, isInvoiced: e.target.value === 'true' })}
-                  label="Fatura"
-                >
-                  <MenuItem value={false}>Faturasız</MenuItem>
-                  <MenuItem value={true}>Faturalı (+%{settings.vat} KDV)</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {formData.paymentType !== 'cashFull' && (
-              <>
                 <Grid item xs={12} sm={6}>
                   <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
                     <DatePicker
@@ -470,82 +579,6 @@ const PaymentPlan = () => {
                     />
                   </LocalizationProvider>
                 </Grid>
-
-                <Grid item xs={12}>
-                  <FormControl>
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <input
-                        type="checkbox"
-                        checked={formData.useCustomAmounts}
-                        onChange={(e) => setFormData({ ...formData, useCustomAmounts: e.target.checked })}
-                        style={{ marginRight: '8px' }}
-                      />
-                      <Typography>Taksit tutarlarını özelleştir</Typography>
-                    </Box>
-                  </FormControl>
-                </Grid>
-
-                {formData.useCustomAmounts && formData.customInstallments.length > 0 && (
-                  <Grid item xs={12}>
-                    <Paper sx={{ p: 2 }}>
-                      <Typography variant="h6" gutterBottom>
-                        Taksit Tutarları
-                      </Typography>
-                      <Grid container spacing={2}>
-                        {formData.customInstallments.map((inst, index) => (
-                          <Grid item xs={12} sm={6} md={4} key={index}>
-                            <TextField
-                              fullWidth
-                              label={`${inst.number}. Taksit`}
-                              type="number"
-                              value={inst.amount}
-                              onChange={(e) => {
-                                const newValue = e.target.value;
-                                const newCustomInstallments = [...formData.customInstallments];
-
-                                // Mark this installment as manually edited
-                                newCustomInstallments[index] = {
-                                  ...newCustomInstallments[index],
-                                  amount: newValue,
-                                  isCustom: true
-                                };
-
-                                // Calculate total of custom installments
-                                const customTotal = newCustomInstallments
-                                  .filter(i => i.isCustom)
-                                  .reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
-
-                                // Remaining amount to distribute
-                                const remainingAmount = finalAmount - customTotal;
-
-                                // Count non-custom installments
-                                const nonCustomCount = newCustomInstallments.filter(i => !i.isCustom).length;
-
-                                if (nonCustomCount > 0 && remainingAmount >= 0) {
-                                  const autoAmount = (remainingAmount / nonCustomCount).toFixed(2);
-
-                                  // Update non-custom installments
-                                  newCustomInstallments.forEach((inst, idx) => {
-                                    if (!inst.isCustom) {
-                                      newCustomInstallments[idx].amount = autoAmount;
-                                    }
-                                  });
-                                }
-
-                                setFormData({ ...formData, customInstallments: newCustomInstallments });
-                              }}
-                              inputProps={{ min: 0, step: '0.01' }}
-                              helperText={inst.isCustom ? "Özel tutar" : "Otomatik"}
-                            />
-                          </Grid>
-                        ))}
-                      </Grid>
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                        Toplam: ₺{formData.customInstallments.reduce((sum, inst) => sum + parseFloat(inst.amount || 0), 0).toLocaleString('tr-TR')}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                )}
               </>
             )}
 
@@ -564,12 +597,12 @@ const PaymentPlan = () => {
             {formData.totalAmount && (
               <Grid item xs={12}>
                 <Divider sx={{ my: 2 }} />
-                <Box sx={{ p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
-                  <Typography variant="h6">
-                    Özet
+                <Box sx={{ p: 3, bgcolor: 'info.light', borderRadius: 1 }}>
+                  <Typography variant="h6" gutterBottom>
+                    💰 Ödeme Özeti
                   </Typography>
                   <Typography variant="body1">
-                    Toplam Tutar: ₺{totalAmount.toLocaleString('tr-TR')}
+                    Kurs Ücreti: ₺{totalAmount.toLocaleString('tr-TR')}
                   </Typography>
                   {discountAmount > 0 && (
                     <Typography variant="body1" color="success.main">
@@ -579,20 +612,26 @@ const PaymentPlan = () => {
                   <Typography variant="body1">
                     Ara Toplam: ₺{subtotal.toLocaleString('tr-TR')}
                   </Typography>
-                  {formData.isInvoiced && vatAmount > 0 && (
-                    <Typography variant="body1" color="warning.main">
-                      KDV (%{settings.vat}): +₺{vatAmount.toLocaleString('tr-TR')}
-                    </Typography>
-                  )}
                   {formData.paymentType === 'creditCard' && commissionAmount > 0 && (
                     <Typography variant="body1" color="warning.main">
-                      Kredi Kartı Komisyonu ({settings.creditCardCommissionRates[formData.installmentCount] || 0}%): +₺{commissionAmount.toLocaleString('tr-TR')}
+                      Banka Komisyonu ({formData.installmentCount} taksit - %{commissionRate.toFixed(2)}): +₺{commissionAmount.toLocaleString('tr-TR')}
                     </Typography>
                   )}
                   <Divider sx={{ my: 1 }} />
-                  <Typography variant="h6" fontWeight="bold">
-                    Ödenecek Toplam: ₺{finalAmount.toLocaleString('tr-TR')}
+                  <Typography variant="h6" fontWeight="bold" color="primary">
+                    Öğrenciden Tahsil Edilecek: ₺{chargeAmount.toLocaleString('tr-TR')}
                   </Typography>
+                  {formData.isInvoiced && vatAmount > 0 && (
+                    <>
+                      <Divider sx={{ my: 1 }} />
+                      <Typography variant="body1" color="error.main">
+                        📄 Faturalı (KDV %{vatRate}): +₺{vatAmount.toLocaleString('tr-TR')}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        (₺{chargeAmount.toLocaleString('tr-TR')} üzerinden)
+                      </Typography>
+                    </>
+                  )}
                   {formData.paymentType !== 'cashFull' && formData.installmentCount > 1 && (
                     <>
                       <Divider sx={{ my: 1 }} />
@@ -630,6 +669,40 @@ const PaymentPlan = () => {
           </Grid>
         </form>
       </Paper>
+
+      {/* Rate Dialog */}
+      <Dialog open={rateDialog.open} onClose={() => setRateDialog({ ...rateDialog, open: false })}>
+        <DialogTitle>
+          {rateDialog.type === 'commission'
+            ? `${rateDialog.installmentCount} Taksit Komisyon Oranı Tanımlı Değil`
+            : 'KDV Oranı Tanımlı Değil'}
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {rateDialog.type === 'commission'
+              ? `${rateDialog.installmentCount} taksit için kredi kartı komisyon oranı ayarlarda tanımlanmamış. Lütfen bu ödeme için kullanılacak oranı girin.`
+              : 'KDV oranı ayarlarda tanımlanmamış. Lütfen bu ödeme için kullanılacak KDV oranını girin.'}
+          </Alert>
+          <TextField
+            autoFocus
+            fullWidth
+            label={rateDialog.type === 'commission' ? 'Komisyon Oranı (%)' : 'KDV Oranı (%)'}
+            type="number"
+            value={rateDialog.value}
+            onChange={(e) => setRateDialog({ ...rateDialog, value: e.target.value })}
+            inputProps={{ min: 0, max: 100, step: 0.1 }}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRateDialog({ ...rateDialog, open: false })}>
+            İptal
+          </Button>
+          <Button onClick={handleRateDialogSubmit} variant="contained">
+            Devam Et
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

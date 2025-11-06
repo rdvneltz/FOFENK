@@ -23,19 +23,28 @@ import {
   Phone,
   Email,
   Payment,
+  Undo,
 } from '@mui/icons-material';
+import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import RefundDialog from '../components/Payment/RefundDialog';
 
 const StudentDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, institution } = useApp();
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [courses, setCourses] = useState([]);
   const [payments, setPayments] = useState([]);
   const [paymentPlans, setPaymentPlans] = useState([]);
+  const [cashRegisters, setCashRegisters] = useState([]);
+  const [refundDialog, setRefundDialog] = useState({
+    open: false,
+    payment: null
+  });
 
   useEffect(() => {
     loadStudent();
@@ -44,21 +53,45 @@ const StudentDetail = () => {
   const loadStudent = async () => {
     try {
       setLoading(true);
-      const [studentRes, coursesRes, paymentsRes, paymentPlansRes] = await Promise.all([
+      const [studentRes, coursesRes, paymentsRes, paymentPlansRes, cashRes] = await Promise.all([
         api.get(`/students/${id}`),
         api.get(`/enrollments`, { params: { studentId: id } }),
         api.get(`/payments`, { params: { studentId: id } }),
         api.get(`/payment-plans`, { params: { studentId: id } }),
+        api.get(`/cash-registers`, { params: { institution: institution._id } }),
       ]);
       setStudent(studentRes.data);
       setCourses(coursesRes.data);
       setPayments(paymentsRes.data);
       setPaymentPlans(paymentPlansRes.data);
+      setCashRegisters(cashRes.data);
     } catch (error) {
       console.error('Error loading student:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRefund = async (data) => {
+    try {
+      await api.post(`/payments/${refundDialog.payment._id}/refund`, {
+        ...data,
+        createdBy: user?.username
+      });
+
+      alert('Ödeme başarıyla iade edildi');
+      setRefundDialog({ open: false, payment: null });
+      loadStudent();
+    } catch (error) {
+      alert(error.response?.data?.message || 'İade işlemi sırasında hata oluştu');
+    }
+  };
+
+  const handleOpenRefundDialog = (payment) => {
+    setRefundDialog({
+      open: true,
+      payment: payment
+    });
   };
 
   if (loading) {
@@ -297,7 +330,20 @@ const StudentDetail = () => {
                     <List>
                       {payments.map((payment) => (
                         <React.Fragment key={payment._id}>
-                          <ListItem>
+                          <ListItem
+                            secondaryAction={
+                              !payment.isRefunded && (
+                                <Button
+                                  startIcon={<Undo />}
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleOpenRefundDialog(payment)}
+                                >
+                                  İade Et
+                                </Button>
+                              )
+                            }
+                          >
                             <ListItemText
                               primary={`₺${payment.amount.toLocaleString('tr-TR')}`}
                               secondary={`${new Date(payment.date).toLocaleDateString(
@@ -308,12 +354,13 @@ const StudentDetail = () => {
                                   : payment.paymentMethod === 'creditCard'
                                   ? 'Kredi Kartı'
                                   : 'Havale/EFT'
-                              }`}
+                              }${payment.isRefunded ? ' (İade Edildi)' : ''}`}
                             />
                             <Chip
-                              label={payment.status === 'completed' ? 'Tamamlandı' : 'Bekliyor'}
-                              color={payment.status === 'completed' ? 'success' : 'warning'}
+                              label={payment.isRefunded ? 'İade Edildi' : payment.status === 'completed' ? 'Tamamlandı' : 'Bekliyor'}
+                              color={payment.isRefunded ? 'error' : payment.status === 'completed' ? 'success' : 'warning'}
                               size="small"
+                              sx={{ mr: 1 }}
                             />
                           </ListItem>
                           <Divider />
@@ -336,6 +383,15 @@ const StudentDetail = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Refund Dialog */}
+      <RefundDialog
+        open={refundDialog.open}
+        onClose={() => setRefundDialog({ open: false, payment: null })}
+        payment={refundDialog.payment}
+        cashRegisters={cashRegisters}
+        onSubmit={handleRefund}
+      />
     </Box>
   );
 };

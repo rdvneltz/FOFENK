@@ -32,7 +32,7 @@ const paymentSchema = new mongoose.Schema({
     rate: Number,
     amount: Number
   },
-  // KDV
+  // KDV (sadece kayıt için, gider olarak ayrıca kaydedilir)
   vat: {
     rate: Number,
     amount: Number
@@ -59,6 +59,17 @@ const paymentSchema = new mongoose.Schema({
   // Taksit numarası (eğer bir ödeme planının parçasıysa)
   installmentNumber: Number,
   notes: String,
+  // İade edildi mi
+  isRefunded: {
+    type: Boolean,
+    default: false
+  },
+  refundDate: Date,
+  refundAmount: Number,
+  refundCashRegister: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CashRegister'
+  },
   season: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Season',
