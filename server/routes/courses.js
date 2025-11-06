@@ -18,19 +18,29 @@ router.get('/', async (req, res) => {
     const courses = await Course.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('instructor', 'firstName lastName')
       .sort({ name: 1 });
 
     // Add enrollment count for each course
     const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+    const Instructor = require('../models/Instructor');
+
     const coursesWithEnrollment = await Promise.all(
       courses.map(async (course) => {
         const enrollmentCount = await StudentCourseEnrollment.countDocuments({
           course: course._id,
           isActive: true
         });
+
+        // Manually populate instructor if exists
+        let instructor = null;
+        if (course.instructor) {
+          instructor = await Instructor.findById(course.instructor).select('firstName lastName');
+        }
+
+        const courseObj = course.toObject();
         return {
-          ...course.toObject(),
+          ...courseObj,
+          instructor: instructor || courseObj.instructor,
           enrollmentCount
         };
       })
