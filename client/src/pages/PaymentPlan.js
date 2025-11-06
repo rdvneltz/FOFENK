@@ -500,11 +500,42 @@ const PaymentPlan = () => {
                               type="number"
                               value={inst.amount}
                               onChange={(e) => {
+                                const newValue = e.target.value;
                                 const newCustomInstallments = [...formData.customInstallments];
-                                newCustomInstallments[index].amount = e.target.value;
+
+                                // Mark this installment as manually edited
+                                newCustomInstallments[index] = {
+                                  ...newCustomInstallments[index],
+                                  amount: newValue,
+                                  isCustom: true
+                                };
+
+                                // Calculate total of custom installments
+                                const customTotal = newCustomInstallments
+                                  .filter(i => i.isCustom)
+                                  .reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
+
+                                // Remaining amount to distribute
+                                const remainingAmount = finalAmount - customTotal;
+
+                                // Count non-custom installments
+                                const nonCustomCount = newCustomInstallments.filter(i => !i.isCustom).length;
+
+                                if (nonCustomCount > 0 && remainingAmount >= 0) {
+                                  const autoAmount = (remainingAmount / nonCustomCount).toFixed(2);
+
+                                  // Update non-custom installments
+                                  newCustomInstallments.forEach((inst, idx) => {
+                                    if (!inst.isCustom) {
+                                      newCustomInstallments[idx].amount = autoAmount;
+                                    }
+                                  });
+                                }
+
                                 setFormData({ ...formData, customInstallments: newCustomInstallments });
                               }}
                               inputProps={{ min: 0, step: '0.01' }}
+                              helperText={inst.isCustom ? "Özel tutar" : "Otomatik"}
                             />
                           </Grid>
                         ))}

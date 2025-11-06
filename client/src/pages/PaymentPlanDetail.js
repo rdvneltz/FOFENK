@@ -45,7 +45,11 @@ const PaymentPlanDetail = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [editDateDialog, setEditDateDialog] = useState({ open: false, installment: null });
-  const [paymentDialog, setPaymentDialog] = useState({ open: false, installment: null });
+  const [paymentDialog, setPaymentDialog] = useState({
+    open: false,
+    installment: null,
+    isInvoiced: false
+  });
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [editPlanDialog, setEditPlanDialog] = useState(false);
   const [editFormData, setEditFormData] = useState({
@@ -55,9 +59,13 @@ const PaymentPlanDetail = () => {
     isInvoiced: false,
     notes: ''
   });
+  const [settings, setSettings] = useState({
+    vat: 10
+  });
 
   useEffect(() => {
     loadPaymentPlan();
+    loadSettings();
   }, [id]);
 
   const loadPaymentPlan = async () => {
@@ -69,6 +77,26 @@ const PaymentPlanDetail = () => {
       setError('Ödeme planı yüklenirken hata oluştu');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSettings = async () => {
+    try {
+      const institutionId = paymentPlan?.institution?._id || paymentPlan?.institution;
+      if (!institutionId) return;
+
+      const response = await api.get('/settings', {
+        params: { institutionId }
+      });
+
+      if (response.data) {
+        const vatSetting = response.data.find(s => s.key === 'vat');
+        setSettings({
+          vat: vatSetting ? parseFloat(vatSetting.value) : 10
+        });
+      }
+    } catch (error) {
+      console.error('Settings load error:', error);
     }
   };
 
@@ -97,10 +125,15 @@ const PaymentPlanDetail = () => {
     try {
       const installment = paymentDialog.installment;
       let paymentAmount = parseFloat(paymentDialog.amount);
+      const isInvoiced = paymentDialog.isInvoiced;
 
       // Get student ID properly
       const studentId = paymentPlan.student?._id || paymentPlan.student;
+      const studentName = paymentPlan.student?.firstName && paymentPlan.student?.lastName
+        ? `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}`
+        : 'Öğrenci';
       const courseId = paymentPlan.course?._id || paymentPlan.course;
+      const courseName = paymentPlan.course?.name || 'Ders';
       const institutionId = paymentPlan.institution?._id || paymentPlan.institution;
       const seasonId = paymentPlan.season?._id || paymentPlan.season;
 
@@ -115,6 +148,18 @@ const PaymentPlanDetail = () => {
         return;
       }
 
+      // Calculate KDV if invoiced
+      let vatAmount = 0;
+      if (isInvoiced) {
+        vatAmount = (paymentAmount * settings.vat) / 100;
+      }
+
+      // Calculate commission if credit card
+      let commissionAmount = 0;
+      if (paymentPlan.paymentType === 'creditCard' && paymentPlan.creditCardCommission) {
+        commissionAmount = (paymentAmount * paymentPlan.creditCardCommission.rate) / 100;
+      }
+
       // Create payment record
       await api.post('/payments', {
         student: studentId,
@@ -123,11 +168,39 @@ const PaymentPlanDetail = () => {
         paymentDate: new Date(),
         paymentType: paymentPlan.paymentType === 'creditCard' ? 'creditCard' : 'cash',
         cashRegister: defaultCashRegister._id,
-        notes: `${paymentPlan.course?.name || 'Ders'} - ${installment.installmentNumber}. Taksit`,
+        notes: `${courseName} - ${installment.installmentNumber}. Taksit`,
         institution: institutionId,
         season: seasonId,
         createdBy: user?.username || 'System'
       });
+
+      // Create KDV expense if invoiced
+      if (isInvoiced && vatAmount > 0) {
+        await api.post('/expenses', {
+          description: `${studentName} - ${courseName} ${installment.installmentNumber}. Taksit KDV (%${settings.vat})`,
+          amount: vatAmount,
+          category: 'Vergi',
+          expenseDate: new Date(),
+          cashRegister: defaultCashRegister._id,
+          institution: institutionId,
+          season: seasonId,
+          createdBy: user?.username || 'System'
+        });
+      }
+
+      // Create commission expense if credit card
+      if (commissionAmount > 0) {
+        await api.post('/expenses', {
+          description: `${studentName} - ${courseName} ${paymentPlan.installments.length} Taksitli Kredi Kartı Komisyonu (%${paymentPlan.creditCardCommission.rate})`,
+          amount: commissionAmount,
+          category: 'Banka Komisyonu',
+          expenseDate: new Date(),
+          cashRegister: defaultCashRegister._id,
+          institution: institutionId,
+          season: seasonId,
+          createdBy: user?.username || 'System'
+        });
+      }
 
       // Update installments with overpayment cascade
       const updatedInstallments = [...paymentPlan.installments];
@@ -407,7 +480,8 @@ const PaymentPlanDetail = () => {
                           onClick={() => setPaymentDialog({
                             open: true,
                             installment,
-                            amount: remaining.toFixed(2)
+                            amount: remaining.toFixed(2),
+                            isInvoiced: paymentPlan.isInvoiced || false
                           })}
                           title="Ödeme Al"
                         >
@@ -445,7 +519,7 @@ const PaymentPlanDetail = () => {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={paymentDialog.open} onClose={() => setPaymentDialog({ open: false, installment: null })}>
+      <Dialog open={paymentDialog.open} onClose={() => setPaymentDialog({ open: false, installment: null, isInvoiced: false })}>
         <DialogTitle>Ödeme Al</DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
@@ -464,10 +538,37 @@ const PaymentPlanDetail = () => {
               }}
               helperText="Fazla ödeme yapılması durumunda kalan tutar sonraki taksitlere otomatik olarak aktarılır"
             />
+
+            <Box sx={{ mt: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="body1">Faturalı Ödeme</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Typography variant="body2" sx={{ mr: 1 }}>
+                  {paymentDialog.isInvoiced ? 'Evet' : 'Hayır'}
+                </Typography>
+                <input
+                  type="checkbox"
+                  checked={paymentDialog.isInvoiced}
+                  onChange={(e) => setPaymentDialog({ ...paymentDialog, isInvoiced: e.target.checked })}
+                  style={{ width: 20, height: 20 }}
+                />
+              </Box>
+            </Box>
+
+            {paymentDialog.isInvoiced && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                KDV (%{settings.vat}): ₺{((parseFloat(paymentDialog.amount || 0) * settings.vat) / 100).toLocaleString('tr-TR')} kasadan düşülecek
+              </Alert>
+            )}
+
+            {paymentPlan?.paymentType === 'creditCard' && paymentPlan?.creditCardCommission && (
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                Kredi Kartı Komisyonu (%{paymentPlan.creditCardCommission.rate}): ₺{((parseFloat(paymentDialog.amount || 0) * paymentPlan.creditCardCommission.rate) / 100).toLocaleString('tr-TR')} kasadan düşülecek
+              </Alert>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPaymentDialog({ open: false, installment: null })}>İptal</Button>
+          <Button onClick={() => setPaymentDialog({ open: false, installment: null, isInvoiced: false })}>İptal</Button>
           <Button onClick={handlePayment} variant="contained" color="primary">
             Ödemeyi Kaydet
           </Button>

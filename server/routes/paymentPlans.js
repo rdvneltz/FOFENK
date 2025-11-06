@@ -31,7 +31,9 @@ router.get('/:id', async (req, res) => {
   try {
     const paymentPlan = await PaymentPlan.findById(req.params.id)
       .populate('institution', 'name')
-      .populate('season', 'name startDate endDate');
+      .populate('season', 'name startDate endDate')
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name');
 
     if (!paymentPlan) {
       return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
