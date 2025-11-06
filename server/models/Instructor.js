@@ -57,4 +57,13 @@ instructorSchema.pre('save', function(next) {
   next();
 });
 
+// Virtual for full name
+instructorSchema.virtual('name').get(function() {
+  return `${this.firstName} ${this.lastName}`;
+});
+
+// Ensure virtual fields are serialized
+instructorSchema.set('toJSON', { virtuals: true });
+instructorSchema.set('toObject', { virtuals: true });
+
 module.exports = mongoose.model('Instructor', instructorSchema);

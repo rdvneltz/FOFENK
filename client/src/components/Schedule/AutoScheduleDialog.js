@@ -84,7 +84,8 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
     try {
       const response = await api.get('/instructors', {
         params: {
-          institution: institution._id
+          institutionId: institution._id,
+          seasonId: season._id
         }
       });
       setInstructors(response.data);

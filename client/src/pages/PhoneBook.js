@@ -44,12 +44,15 @@ const PhoneBook = () => {
       const [studentsRes, instructorsRes] = await Promise.all([
         api.get('/students', {
           params: {
-            institution: institution._id,
-            season: season._id,
+            institutionId: institution._id,
+            seasonId: season._id,
           },
         }),
         api.get('/instructors', {
-          params: { institution: institution._id },
+          params: {
+            institutionId: institution._id,
+            seasonId: season._id
+          },
         }),
       ]);
 

@@ -6,15 +6,20 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all instructors with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institution, institutionId } = req.query;
+    const { institution, institutionId, season, seasonId } = req.query;
     const filter = {};
 
     // Support both 'institution' and 'institutionId' parameter names
     if (institution) filter.institution = institution;
     if (institutionId) filter.institution = institutionId;
 
+    // Support both 'season' and 'seasonId' parameter names
+    if (season) filter.season = season;
+    if (seasonId) filter.season = seasonId;
+
     const instructors = await Instructor.find(filter)
       .populate('institution', 'name')
+      .populate('season', 'name')
       .sort({ lastName: 1, firstName: 1 });
 
     res.json(instructors);

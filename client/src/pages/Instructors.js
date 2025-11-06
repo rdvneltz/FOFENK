@@ -52,16 +52,19 @@ const Instructors = () => {
   });
 
   useEffect(() => {
-    if (institution) {
+    if (institution && season) {
       loadInstructors();
     }
-  }, [institution]);
+  }, [institution, season]);
 
   const loadInstructors = async () => {
     try {
       setLoading(true);
       const response = await api.get('/instructors', {
-        params: { institution: institution._id },
+        params: {
+          institutionId: institution._id,
+          seasonId: season._id
+        },
       });
       setInstructors(response.data);
     } catch (error) {

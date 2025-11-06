@@ -69,7 +69,10 @@ const Courses = () => {
           },
         }),
         api.get('/instructors', {
-          params: { institution: institution._id },
+          params: {
+            institutionId: institution._id,
+            seasonId: season._id
+          },
         }),
       ]);
       setCourses(coursesRes.data);
