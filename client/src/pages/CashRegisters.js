@@ -14,23 +14,47 @@ import {
   TextField,
   IconButton,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Tooltip,
 } from '@mui/material';
-import { Add, Edit, AccountBalance } from '@mui/icons-material';
+import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 
 const CashRegisters = () => {
-  const { institution, season } = useApp();
+  const { institution, season, currentUser } = useApp();
   const [cashRegisters, setCashRegisters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedRegister, setSelectedRegister] = useState(null);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     initialBalance: 0,
+  });
+
+  // Adjust balance dialog state
+  const [adjustDialog, setAdjustDialog] = useState({
+    open: false,
+    cashRegister: null,
+    type: 'add',
+    amount: '',
+    description: ''
+  });
+
+  // Transfer dialog state
+  const [transferDialog, setTransferDialog] = useState({
+    open: false,
+    fromCashRegisterId: '',
+    toCashRegisterId: '',
+    amount: '',
+    description: ''
   });
 
   useEffect(() => {
@@ -86,6 +110,7 @@ const CashRegisters = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setLoading(true);
 
     try {
@@ -104,6 +129,91 @@ const CashRegisters = () => {
 
       await loadCashRegisters();
       handleCloseDialog();
+      setSuccess('Kasa başarıyla kaydedildi');
+    } catch (error) {
+      setError(error.response?.data?.message || 'Bir hata oluştu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle adjust balance
+  const handleAdjustBalance = (cashRegister, type) => {
+    setAdjustDialog({
+      open: true,
+      cashRegister,
+      type,
+      amount: '',
+      description: ''
+    });
+  };
+
+  const handleSubmitAdjustment = async () => {
+    if (!adjustDialog.amount || parseFloat(adjustDialog.amount) <= 0) {
+      setError('Lütfen geçerli bir tutar giriniz');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      await api.post(`/cash-registers/${adjustDialog.cashRegister._id}/adjust-balance`, {
+        amount: parseFloat(adjustDialog.amount),
+        description: adjustDialog.description,
+        type: adjustDialog.type,
+        userId: currentUser?._id
+      });
+
+      await loadCashRegisters();
+      setAdjustDialog({ open: false, cashRegister: null, type: 'add', amount: '', description: '' });
+      setSuccess(`Bakiye başarıyla ${adjustDialog.type === 'add' ? 'artırıldı' : 'azaltıldı'}`);
+    } catch (error) {
+      setError(error.response?.data?.message || 'Bir hata oluştu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle transfer
+  const handleOpenTransfer = () => {
+    setTransferDialog({
+      open: true,
+      fromCashRegisterId: '',
+      toCashRegisterId: '',
+      amount: '',
+      description: ''
+    });
+  };
+
+  const handleSubmitTransfer = async () => {
+    if (!transferDialog.fromCashRegisterId || !transferDialog.toCashRegisterId) {
+      setError('Lütfen kaynak ve hedef kasa seçiniz');
+      return;
+    }
+
+    if (!transferDialog.amount || parseFloat(transferDialog.amount) <= 0) {
+      setError('Lütfen geçerli bir tutar giriniz');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      await api.post('/cash-registers/transfer', {
+        fromCashRegisterId: transferDialog.fromCashRegisterId,
+        toCashRegisterId: transferDialog.toCashRegisterId,
+        amount: parseFloat(transferDialog.amount),
+        description: transferDialog.description,
+        userId: currentUser?._id
+      });
+
+      await loadCashRegisters();
+      setTransferDialog({ open: false, fromCashRegisterId: '', toCashRegisterId: '', amount: '', description: '' });
+      setSuccess('Virman başarıyla gerçekleştirildi');
     } catch (error) {
       setError(error.response?.data?.message || 'Bir hata oluştu');
     } finally {
@@ -129,14 +239,30 @@ const CashRegisters = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Kasa Yönetimi</Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
-          Yeni Kasa
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<SwapHoriz />}
+            onClick={handleOpenTransfer}
+            disabled={cashRegisters.length < 2}
+          >
+            Virman Yap
+          </Button>
+          <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
+            Yeni Kasa
+          </Button>
+        </Box>
       </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
+        </Alert>
+      )}
+
+      {success && (
+        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess('')}>
+          {success}
         </Alert>
       )}
 
@@ -183,9 +309,31 @@ const CashRegisters = () => {
                     <Typography variant="caption" color="text.secondary">
                       Mevcut Bakiye
                     </Typography>
-                    <Typography variant="h4" color="primary.main">
-                      ₺{(register.balance || 0).toLocaleString('tr-TR')}
-                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
+                      <Typography variant="h4" color="primary.main">
+                        ₺{(register.balance || 0).toLocaleString('tr-TR')}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Tooltip title="Bakiye Artır">
+                          <IconButton
+                            size="small"
+                            color="success"
+                            onClick={() => handleAdjustBalance(register, 'add')}
+                          >
+                            <AddCircle />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Bakiye Azalt">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleAdjustBalance(register, 'subtract')}
+                          >
+                            <RemoveCircle />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    </Box>
                   </Box>
 
                   <Box sx={{ mt: 2 }}>
@@ -203,6 +351,7 @@ const CashRegisters = () => {
         )}
       </Grid>
 
+      {/* Add/Edit Cash Register Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <form onSubmit={handleSubmit}>
           <DialogTitle>{selectedRegister ? 'Kasa Düzenle' : 'Yeni Kasa'}</DialogTitle>
@@ -248,6 +397,139 @@ const CashRegisters = () => {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Adjust Balance Dialog */}
+      <Dialog
+        open={adjustDialog.open}
+        onClose={() => setAdjustDialog({ ...adjustDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {adjustDialog.type === 'add' ? 'Bakiye Artır' : 'Bakiye Azalt'} - {adjustDialog.cashRegister?.name}
+        </DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Tutar (₺)"
+                type="number"
+                value={adjustDialog.amount}
+                onChange={(e) => setAdjustDialog({ ...adjustDialog, amount: e.target.value })}
+                required
+                inputProps={{ min: 0, step: 0.01 }}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Açıklama"
+                value={adjustDialog.description}
+                onChange={(e) => setAdjustDialog({ ...adjustDialog, description: e.target.value })}
+                multiline
+                rows={2}
+                placeholder="Bakiye değişikliğinin sebebi"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAdjustDialog({ ...adjustDialog, open: false })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleSubmitAdjustment}
+            variant="contained"
+            color={adjustDialog.type === 'add' ? 'success' : 'error'}
+            disabled={loading}
+          >
+            {loading ? 'Kaydediliyor...' : adjustDialog.type === 'add' ? 'Artır' : 'Azalt'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Transfer Dialog */}
+      <Dialog
+        open={transferDialog.open}
+        onClose={() => setTransferDialog({ ...transferDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Kasalar Arası Virman</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <FormControl fullWidth required>
+                <InputLabel>Kaynak Kasa</InputLabel>
+                <Select
+                  value={transferDialog.fromCashRegisterId}
+                  onChange={(e) => setTransferDialog({ ...transferDialog, fromCashRegisterId: e.target.value })}
+                  label="Kaynak Kasa"
+                >
+                  {cashRegisters.map((register) => (
+                    <MenuItem key={register._id} value={register._id}>
+                      {register.name} - Bakiye: ₺{(register.balance || 0).toLocaleString('tr-TR')}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth required>
+                <InputLabel>Hedef Kasa</InputLabel>
+                <Select
+                  value={transferDialog.toCashRegisterId}
+                  onChange={(e) => setTransferDialog({ ...transferDialog, toCashRegisterId: e.target.value })}
+                  label="Hedef Kasa"
+                >
+                  {cashRegisters
+                    .filter((r) => r._id !== transferDialog.fromCashRegisterId)
+                    .map((register) => (
+                      <MenuItem key={register._id} value={register._id}>
+                        {register.name} - Bakiye: ₺{(register.balance || 0).toLocaleString('tr-TR')}
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Tutar (₺)"
+                type="number"
+                value={transferDialog.amount}
+                onChange={(e) => setTransferDialog({ ...transferDialog, amount: e.target.value })}
+                required
+                inputProps={{ min: 0, step: 0.01 }}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Açıklama"
+                value={transferDialog.description}
+                onChange={(e) => setTransferDialog({ ...transferDialog, description: e.target.value })}
+                multiline
+                rows={2}
+                placeholder="Virman sebebi"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTransferDialog({ ...transferDialog, open: false })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleSubmitTransfer}
+            variant="contained"
+            disabled={loading}
+          >
+            {loading ? 'İşleniyor...' : 'Virman Yap'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

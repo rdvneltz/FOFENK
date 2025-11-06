@@ -33,9 +33,6 @@ import {
 
 const menuItems = [
   { text: 'Panel', icon: <DashboardIcon />, path: '/' },
-  { text: 'Kurum Yönetimi', icon: <BusinessIcon />, path: '/institutions' },
-  { text: 'Kurum Ayarları', icon: <SchoolIcon />, path: '/institution-setup' },
-  { text: 'Sezon Yönetimi', icon: <SeasonIcon />, path: '/seasons' },
   { divider: true },
   { text: 'Öğrenciler', icon: <PeopleIcon />, path: '/students' },
   { text: 'Dersler', icon: <MenuBookIcon />, path: '/courses' },

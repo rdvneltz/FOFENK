@@ -340,6 +340,9 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
             <Alert severity="info">
               Program, seçilen tarih aralığında belirlediğiniz günlerde ve saatlerde
               otomatik olarak dersler oluşturacaktır. Eğitmen çakışmaları kontrol edilecektir.
+              <Box sx={{ mt: 1, fontWeight: 500 }}>
+                Not: Farklı günler için farklı saatler seçmek isterseniz, her saat aralığı için ayrı ayrı program oluşturun.
+              </Box>
             </Alert>
           </Grid>
         </Grid>
