@@ -46,6 +46,7 @@ const PaymentPlan = () => {
     paymentType: 'cashFull',
     installmentCount: 1,
     firstInstallmentDate: new Date(),
+    paymentDate: new Date().toISOString().split('T')[0], // For credit card payment date
     installmentFrequency: 'monthly',
     customFrequencyDays: 30,
     useCustomAmounts: false,
@@ -285,6 +286,10 @@ const PaymentPlan = () => {
         }
       }
 
+      // Check if payment date is today for credit card
+      const today = new Date().toISOString().split('T')[0];
+      const shouldProcessImmediately = formData.paymentType === 'creditCard' && formData.paymentDate === today;
+
       const paymentPlanData = {
         student: studentId,
         enrollment: formData.enrollmentId,
@@ -301,8 +306,9 @@ const PaymentPlan = () => {
         season: season._id,
         notes: formData.description,
         createdBy: user?.username || 'user',
-        // For credit card payments, auto-create payment
-        autoCreatePayment: formData.paymentType === 'creditCard',
+        // For credit card payments, auto-create payment only if date is today
+        autoCreatePayment: shouldProcessImmediately,
+        paymentDate: formData.paymentType === 'creditCard' ? formData.paymentDate : undefined,
         cashRegister: formData.paymentType === 'creditCard' ? selectedCashRegister : undefined
       };
 
@@ -488,26 +494,63 @@ const PaymentPlan = () => {
               />
             </Grid>
 
+            {/* Credit Card Payment Fields */}
             {formData.paymentType === 'creditCard' && (
-              <Grid item xs={12}>
-                <FormControl fullWidth required>
-                  <InputLabel>Kasa</InputLabel>
-                  <Select
-                    value={selectedCashRegister}
-                    onChange={(e) => setSelectedCashRegister(e.target.value)}
-                    label="Kasa"
-                  >
-                    {cashRegisters.map((register) => (
-                      <MenuItem key={register._id} value={register._id}>
-                        {register.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
+              <>
+                <Grid item xs={12}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Kasa</InputLabel>
+                    <Select
+                      value={selectedCashRegister}
+                      onChange={(e) => setSelectedCashRegister(e.target.value)}
+                      label="Kasa"
+                    >
+                      {cashRegisters.map((register) => (
+                        <MenuItem key={register._id} value={register._id}>
+                          {register.name} - Bakiye: ₺{register.balance?.toLocaleString('tr-TR')}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Taksit Sayısı (Komisyon Hesabı)</InputLabel>
+                    <Select
+                      name="installmentCount"
+                      value={formData.installmentCount}
+                      onChange={handleChange}
+                      label="Taksit Sayısı (Komisyon Hesabı)"
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                        <MenuItem key={num} value={num}>
+                          {num} Taksit
+                        </MenuItem>
+                      ))}
+                    </Select>
+                    </FormControl>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                      Banka öğrenciden kaç taksitte tahsil edecek? (Para kasaya tek seferde girecek)
+                    </Typography>
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ödeme Tarihi"
+                    name="paymentDate"
+                    type="date"
+                    value={formData.paymentDate}
+                    onChange={handleChange}
+                    required
+                    InputLabelProps={{ shrink: true }}
+                    helperText="Bugün ise hemen kasaya işlenir, ileri tarih ise o gün işlenir"
+                  />
+                </Grid>
+              </>
             )}
 
-            {formData.paymentType !== 'cashFull' && (
+            {/* Cash Installment Payment Fields */}
+            {formData.paymentType === 'cashInstallment' && (
               <>
                 <Grid item xs={12} sm={6}>
                   <FormControl fullWidth required>

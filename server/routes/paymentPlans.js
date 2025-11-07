@@ -51,21 +51,28 @@ router.get('/:id', async (req, res) => {
 // Create payment plan
 router.post('/', async (req, res) => {
   try {
-    const paymentPlan = new PaymentPlan(req.body);
+    // Set pending status for future credit card payments
+    const paymentPlanData = {
+      ...req.body,
+      isPendingPayment: req.body.paymentType === 'creditCard' && !req.body.autoCreatePayment
+    };
+
+    const paymentPlan = new PaymentPlan(paymentPlanData);
     const newPaymentPlan = await paymentPlan.save();
 
-    // If credit card payment, auto-create payment and expenses
+    // If credit card payment and payment date is today, auto-create payment and expenses
     if (req.body.autoCreatePayment && req.body.paymentType === 'creditCard') {
       const student = await Student.findById(req.body.student);
       const chargeAmount = req.body.discountedAmount;
 
-      // Create payment
+      // Create payment (only if autoCreatePayment is true, meaning payment date is today)
       const payment = new Payment({
         student: req.body.student,
         course: req.body.course,
         enrollment: req.body.enrollment,
         paymentPlan: newPaymentPlan._id,
         paymentType: 'creditCard',
+        paymentMethod: 'creditCard',
         amount: chargeAmount,
         netAmount: chargeAmount,
         creditCardCommission: req.body.creditCardCommission,
@@ -73,10 +80,11 @@ router.post('/', async (req, res) => {
         vat: req.body.vat,
         isInvoiced: req.body.isInvoiced,
         cashRegister: req.body.cashRegister,
-        paymentDate: new Date(),
+        date: req.body.paymentDate ? new Date(req.body.paymentDate) : new Date(),
         season: req.body.season,
         institution: req.body.institution,
-        notes: `Otomatik oluşturuldu - ${req.body.creditCardInstallments} taksit kredi kartı ödemesi`,
+        status: 'completed',
+        notes: `Kredi kartı ödemesi - ${req.body.creditCardInstallments} taksit`,
         createdBy: req.body.createdBy
       });
 
