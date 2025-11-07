@@ -50,6 +50,7 @@ const Courses = () => {
     pricingType: 'monthly',
     pricePerLesson: '',
     pricePerMonth: '',
+    weeklyFrequency: 1,
     isFree: false,
     duration: '',
     schedule: '',
@@ -98,6 +99,7 @@ const Courses = () => {
         pricingType: course.pricingType || 'monthly',
         pricePerLesson: course.pricePerLesson || '',
         pricePerMonth: course.pricePerMonth || '',
+        weeklyFrequency: course.weeklyFrequency || 1,
         isFree: course.isFree || false,
         duration: course.duration || '',
         schedule: course.schedule || '',
@@ -112,6 +114,7 @@ const Courses = () => {
         pricingType: 'monthly',
         pricePerLesson: '',
         pricePerMonth: '',
+        weeklyFrequency: 1,
         isFree: false,
         duration: '',
         schedule: '',
@@ -378,16 +381,32 @@ const Courses = () => {
                 </Grid>
               )}
               {formData.pricingType === 'monthly' && (
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Aylık Ücret (₺)"
-                    name="pricePerMonth"
-                    type="number"
-                    value={formData.pricePerMonth}
-                    onChange={handleChange}
-                  />
-                </Grid>
+                <>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Aylık Ücret (₺)"
+                      name="pricePerMonth"
+                      type="number"
+                      value={formData.pricePerMonth}
+                      onChange={handleChange}
+                    />
+                  </Grid>
+                  <Grid item xs={12} sm={6}>
+                    <TextField
+                      fullWidth
+                      label="Haftada Kaç Gün?"
+                      name="weeklyFrequency"
+                      type="number"
+                      value={formData.weeklyFrequency}
+                      onChange={handleChange}
+                      inputProps={{ min: 1, max: 7 }}
+                      helperText={formData.pricePerMonth && formData.weeklyFrequency
+                        ? `Ders Başı: ₺${(formData.pricePerMonth / (4 * formData.weeklyFrequency)).toFixed(2)}`
+                        : 'Aylık ücret ÷ (4 hafta × gün sayısı)'}
+                    />
+                  </Grid>
+                </>
               )}
               <Grid item xs={12} sm={6}>
                 <TextField
