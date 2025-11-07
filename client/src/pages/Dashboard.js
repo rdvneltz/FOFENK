@@ -61,7 +61,8 @@ const Dashboard = () => {
     thisWeek: [],
     thisMonth: [],
     nextMonth: [],
-    overdue: []
+    overdue: [],
+    pendingCreditCard: [] // Pending credit card payments
   });
 
   useEffect(() => {
@@ -139,8 +140,27 @@ const Dashboard = () => {
         thisWeek: [],
         thisMonth: [],
         nextMonth: [],
-        overdue: []
+        overdue: [],
+        pendingCreditCard: []
       };
+
+      // Check for pending credit card payments
+      paymentPlans.forEach(plan => {
+        if (plan.isPendingPayment && plan.paymentType === 'creditCard' && plan.paymentDate) {
+          const paymentDate = new Date(plan.paymentDate);
+          if (paymentDate <= now) {
+            // Payment date has arrived, should be processed
+            categorized.pendingCreditCard.push({
+              student: plan.student,
+              course: plan.course,
+              amount: plan.discountedAmount,
+              paymentDate: paymentDate,
+              paymentPlanId: plan._id,
+              isPending: true
+            });
+          }
+        }
+      });
 
       paymentPlans.forEach(plan => {
         plan.installments?.forEach(installment => {
@@ -536,6 +556,56 @@ const Dashboard = () => {
             )}
           </Paper>
         </Grid>
+
+        {/* Pending Credit Card Payments Widget */}
+        {expectedPayments.pendingCreditCard.length > 0 && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom color="warning.main">
+                ⏰ Vadesi Gelen Kredi Kartı Ödemeleri
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Bu ödemeler beklemede - ödeme tarihi geldi, kasaya işlenmeyi bekliyor
+              </Typography>
+              <Box sx={{ mt: 2 }}>
+                {expectedPayments.pendingCreditCard.map((payment, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      p: 2,
+                      mb: 1,
+                      bgcolor: 'warning.light',
+                      borderRadius: 1,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body1" fontWeight="bold">
+                        {payment.student?.firstName} {payment.student?.lastName}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {payment.course?.name}
+                      </Typography>
+                      <Typography variant="caption">
+                        Ödeme Tarihi: {new Date(payment.paymentDate).toLocaleDateString('tr-TR')}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="h6" color="warning.dark">
+                        ₺{payment.amount?.toLocaleString('tr-TR')}
+                      </Typography>
+                      <Typography variant="caption">
+                        Kredi Kartı - Bekliyor
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </Paper>
+          </Grid>
+        )}
       </Grid>
     </Box>
   );
