@@ -690,53 +690,131 @@ const PaymentPlan = () => {
             {formData.totalAmount && (
               <Grid item xs={12}>
                 <Divider sx={{ my: 2 }} />
-                <Box sx={{ p: 3, bgcolor: 'info.light', borderRadius: 1 }}>
-                  <Typography variant="h6" gutterBottom>
-                    💰 Ödeme Özeti
-                  </Typography>
-                  <Typography variant="body1">
-                    Kurs Ücreti: ₺{totalAmount.toLocaleString('tr-TR')}
-                  </Typography>
-                  {discountAmount > 0 && (
-                    <Typography variant="body1" color="success.main">
-                      İndirim ({formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}): -₺{discountAmount.toLocaleString('tr-TR')}
-                    </Typography>
-                  )}
-                  <Typography variant="body1">
-                    Ara Toplam: ₺{subtotal.toLocaleString('tr-TR')}
-                  </Typography>
-                  {formData.paymentType === 'creditCard' && commissionAmount > 0 && (
-                    <Typography variant="body1" color="warning.main">
-                      Banka Komisyonu ({formData.installmentCount} taksit - %{commissionRate.toFixed(2)}): +₺{commissionAmount.toLocaleString('tr-TR')}
-                    </Typography>
-                  )}
-                  <Divider sx={{ my: 1 }} />
-                  <Typography variant="h6" fontWeight="bold" color="primary">
-                    Öğrenciden Tahsil Edilecek: ₺{chargeAmount.toLocaleString('tr-TR')}
-                  </Typography>
-                  {formData.isInvoiced && vatAmount > 0 && (
-                    <>
+                {(() => {
+                  // Find selected enrollment and course
+                  const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
+                  const course = selectedEnrollment?.course;
+
+                  // Calculate lesson details if we have all the info
+                  let lessonCalculation = null;
+                  if (course && formData.durationMonths && course.weeklyFrequency && course.pricingType === 'monthly') {
+                    const months = parseInt(formData.durationMonths);
+                    const weeksPerMonth = 4;
+                    const lessonsPerWeek = course.weeklyFrequency;
+
+                    // Simple calculation: months × 4 weeks × lessons per week
+                    const estimatedLessons = months * weeksPerMonth * lessonsPerWeek;
+
+                    // Calculate total price both ways
+                    const monthlyTotal = course.pricePerMonth * months;
+                    const perLessonTotal = course.pricePerLesson * estimatedLessons;
+                    const difference = Math.abs(monthlyTotal - perLessonTotal);
+
+                    // Check if course has schedule
+                    const hasSchedule = course.schedule && course.schedule.trim() !== '';
+
+                    lessonCalculation = {
+                      estimatedLessons,
+                      monthlyTotal,
+                      perLessonTotal,
+                      difference,
+                      hasSchedule,
+                      pricePerLesson: course.pricePerLesson,
+                      pricePerMonth: course.pricePerMonth,
+                      lessonsPerWeek
+                    };
+                  }
+
+                  return (
+                    <Box sx={{ p: 3, bgcolor: 'info.light', borderRadius: 1 }}>
+                      <Typography variant="h6" gutterBottom>
+                        💰 Ödeme Özeti
+                      </Typography>
+
+                      {lessonCalculation && (
+                        <>
+                          {!lessonCalculation.hasSchedule && (
+                            <Alert severity="warning" sx={{ mb: 2 }}>
+                              ⚠️ Bu dersin henüz aylık programı oluşturulmamış! Ücretlendirme tam hesaplanamıyor.
+                              Kesin ders başı ücret hesaplaması için önce dersin aylık programını oluşturun.
+                            </Alert>
+                          )}
+
+                          <Box sx={{ bgcolor: 'background.paper', p: 2, borderRadius: 1, mb: 2 }}>
+                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                              📊 Ders Sayısı Hesaplaması
+                            </Typography>
+                            <Typography variant="body2">
+                              • {formData.durationMonths} ay × 4 hafta × {lessonCalculation.lessonsPerWeek} gün =
+                              <strong> {lessonCalculation.estimatedLessons} ders</strong>
+                            </Typography>
+                            <Typography variant="body2" sx={{ mt: 1 }}>
+                              • Ders başı ücret: ₺{lessonCalculation.pricePerLesson.toLocaleString('tr-TR')}
+                            </Typography>
+                            <Typography variant="body2">
+                              • Aylık ücret: ₺{lessonCalculation.pricePerMonth.toLocaleString('tr-TR')}
+                            </Typography>
+                          </Box>
+
+                          {lessonCalculation.difference > 10 && (
+                            <Alert severity="info" sx={{ mb: 2 }}>
+                              💡 <strong>Ücretlendirme Karşılaştırması:</strong><br/>
+                              • Aylık Ücret Üzerinden: ₺{lessonCalculation.monthlyTotal.toLocaleString('tr-TR')}<br/>
+                              • Ders Başı Ücret Üzerinden: ₺{lessonCalculation.perLessonTotal.toLocaleString('tr-TR')}<br/>
+                              <strong>Fark: ₺{lessonCalculation.difference.toLocaleString('tr-TR')}</strong>
+                              {lessonCalculation.perLessonTotal > lessonCalculation.monthlyTotal && (
+                                <span> - Bazı aylarda 5 hafta olabilir!</span>
+                              )}
+                            </Alert>
+                          )}
+                        </>
+                      )}
+
+                      <Typography variant="body1">
+                        Kurs Ücreti: ₺{totalAmount.toLocaleString('tr-TR')}
+                      </Typography>
+                      {discountAmount > 0 && (
+                        <Typography variant="body1" color="success.main">
+                          İndirim ({formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}): -₺{discountAmount.toLocaleString('tr-TR')}
+                        </Typography>
+                      )}
+                      <Typography variant="body1">
+                        Ara Toplam: ₺{subtotal.toLocaleString('tr-TR')}
+                      </Typography>
+                      {formData.paymentType === 'creditCard' && commissionAmount > 0 && (
+                        <Typography variant="body1" color="warning.main">
+                          Banka Komisyonu ({formData.installmentCount} taksit - %{commissionRate.toFixed(2)}): +₺{commissionAmount.toLocaleString('tr-TR')}
+                        </Typography>
+                      )}
                       <Divider sx={{ my: 1 }} />
-                      <Typography variant="body1" color="error.main">
-                        📄 Faturalı (KDV %{vatRate}): +₺{vatAmount.toLocaleString('tr-TR')}
+                      <Typography variant="h6" fontWeight="bold" color="primary">
+                        Öğrenciden Tahsil Edilecek: ₺{chargeAmount.toLocaleString('tr-TR')}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        (₺{chargeAmount.toLocaleString('tr-TR')} üzerinden)
-                      </Typography>
-                    </>
-                  )}
-                  {formData.paymentType !== 'cashFull' && formData.installmentCount > 1 && (
-                    <>
-                      <Divider sx={{ my: 1 }} />
-                      <Typography variant="body2">
-                        Her taksit: ₺{parseFloat(installmentAmount).toLocaleString('tr-TR')}
-                      </Typography>
-                      <Typography variant="body2">
-                        Toplam {formData.installmentCount} taksit
-                      </Typography>
-                    </>
-                  )}
-                </Box>
+                      {formData.isInvoiced && vatAmount > 0 && (
+                        <>
+                          <Divider sx={{ my: 1 }} />
+                          <Typography variant="body1" color="error.main">
+                            📄 Faturalı (KDV %{vatRate}): +₺{vatAmount.toLocaleString('tr-TR')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            (₺{chargeAmount.toLocaleString('tr-TR')} üzerinden)
+                          </Typography>
+                        </>
+                      )}
+                      {formData.paymentType !== 'cashFull' && formData.installmentCount > 1 && (
+                        <>
+                          <Divider sx={{ my: 1 }} />
+                          <Typography variant="body2">
+                            Her taksit: ₺{parseFloat(installmentAmount).toLocaleString('tr-TR')}
+                          </Typography>
+                          <Typography variant="body2">
+                            Toplam {formData.installmentCount} taksit
+                          </Typography>
+                        </>
+                      )}
+                    </Box>
+                  );
+                })()}
               </Grid>
             )}
 
