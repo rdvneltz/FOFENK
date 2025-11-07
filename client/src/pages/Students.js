@@ -174,6 +174,13 @@ const Students = () => {
             Excel'e Aktar
           </Button>
           <Button
+            variant="outlined"
+            color="warning"
+            onClick={() => navigate('/archived-students')}
+          >
+            Arşiv
+          </Button>
+          <Button
             variant="contained"
             startIcon={<Add />}
             onClick={() => navigate('/students/new')}
