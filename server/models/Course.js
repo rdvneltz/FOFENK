@@ -32,6 +32,13 @@ const courseSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // Haftada kaç gün (aylık ücretlendirme için)
+  weeklyFrequency: {
+    type: Number,
+    min: 1,
+    max: 7,
+    default: 1
+  },
   // Ücretsiz mi (deneme dersi vb.)
   isFree: {
     type: Boolean,
@@ -72,6 +79,18 @@ const courseSchema = new mongoose.Schema({
 
 courseSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
+
+  // Auto-calculate pricePerLesson if monthly pricing
+  if (this.pricingType === 'monthly' && this.pricePerMonth && this.weeklyFrequency) {
+    // Assume 4 weeks per month
+    this.pricePerLesson = this.pricePerMonth / (4 * this.weeklyFrequency);
+  }
+
+  // Auto-calculate pricePerMonth if per-lesson pricing
+  if (this.pricingType === 'perLesson' && this.pricePerLesson && this.weeklyFrequency) {
+    this.pricePerMonth = this.pricePerLesson * 4 * this.weeklyFrequency;
+  }
+
   next();
 });
 
