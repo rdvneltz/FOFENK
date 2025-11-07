@@ -22,6 +22,7 @@ import SeasonManagement from './pages/SeasonManagement';
 import Students from './pages/Students';
 import StudentDetail from './pages/StudentDetail';
 import StudentForm from './pages/StudentForm';
+import ArchivedStudents from './pages/ArchivedStudents';
 import Courses from './pages/Courses';
 import Calendar from './pages/Calendar';
 import Instructors from './pages/Instructors';
@@ -158,6 +159,7 @@ function App() {
                       <Route path="/students/new" element={<StudentForm />} />
                       <Route path="/students/:id" element={<StudentDetail />} />
                       <Route path="/students/:id/edit" element={<StudentForm />} />
+                      <Route path="/archived-students" element={<ArchivedStudents />} />
                       <Route path="/courses" element={<Courses />} />
                       <Route path="/calendar" element={<Calendar />} />
                       <Route path="/instructors" element={<Instructors />} />
