@@ -48,8 +48,7 @@ const PaymentPlanDetail = () => {
   const [editDateDialog, setEditDateDialog] = useState({ open: false, installment: null });
   const [paymentDialog, setPaymentDialog] = useState({
     open: false,
-    installment: null,
-    isInvoiced: false
+    installment: null
   });
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [editPlanDialog, setEditPlanDialog] = useState(false);
@@ -413,63 +412,6 @@ const PaymentPlanDetail = () => {
         <DialogActions>
           <Button onClick={() => setEditDateDialog({ open: false, installment: null })}>İptal</Button>
           <Button onClick={handleEditDate} variant="contained">Kaydet</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Payment Dialog */}
-      <Dialog open={paymentDialog.open} onClose={() => setPaymentDialog({ open: false, installment: null, isInvoiced: false })}>
-        <DialogTitle>Ödeme Al</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              {paymentDialog.installment?.installmentNumber}. Taksit
-            </Typography>
-            <TextField
-              fullWidth
-              label="Ödeme Tutarı (₺)"
-              type="number"
-              value={paymentDialog.amount}
-              onChange={(e) => setPaymentDialog({ ...paymentDialog, amount: e.target.value })}
-              sx={{ mt: 2 }}
-              inputProps={{
-                min: 0
-              }}
-              helperText="Fazla ödeme yapılması durumunda kalan tutar sonraki taksitlere otomatik olarak aktarılır"
-            />
-
-            <Box sx={{ mt: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="body1">Faturalı Ödeme</Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Typography variant="body2" sx={{ mr: 1 }}>
-                  {paymentDialog.isInvoiced ? 'Evet' : 'Hayır'}
-                </Typography>
-                <input
-                  type="checkbox"
-                  checked={paymentDialog.isInvoiced}
-                  onChange={(e) => setPaymentDialog({ ...paymentDialog, isInvoiced: e.target.checked })}
-                  style={{ width: 20, height: 20 }}
-                />
-              </Box>
-            </Box>
-
-            {paymentDialog.isInvoiced && (
-              <Alert severity="info" sx={{ mt: 2 }}>
-                KDV (%{settings.vat}): ₺{((parseFloat(paymentDialog.amount || 0) * settings.vat) / 100).toLocaleString('tr-TR')} kasadan düşülecek
-              </Alert>
-            )}
-
-            {paymentPlan?.paymentType === 'creditCard' && paymentPlan?.creditCardCommission && (
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                Kredi Kartı Komisyonu (%{paymentPlan.creditCardCommission.rate}): ₺{((parseFloat(paymentDialog.amount || 0) * paymentPlan.creditCardCommission.rate) / 100).toLocaleString('tr-TR')} kasadan düşülecek
-              </Alert>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPaymentDialog({ open: false, installment: null, isInvoiced: false })}>İptal</Button>
-          <Button onClick={handlePayment} variant="contained" color="primary">
-            Ödemeyi Kaydet
-          </Button>
         </DialogActions>
       </Dialog>
 
