@@ -24,6 +24,7 @@ import {
   Email,
   Payment,
   Undo,
+  Add,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -230,6 +231,15 @@ const StudentDetail = () => {
               {/* Courses Tab */}
               {tabValue === 0 && (
                 <Box>
+                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                      variant="contained"
+                      startIcon={<Add />}
+                      onClick={() => navigate(`/enrollments/new?studentId=${id}`)}
+                    >
+                      Kursa Kaydet
+                    </Button>
+                  </Box>
                   {courses.length === 0 ? (
                     <Typography color="text.secondary" align="center">
                       Henüz kurs kaydı bulunmuyor
