@@ -41,6 +41,7 @@ const PaymentPlan = () => {
   const [formData, setFormData] = useState({
     enrollmentId: '',
     totalAmount: '',
+    durationMonths: '', // How many months registration
     discountType: 'none',
     discountValue: 0,
     paymentType: 'cashFull',
@@ -123,6 +124,42 @@ const PaymentPlan = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+
+    // If enrollment is selected, auto-fill price and calculate months until season end
+    if (name === 'enrollmentId' && value) {
+      const selectedEnrollment = enrollments.find(e => e._id === value);
+      if (selectedEnrollment && selectedEnrollment.course) {
+        const course = selectedEnrollment.course;
+
+        // Auto-fill price based on course pricing type
+        let autoPrice = '';
+        if (course.pricingType === 'monthly' && course.pricePerMonth) {
+          autoPrice = course.pricePerMonth;
+        } else if (course.pricingType === 'perLesson' && course.pricePerLesson) {
+          autoPrice = course.pricePerLesson;
+        }
+
+        // Calculate months until season end
+        let suggestedMonths = '';
+        if (season && season.endDate) {
+          const now = new Date();
+          const endDate = new Date(season.endDate);
+          const monthsDiff = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24 * 30));
+          if (monthsDiff > 0) {
+            suggestedMonths = monthsDiff;
+          }
+        }
+
+        setFormData((prev) => ({
+          ...prev,
+          [name]: value,
+          totalAmount: autoPrice,
+          durationMonths: suggestedMonths
+        }));
+        return;
+      }
+    }
+
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -424,7 +461,7 @@ const PaymentPlan = () => {
               </FormControl>
             </Grid>
 
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
                 label="Toplam Tutar (₺)"
@@ -433,6 +470,19 @@ const PaymentPlan = () => {
                 value={formData.totalAmount}
                 onChange={handleChange}
                 required
+              />
+            </Grid>
+
+            <Grid item xs={12} sm={2}>
+              <TextField
+                fullWidth
+                label="Kaç Aylık?"
+                name="durationMonths"
+                type="number"
+                value={formData.durationMonths}
+                onChange={handleChange}
+                inputProps={{ min: 1 }}
+                helperText="Kayıt süresi"
               />
             </Grid>
 
