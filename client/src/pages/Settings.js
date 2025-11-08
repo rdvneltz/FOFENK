@@ -28,7 +28,7 @@ import SeasonManagement from './SeasonManagement';
 import { useNavigate } from 'react-router-dom';
 
 const Settings = () => {
-  const { institution, user } = useApp();
+  const { institution, currentUser } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -157,7 +157,7 @@ const Settings = () => {
       alert('✅ Veritabanı başarıyla sıfırlandı! Lütfen yeniden giriş yapın.');
 
       // Redirect to login
-      localStorage.removeItem('token');
+      localStorage.clear();
       navigate('/login');
 
     } catch (error) {
@@ -375,7 +375,7 @@ const Settings = () => {
             <Divider sx={{ my: 6 }} />
 
             {/* Danger Zone - Database Reset */}
-            {user?.role === 'superadmin' && (
+            {currentUser?.role === 'superadmin' && (
               <Box sx={{ p: 3, border: '2px solid', borderColor: 'error.main', borderRadius: 2, bgcolor: 'error.lighter' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                   <WarningIcon color="error" />
