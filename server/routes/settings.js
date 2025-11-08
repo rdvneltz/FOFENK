@@ -2,6 +2,17 @@ const express = require('express');
 const router = express.Router();
 const Settings = require('../models/Settings');
 const ActivityLog = require('../models/ActivityLog');
+const User = require('../models/User');
+const Student = require('../models/Student');
+const Course = require('../models/Course');
+const Enrollment = require('../models/Enrollment');
+const PaymentPlan = require('../models/PaymentPlan');
+const Payment = require('../models/Payment');
+const Expense = require('../models/Expense');
+const CashRegister = require('../models/CashRegister');
+const Instructor = require('../models/Instructor');
+const Season = require('../models/Season');
+const Institution = require('../models/Institution');
 
 // Get all settings with filtering
 router.get('/', async (req, res) => {
@@ -167,6 +178,116 @@ router.delete('/:id', async (req, res) => {
 
     res.json({ message: 'Ayar silindi' });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Reset database (DANGER ZONE - only for superadmin)
+router.post('/reset-database', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ message: 'Kullanıcı adı ve şifre gerekli' });
+    }
+
+    // Find user and get password
+    const user = await User.findOne({ username }).select('+password');
+
+    if (!user) {
+      return res.status(401).json({ message: 'Kullanıcı bulunamadı' });
+    }
+
+    // Check if user is superadmin
+    if (user.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Bu işlem için süperadmin yetkisi gerekli' });
+    }
+
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Şifre hatalı' });
+    }
+
+    // If we got here, user is authenticated and is superadmin
+    // Now delete everything except superadmin users
+
+    console.log('🔥 DATABASE RESET STARTED BY:', username);
+
+    // Delete all data
+    await Student.deleteMany({});
+    console.log('✓ Students deleted');
+
+    await Course.deleteMany({});
+    console.log('✓ Courses deleted');
+
+    await Enrollment.deleteMany({});
+    console.log('✓ Enrollments deleted');
+
+    await PaymentPlan.deleteMany({});
+    console.log('✓ Payment Plans deleted');
+
+    await Payment.deleteMany({});
+    console.log('✓ Payments deleted');
+
+    await Expense.deleteMany({});
+    console.log('✓ Expenses deleted');
+
+    await CashRegister.deleteMany({});
+    console.log('✓ Cash Registers deleted');
+
+    await Instructor.deleteMany({});
+    console.log('✓ Instructors deleted');
+
+    await Season.deleteMany({});
+    console.log('✓ Seasons deleted');
+
+    await Institution.deleteMany({});
+    console.log('✓ Institutions deleted');
+
+    await Settings.deleteMany({});
+    console.log('✓ Settings deleted');
+
+    await ActivityLog.deleteMany({});
+    console.log('✓ Activity Logs deleted');
+
+    // Delete all users except superadmins
+    const result = await User.deleteMany({ role: { $ne: 'superadmin' } });
+    console.log(`✓ Users deleted (${result.deletedCount} non-superadmin users)`);
+
+    // Log the reset action
+    await ActivityLog.create({
+      user: username,
+      action: 'reset',
+      entity: 'Database',
+      entityId: null,
+      description: 'Veritabanı sıfırlandı - tüm veriler silindi (superadmin hariç)',
+      institution: null,
+      season: null
+    });
+
+    console.log('✅ DATABASE RESET COMPLETED');
+
+    res.json({
+      message: 'Veritabanı başarıyla sıfırlandı',
+      deletedCounts: {
+        students: 'all',
+        courses: 'all',
+        enrollments: 'all',
+        paymentPlans: 'all',
+        payments: 'all',
+        expenses: 'all',
+        cashRegisters: 'all',
+        instructors: 'all',
+        seasons: 'all',
+        institutions: 'all',
+        settings: 'all',
+        activityLogs: 'all',
+        users: `${result.deletedCount} (superadmin excluded)`
+      }
+    });
+  } catch (error) {
+    console.error('❌ DATABASE RESET ERROR:', error);
     res.status(500).json({ message: error.message });
   }
 });

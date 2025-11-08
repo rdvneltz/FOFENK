@@ -12,16 +12,24 @@ import {
   InputAdornment,
   Tabs,
   Tab,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from '@mui/material';
+import { Warning as WarningIcon } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import Institutions from './Institutions';
 import InstitutionSetup from './InstitutionSetup';
 import SeasonManagement from './SeasonManagement';
+import { useNavigate } from 'react-router-dom';
 
 const Settings = () => {
-  const { institution } = useApp();
+  const { institution, user } = useApp();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -41,6 +49,15 @@ const Settings = () => {
     installment6: 8,
     installment9: 10,
     installment12: 12
+  });
+
+  const [resetDialog, setResetDialog] = useState({
+    open: false,
+    step: 1, // 1: confirmation, 2: password entry
+    username: '',
+    password: '',
+    error: '',
+    processing: false
   });
 
   useEffect(() => {
@@ -104,6 +121,63 @@ const Settings = () => {
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+  };
+
+  const handleResetDatabase = async () => {
+    if (resetDialog.step === 1) {
+      // Move to password entry
+      setResetDialog({ ...resetDialog, step: 2 });
+      return;
+    }
+
+    // Step 2: Verify and reset
+    if (!resetDialog.username || !resetDialog.password) {
+      setResetDialog({ ...resetDialog, error: 'Kullanıcı adı ve şifre gerekli' });
+      return;
+    }
+
+    try {
+      setResetDialog({ ...resetDialog, processing: true, error: '' });
+
+      await api.post('/settings/reset-database', {
+        username: resetDialog.username,
+        password: resetDialog.password
+      });
+
+      // Success - close dialog and show success message
+      setResetDialog({
+        open: false,
+        step: 1,
+        username: '',
+        password: '',
+        error: '',
+        processing: false
+      });
+
+      alert('✅ Veritabanı başarıyla sıfırlandı! Lütfen yeniden giriş yapın.');
+
+      // Redirect to login
+      localStorage.removeItem('token');
+      navigate('/login');
+
+    } catch (error) {
+      setResetDialog({
+        ...resetDialog,
+        processing: false,
+        error: error.response?.data?.message || 'Bir hata oluştu'
+      });
+    }
+  };
+
+  const handleCloseResetDialog = () => {
+    setResetDialog({
+      open: false,
+      step: 1,
+      username: '',
+      password: '',
+      error: '',
+      processing: false
+    });
   };
 
   if (!institution) {
@@ -297,6 +371,41 @@ const Settings = () => {
                 </Button>
               </Box>
             </form>
+
+            <Divider sx={{ my: 6 }} />
+
+            {/* Danger Zone - Database Reset */}
+            {user?.role === 'superadmin' && (
+              <Box sx={{ p: 3, border: '2px solid', borderColor: 'error.main', borderRadius: 2, bgcolor: 'error.lighter' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <WarningIcon color="error" />
+                  <Typography variant="h6" color="error">
+                    Tehlikeli Bölge
+                  </Typography>
+                </Box>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  Bu bölümdeki işlemler geri alınamaz. Dikkatli olun!
+                </Typography>
+
+                <Box sx={{ mt: 3, p: 2, bgcolor: 'background.paper', borderRadius: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                    Veritabanını Sıfırla
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" paragraph>
+                    Sistemdeki tüm verileri siler (öğrenciler, dersler, ödemeler, giderler, vb.).
+                    Sadece süperadmin kullanıcıları korunur. Bu işlem test amaçlıdır ve geri alınamaz!
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    onClick={() => setResetDialog({ ...resetDialog, open: true })}
+                    startIcon={<WarningIcon />}
+                  >
+                    Veritabanını Sıfırla
+                  </Button>
+                </Box>
+              </Box>
+            )}
           </Box>
         )}
 
@@ -321,6 +430,94 @@ const Settings = () => {
           </Box>
         )}
       </Paper>
+
+      {/* Database Reset Dialog */}
+      <Dialog
+        open={resetDialog.open}
+        onClose={handleCloseResetDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: 'error.main', color: 'white' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <WarningIcon />
+            <span>Veritabanını Sıfırla</span>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          {resetDialog.error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {resetDialog.error}
+            </Alert>
+          )}
+
+          {resetDialog.step === 1 ? (
+            <>
+              <DialogContentText sx={{ mb: 2 }}>
+                <strong>⚠️ UYARI: Bu işlem geri alınamaz!</strong>
+              </DialogContentText>
+              <DialogContentText sx={{ mb: 2 }}>
+                Aşağıdaki veriler <strong>kalıcı olarak silinecek</strong>:
+              </DialogContentText>
+              <Box component="ul" sx={{ pl: 3, mb: 2 }}>
+                <li>Tüm öğrenciler</li>
+                <li>Tüm dersler ve kayıtlar</li>
+                <li>Tüm ödeme planları ve ödemeler</li>
+                <li>Tüm giderler</li>
+                <li>Tüm kasalar</li>
+                <li>Tüm eğitmenler</li>
+                <li>Tüm kurumlar ve sezonlar</li>
+                <li>Tüm ayarlar</li>
+                <li>Tüm kullanıcılar (süperadmin hariç)</li>
+              </Box>
+              <Alert severity="info">
+                Sadece <strong>süperadmin kullanıcıları</strong> korunacak. Diğer her şey silinecek.
+              </Alert>
+            </>
+          ) : (
+            <>
+              <DialogContentText sx={{ mb: 2 }}>
+                Devam etmek için <strong>süperadmin</strong> kullanıcı adı ve şifrenizi girin:
+              </DialogContentText>
+              <TextField
+                autoFocus
+                fullWidth
+                label="Kullanıcı Adı"
+                value={resetDialog.username}
+                onChange={(e) => setResetDialog({ ...resetDialog, username: e.target.value })}
+                sx={{ mb: 2 }}
+                disabled={resetDialog.processing}
+              />
+              <TextField
+                fullWidth
+                label="Şifre"
+                type="password"
+                value={resetDialog.password}
+                onChange={(e) => setResetDialog({ ...resetDialog, password: e.target.value })}
+                disabled={resetDialog.processing}
+              />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseResetDialog} disabled={resetDialog.processing}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleResetDatabase}
+            variant="contained"
+            color="error"
+            disabled={resetDialog.processing}
+            startIcon={resetDialog.step === 1 ? <WarningIcon /> : null}
+          >
+            {resetDialog.processing
+              ? 'Siliniyor...'
+              : resetDialog.step === 1
+              ? 'Devam Et'
+              : 'VERİTABANINI SİFIRLA'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
