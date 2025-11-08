@@ -112,14 +112,30 @@ const PaymentPlan = () => {
   };
 
   const getCreditCardCommissionRate = (installmentCount) => {
-    if (!settings || !settings.creditCardRates) return null;
-    const rateObj = settings.creditCardRates.find(r => r.installments === installmentCount);
+    // Default rates if settings not found
+    const defaultRates = [
+      { installments: 1, rate: 4 },
+      { installments: 2, rate: 6.5 },
+      { installments: 3, rate: 9 },
+      { installments: 4, rate: 11.5 },
+      { installments: 5, rate: 14 },
+      { installments: 6, rate: 16.5 },
+      { installments: 7, rate: 19 },
+      { installments: 8, rate: 21.51 },
+      { installments: 9, rate: 21.5 },
+      { installments: 10, rate: 24 },
+      { installments: 11, rate: 26.5 },
+      { installments: 12, rate: 29 }
+    ];
+
+    const rates = settings?.creditCardRates || defaultRates;
+    const rateObj = rates.find(r => r.installments === installmentCount);
     return rateObj ? rateObj.rate : null;
   };
 
   const getVatRate = () => {
-    if (!settings || settings.vatRate === undefined || settings.vatRate === null) return null;
-    return settings.vatRate;
+    // Return settings VAT rate or default 10%
+    return settings?.vatRate ?? 10;
   };
 
   const handleChange = (e) => {
@@ -223,50 +239,23 @@ const PaymentPlan = () => {
 
       let subtotal = totalAmount - discountAmount;
 
-      // Check for commission rate if credit card
-      if (formData.paymentType === 'creditCard') {
-        const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
-        if (commissionRate === null) {
-          setRateDialog({
-            open: true,
-            type: 'commission',
-            value: '',
-            installmentCount: parseInt(formData.installmentCount)
-          });
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Check for VAT rate if invoiced
-      if (formData.isInvoiced) {
-        const vatRate = getVatRate();
-        if (vatRate === null) {
-          setRateDialog({
-            open: true,
-            type: 'vat',
-            value: ''
-          });
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Calculate credit card commission
+      // Calculate credit card commission (will use default rates if settings not found)
       let creditCardCommission = { rate: 0, amount: 0 };
       if (formData.paymentType === 'creditCard') {
         const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
-        creditCardCommission.rate = commissionRate;
-        creditCardCommission.amount = (subtotal * commissionRate) / 100;
+        if (commissionRate !== null) {
+          creditCardCommission.rate = commissionRate;
+          creditCardCommission.amount = (subtotal * commissionRate) / 100;
+        }
       }
 
       // Amount to charge from student (includes commission for credit card)
       let chargeAmount = subtotal + creditCardCommission.amount;
 
-      // Calculate VAT on the charge amount
+      // Calculate VAT on the charge amount (use getVatRate which has default)
       let vat = { rate: 0, amount: 0 };
-      if (formData.isInvoiced && settings) {
-        vat.rate = settings.vatRate || 10;
+      if (formData.isInvoiced) {
+        vat.rate = getVatRate();
         vat.amount = (chargeAmount * vat.rate) / 100;
       }
 
