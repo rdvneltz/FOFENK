@@ -60,6 +60,11 @@ router.post('/', async (req, res) => {
     const paymentPlan = new PaymentPlan(paymentPlanData);
     const newPaymentPlan = await paymentPlan.save();
 
+    // Update student balance - add debt when payment plan is created
+    await Student.findByIdAndUpdate(req.body.student, {
+      $inc: { balance: req.body.discountedAmount }
+    });
+
     // If credit card payment and payment date is today, auto-create payment and expenses
     if (req.body.autoCreatePayment && req.body.paymentType === 'creditCard') {
       const student = await Student.findById(req.body.student);
@@ -95,7 +100,7 @@ router.post('/', async (req, res) => {
         $inc: { balance: chargeAmount }
       });
 
-      // Update student balance
+      // Update student balance - subtract payment (balance was already increased above)
       await Student.findByIdAndUpdate(req.body.student, {
         $inc: { balance: -chargeAmount }
       });

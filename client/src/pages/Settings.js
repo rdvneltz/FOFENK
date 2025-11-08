@@ -88,7 +88,10 @@ const Settings = () => {
         }
       }
     } catch (error) {
-      console.error('Error loading settings:', error);
+      // 404 is normal for new institutions - settings will be created on first save
+      if (error.response?.status !== 404) {
+        console.error('Error loading settings:', error);
+      }
     } finally {
       setLoading(false);
     }
