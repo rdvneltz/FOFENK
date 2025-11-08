@@ -3,6 +3,21 @@ const router = express.Router();
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
 
+// DEBUG: List all users with roles (temporary endpoint for debugging)
+router.get('/debug/list-all', async (req, res) => {
+  try {
+    const users = await User.find({})
+      .select('username fullName role email isActive createdAt')
+      .sort('-createdAt');
+    res.json({
+      count: users.length,
+      users: users
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get all users
 router.get('/', async (req, res) => {
   try {
