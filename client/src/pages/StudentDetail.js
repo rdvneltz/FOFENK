@@ -16,6 +16,11 @@ import {
   Chip,
   Avatar,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -24,6 +29,8 @@ import {
   Email,
   Payment,
   Undo,
+  Add,
+  Archive,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -44,6 +51,10 @@ const StudentDetail = () => {
   const [refundDialog, setRefundDialog] = useState({
     open: false,
     payment: null
+  });
+  const [archiveDialog, setArchiveDialog] = useState({
+    open: false,
+    reason: ''
   });
 
   useEffect(() => {
@@ -94,6 +105,19 @@ const StudentDetail = () => {
     });
   };
 
+  const handleArchive = async () => {
+    try {
+      await api.post(`/students/${id}/archive`, {
+        reason: archiveDialog.reason,
+        archivedBy: user?.username
+      });
+      alert('Öğrenci başarıyla arşivlendi');
+      navigate('/students');
+    } catch (error) {
+      alert('Arşivleme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Öğrenci bilgileri yükleniyor..." />;
   }
@@ -123,6 +147,14 @@ const StudentDetail = () => {
           onClick={() => navigate(`/students/${id}/edit`)}
         >
           Düzenle
+        </Button>
+        <Button
+          variant="outlined"
+          color="warning"
+          startIcon={<Archive />}
+          onClick={() => setArchiveDialog({ open: true, reason: '' })}
+        >
+          Arşivle
         </Button>
         <Button
           variant="contained"
@@ -230,6 +262,15 @@ const StudentDetail = () => {
               {/* Courses Tab */}
               {tabValue === 0 && (
                 <Box>
+                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                      variant="contained"
+                      startIcon={<Add />}
+                      onClick={() => navigate(`/enrollments/new?studentId=${id}`)}
+                    >
+                      Kursa Kaydet
+                    </Button>
+                  </Box>
                   {courses.length === 0 ? (
                     <Typography color="text.secondary" align="center">
                       Henüz kurs kaydı bulunmuyor
@@ -383,6 +424,45 @@ const StudentDetail = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Archive Dialog */}
+      <Dialog
+        open={archiveDialog.open}
+        onClose={() => setArchiveDialog({ open: false, reason: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Öğrenciyi Arşivle</DialogTitle>
+        <DialogContent>
+          {student.balance > 0 && (
+            <Typography color="warning.main" sx={{ mb: 2, mt: 1 }}>
+              ⚠️ Bu öğrencinin {student.balance.toLocaleString('tr-TR')} TL ödenmemiş borcu var!
+              Arşivlenen öğrencilerin borçları takip edilmeye devam edilir.
+            </Typography>
+          )}
+          <TextField
+            fullWidth
+            label="Arşivleme Sebebi (Opsiyonel)"
+            multiline
+            rows={3}
+            value={archiveDialog.reason}
+            onChange={(e) => setArchiveDialog({ ...archiveDialog, reason: e.target.value })}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setArchiveDialog({ open: false, reason: '' })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleArchive}
+            variant="contained"
+            color="warning"
+          >
+            Arşivle
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Refund Dialog */}
       <RefundDialog

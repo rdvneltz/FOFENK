@@ -6,7 +6,7 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all students with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId } = req.query;
+    const { institutionId, seasonId, includeArchived } = req.query;
 
     // Season filter is required
     if (!seasonId) {
@@ -15,6 +15,11 @@ router.get('/', async (req, res) => {
 
     const filter = { season: seasonId };
     if (institutionId) filter.institution = institutionId;
+
+    // By default, exclude archived students unless includeArchived=true
+    if (includeArchived !== 'true') {
+      filter.isArchived = { $ne: true };
+    }
 
     const students = await Student.find(filter)
       .populate('institution', 'name')
@@ -123,6 +128,92 @@ router.delete('/:id', async (req, res) => {
     });
 
     res.json({ message: 'Öğrenci silindi' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Archive student
+router.post('/:id/archive', async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    if (!student) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    student.isArchived = true;
+    student.archivedDate = new Date();
+    student.archiveReason = req.body.reason || '';
+    student.updatedBy = req.body.archivedBy || 'user';
+    await student.save();
+
+    await ActivityLog.create({
+      user: req.body.archivedBy || 'System',
+      action: 'archive',
+      entity: 'Student',
+      entityId: student._id,
+      description: `Öğrenci arşivlendi: ${student.firstName} ${student.lastName}${req.body.reason ? ` - Sebep: ${req.body.reason}` : ''}`,
+      institution: student.institution,
+      season: student.season
+    });
+
+    res.json(student);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Unarchive student
+router.post('/:id/unarchive', async (req, res) => {
+  try {
+    const student = await Student.findById(req.params.id);
+    if (!student) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    student.isArchived = false;
+    student.archivedDate = null;
+    student.archiveReason = null;
+    student.updatedBy = req.body.unarchivedBy || 'user';
+    await student.save();
+
+    await ActivityLog.create({
+      user: req.body.unarchivedBy || 'System',
+      action: 'unarchive',
+      entity: 'Student',
+      entityId: student._id,
+      description: `Öğrenci arşivden çıkarıldı: ${student.firstName} ${student.lastName}`,
+      institution: student.institution,
+      season: student.season
+    });
+
+    res.json(student);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get archived students only
+router.get('/archived/list', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.query;
+
+    if (!seasonId) {
+      return res.status(400).json({ message: 'Season parameter is required' });
+    }
+
+    const filter = {
+      season: seasonId,
+      isArchived: true
+    };
+    if (institutionId) filter.institution = institutionId;
+
+    const students = await Student.find(filter)
+      .populate('institution', 'name')
+      .populate('season', 'name startDate endDate')
+      .sort({ archivedDate: -1 });
+
+    res.json(students);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

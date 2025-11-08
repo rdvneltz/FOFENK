@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Grid, Typography, Paper, Box } from '@mui/material';
+import {
+  Grid,
+  Typography,
+  Paper,
+  Box,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Alert
+} from '@mui/material';
 import {
   People as PeopleIcon,
   AttachMoney as MoneyIcon,
@@ -38,7 +53,7 @@ ChartJS.register(
 );
 
 const Dashboard = () => {
-  const { institution, season } = useApp();
+  const { institution, season, user } = useApp();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalStudents: 0,
@@ -61,16 +76,41 @@ const Dashboard = () => {
     thisWeek: [],
     thisMonth: [],
     nextMonth: [],
-    overdue: []
+    overdue: [],
+    pendingCreditCard: [] // Pending credit card payments
   });
+  const [cashRegisters, setCashRegisters] = useState([]);
+  const [paymentDialog, setPaymentDialog] = useState({
+    open: false,
+    payment: null,
+    cashRegisterId: ''
+  });
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (institution && season) {
       loadDashboardData();
       loadChartData();
       loadExpectedPayments();
+      loadCashRegisters();
     }
   }, [institution, season]);
+
+  const loadCashRegisters = async () => {
+    try {
+      const response = await api.get('/cash-registers', {
+        params: { institution: institution._id }
+      });
+      setCashRegisters(response.data);
+      // Set first cash register as default
+      if (response.data.length > 0) {
+        setPaymentDialog(prev => ({ ...prev, cashRegisterId: response.data[0]._id }));
+      }
+    } catch (error) {
+      console.error('Error loading cash registers:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -113,6 +153,35 @@ const Dashboard = () => {
     }
   };
 
+  const handleProcessPayment = async () => {
+    if (!paymentDialog.cashRegisterId) {
+      setError('Lütfen bir kasa seçin');
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setError('');
+      await api.post(`/payment-plans/${paymentDialog.payment.paymentPlanId}/process-credit-card-payment`, {
+        cashRegisterId: paymentDialog.cashRegisterId,
+        createdBy: user?.username || 'user'
+      });
+
+      // Close dialog
+      setPaymentDialog({ open: false, payment: null, cashRegisterId: paymentDialog.cashRegisterId });
+
+      // Reload data
+      await loadExpectedPayments();
+      await loadDashboardData();
+
+      alert('Ödeme başarıyla işlendi!');
+    } catch (error) {
+      setError(error.response?.data?.message || 'Ödeme işlenirken bir hata oluştu');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   const loadExpectedPayments = async () => {
     try {
       const params = {
@@ -139,8 +208,27 @@ const Dashboard = () => {
         thisWeek: [],
         thisMonth: [],
         nextMonth: [],
-        overdue: []
+        overdue: [],
+        pendingCreditCard: []
       };
+
+      // Check for pending credit card payments
+      paymentPlans.forEach(plan => {
+        if (plan.isPendingPayment && plan.paymentType === 'creditCard' && plan.paymentDate) {
+          const paymentDate = new Date(plan.paymentDate);
+          if (paymentDate <= now) {
+            // Payment date has arrived, should be processed
+            categorized.pendingCreditCard.push({
+              student: plan.student,
+              course: plan.course,
+              amount: plan.discountedAmount,
+              paymentDate: paymentDate,
+              paymentPlanId: plan._id,
+              isPending: true
+            });
+          }
+        }
+      });
 
       paymentPlans.forEach(plan => {
         plan.installments?.forEach(installment => {
@@ -536,7 +624,120 @@ const Dashboard = () => {
             )}
           </Paper>
         </Grid>
+
+        {/* Pending Credit Card Payments Widget */}
+        {expectedPayments.pendingCreditCard.length > 0 && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom color="warning.main">
+                ⏰ Vadesi Gelen Kredi Kartı Ödemeleri
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Bu ödemeler beklemede - ödeme tarihi geldi, kasaya işlenmeyi bekliyor
+              </Typography>
+              <Box sx={{ mt: 2 }}>
+                {expectedPayments.pendingCreditCard.map((payment, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      p: 2,
+                      mb: 1,
+                      bgcolor: 'warning.light',
+                      borderRadius: 1,
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Box>
+                      <Typography variant="body1" fontWeight="bold">
+                        {payment.student?.firstName} {payment.student?.lastName}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {payment.course?.name}
+                      </Typography>
+                      <Typography variant="caption">
+                        Ödeme Tarihi: {new Date(payment.paymentDate).toLocaleDateString('tr-TR')}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <Typography variant="h6" color="warning.dark">
+                        ₺{payment.amount?.toLocaleString('tr-TR')}
+                      </Typography>
+                      <Typography variant="caption">
+                        Kredi Kartı - Bekliyor
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        color="success"
+                        size="small"
+                        onClick={() => setPaymentDialog({ open: true, payment: payment, cashRegisterId: cashRegisters[0]?._id || '' })}
+                      >
+                        Ödeme Al
+                      </Button>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </Paper>
+          </Grid>
+        )}
       </Grid>
+
+      {/* Payment Dialog */}
+      <Dialog
+        open={paymentDialog.open}
+        onClose={() => setPaymentDialog({ ...paymentDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Kredi Kartı Ödemesini İşle</DialogTitle>
+        <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          {paymentDialog.payment && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body1" gutterBottom>
+                <strong>Öğrenci:</strong> {paymentDialog.payment.student?.firstName} {paymentDialog.payment.student?.lastName}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Ders:</strong> {paymentDialog.payment.course?.name}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Tutar:</strong> ₺{paymentDialog.payment.amount?.toLocaleString('tr-TR')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Ödeme Tarihi: {paymentDialog.payment.paymentDate && new Date(paymentDialog.payment.paymentDate).toLocaleDateString('tr-TR')}
+              </Typography>
+            </Box>
+          )}
+          <FormControl fullWidth>
+            <InputLabel>Kasa Seçin</InputLabel>
+            <Select
+              value={paymentDialog.cashRegisterId}
+              onChange={(e) => setPaymentDialog({ ...paymentDialog, cashRegisterId: e.target.value })}
+              label="Kasa Seçin"
+            >
+              {cashRegisters.map((register) => (
+                <MenuItem key={register._id} value={register._id}>
+                  {register.name} - Bakiye: ₺{register.balance?.toLocaleString('tr-TR')}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentDialog({ ...paymentDialog, open: false })} disabled={processing}>
+            İptal
+          </Button>
+          <Button onClick={handleProcessPayment} variant="contained" color="success" disabled={processing}>
+            {processing ? 'İşleniyor...' : 'Ödemeyi İşle'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

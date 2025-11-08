@@ -69,6 +69,13 @@ const paymentPlanSchema = new mongoose.Schema({
   installments: [installmentSchema],
   // Kredi kartı taksit sayısı (varsa)
   creditCardInstallments: Number,
+  // Kredi kartı ödeme tarihi (gelecekte ise pending)
+  paymentDate: Date,
+  // Ödeme pending durumda mı (kredi kartı için)
+  isPendingPayment: {
+    type: Boolean,
+    default: false
+  },
   // Ödenen toplam tutar
   paidAmount: {
     type: Number,

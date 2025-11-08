@@ -55,6 +55,15 @@ const studentSchema = new mongoose.Schema({
     enum: ['trial', 'active', 'passive'],
     default: 'trial'
   },
+  // Arşivlenmiş mi
+  isArchived: {
+    type: Boolean,
+    default: false
+  },
+  // Arşivlenme tarihi
+  archivedDate: Date,
+  // Arşivlenme sebebi
+  archiveReason: String,
   createdAt: {
     type: Date,
     default: Date.now
