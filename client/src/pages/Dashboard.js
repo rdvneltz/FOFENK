@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Grid, Typography, Paper, Box } from '@mui/material';
+import {
+  Grid,
+  Typography,
+  Paper,
+  Box,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Alert
+} from '@mui/material';
 import {
   People as PeopleIcon,
   AttachMoney as MoneyIcon,
@@ -38,7 +53,7 @@ ChartJS.register(
 );
 
 const Dashboard = () => {
-  const { institution, season } = useApp();
+  const { institution, season, user } = useApp();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalStudents: 0,
@@ -64,14 +79,38 @@ const Dashboard = () => {
     overdue: [],
     pendingCreditCard: [] // Pending credit card payments
   });
+  const [cashRegisters, setCashRegisters] = useState([]);
+  const [paymentDialog, setPaymentDialog] = useState({
+    open: false,
+    payment: null,
+    cashRegisterId: ''
+  });
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (institution && season) {
       loadDashboardData();
       loadChartData();
       loadExpectedPayments();
+      loadCashRegisters();
     }
   }, [institution, season]);
+
+  const loadCashRegisters = async () => {
+    try {
+      const response = await api.get('/cash-registers', {
+        params: { institution: institution._id }
+      });
+      setCashRegisters(response.data);
+      // Set first cash register as default
+      if (response.data.length > 0) {
+        setPaymentDialog(prev => ({ ...prev, cashRegisterId: response.data[0]._id }));
+      }
+    } catch (error) {
+      console.error('Error loading cash registers:', error);
+    }
+  };
 
   const loadDashboardData = async () => {
     try {
@@ -111,6 +150,35 @@ const Dashboard = () => {
       setExpenseCategoriesData(expenseCategories.data);
     } catch (error) {
       console.error('Error loading chart data:', error);
+    }
+  };
+
+  const handleProcessPayment = async () => {
+    if (!paymentDialog.cashRegisterId) {
+      setError('Lütfen bir kasa seçin');
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setError('');
+      await api.post(`/payment-plans/${paymentDialog.payment.paymentPlanId}/process-credit-card-payment`, {
+        cashRegisterId: paymentDialog.cashRegisterId,
+        createdBy: user?.username || 'user'
+      });
+
+      // Close dialog
+      setPaymentDialog({ open: false, payment: null, cashRegisterId: paymentDialog.cashRegisterId });
+
+      // Reload data
+      await loadExpectedPayments();
+      await loadDashboardData();
+
+      alert('Ödeme başarıyla işlendi!');
+    } catch (error) {
+      setError(error.response?.data?.message || 'Ödeme işlenirken bir hata oluştu');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -592,13 +660,21 @@ const Dashboard = () => {
                         Ödeme Tarihi: {new Date(payment.paymentDate).toLocaleDateString('tr-TR')}
                       </Typography>
                     </Box>
-                    <Box sx={{ textAlign: 'right' }}>
+                    <Box sx={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 1 }}>
                       <Typography variant="h6" color="warning.dark">
                         ₺{payment.amount?.toLocaleString('tr-TR')}
                       </Typography>
                       <Typography variant="caption">
                         Kredi Kartı - Bekliyor
                       </Typography>
+                      <Button
+                        variant="contained"
+                        color="success"
+                        size="small"
+                        onClick={() => setPaymentDialog({ open: true, payment: payment, cashRegisterId: cashRegisters[0]?._id || '' })}
+                      >
+                        Ödeme Al
+                      </Button>
                     </Box>
                   </Box>
                 ))}
@@ -607,6 +683,61 @@ const Dashboard = () => {
           </Grid>
         )}
       </Grid>
+
+      {/* Payment Dialog */}
+      <Dialog
+        open={paymentDialog.open}
+        onClose={() => setPaymentDialog({ ...paymentDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Kredi Kartı Ödemesini İşle</DialogTitle>
+        <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+          {paymentDialog.payment && (
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="body1" gutterBottom>
+                <strong>Öğrenci:</strong> {paymentDialog.payment.student?.firstName} {paymentDialog.payment.student?.lastName}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Ders:</strong> {paymentDialog.payment.course?.name}
+              </Typography>
+              <Typography variant="body1" gutterBottom>
+                <strong>Tutar:</strong> ₺{paymentDialog.payment.amount?.toLocaleString('tr-TR')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Ödeme Tarihi: {paymentDialog.payment.paymentDate && new Date(paymentDialog.payment.paymentDate).toLocaleDateString('tr-TR')}
+              </Typography>
+            </Box>
+          )}
+          <FormControl fullWidth>
+            <InputLabel>Kasa Seçin</InputLabel>
+            <Select
+              value={paymentDialog.cashRegisterId}
+              onChange={(e) => setPaymentDialog({ ...paymentDialog, cashRegisterId: e.target.value })}
+              label="Kasa Seçin"
+            >
+              {cashRegisters.map((register) => (
+                <MenuItem key={register._id} value={register._id}>
+                  {register.name} - Bakiye: ₺{register.balance?.toLocaleString('tr-TR')}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentDialog({ ...paymentDialog, open: false })} disabled={processing}>
+            İptal
+          </Button>
+          <Button onClick={handleProcessPayment} variant="contained" color="success" disabled={processing}>
+            {processing ? 'İşleniyor...' : 'Ödemeyi İşle'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

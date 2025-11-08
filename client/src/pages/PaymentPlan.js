@@ -274,52 +274,68 @@ const PaymentPlan = () => {
 
       // Create installment array
       const installments = [];
-      const startDate = new Date(formData.firstInstallmentDate);
 
-      if (formData.useCustomAmounts && formData.customInstallments.length > 0) {
-        // Use custom installment amounts
-        for (let i = 0; i < formData.customInstallments.length; i++) {
-          const dueDate = new Date(startDate);
-
-          if (formData.installmentFrequency === 'weekly') {
-            dueDate.setDate(startDate.getDate() + (i * 7));
-          } else if (formData.installmentFrequency === 'custom') {
-            dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
-          } else {
-            dueDate.setMonth(startDate.getMonth() + i);
-          }
-
-          installments.push({
-            installmentNumber: i + 1,
-            amount: parseFloat(formData.customInstallments[i].amount),
-            dueDate: dueDate,
-            isPaid: false,
-            paidAmount: 0,
-            isInvoiced: formData.isInvoiced
-          });
-        }
+      // For credit card: create single installment (money comes in one payment)
+      // For cash: create multiple installments based on frequency
+      if (formData.paymentType === 'creditCard') {
+        // Credit card: single installment with full amount and payment date
+        installments.push({
+          installmentNumber: 1,
+          amount: chargeAmount,
+          dueDate: new Date(formData.paymentDate),
+          isPaid: false,
+          paidAmount: 0,
+          isInvoiced: formData.isInvoiced
+        });
       } else {
-        // Equal installments
-        const installmentAmount = chargeAmount / installmentCount;
-        for (let i = 0; i < installmentCount; i++) {
-          const dueDate = new Date(startDate);
+        // Cash payments: create installments based on frequency
+        const startDate = new Date(formData.firstInstallmentDate);
 
-          if (formData.installmentFrequency === 'weekly') {
-            dueDate.setDate(startDate.getDate() + (i * 7));
-          } else if (formData.installmentFrequency === 'custom') {
-            dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
-          } else {
-            dueDate.setMonth(startDate.getMonth() + i);
+        if (formData.useCustomAmounts && formData.customInstallments.length > 0) {
+          // Use custom installment amounts
+          for (let i = 0; i < formData.customInstallments.length; i++) {
+            const dueDate = new Date(startDate);
+
+            if (formData.installmentFrequency === 'weekly') {
+              dueDate.setDate(startDate.getDate() + (i * 7));
+            } else if (formData.installmentFrequency === 'custom') {
+              dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
+            } else {
+              dueDate.setMonth(startDate.getMonth() + i);
+            }
+
+            installments.push({
+              installmentNumber: i + 1,
+              amount: parseFloat(formData.customInstallments[i].amount),
+              dueDate: dueDate,
+              isPaid: false,
+              paidAmount: 0,
+              isInvoiced: formData.isInvoiced
+            });
           }
+        } else {
+          // Equal installments
+          const installmentAmount = chargeAmount / installmentCount;
+          for (let i = 0; i < installmentCount; i++) {
+            const dueDate = new Date(startDate);
 
-          installments.push({
-            installmentNumber: i + 1,
-            amount: installmentAmount,
-            dueDate: dueDate,
-            isPaid: false,
-            paidAmount: 0,
-            isInvoiced: formData.isInvoiced
-          });
+            if (formData.installmentFrequency === 'weekly') {
+              dueDate.setDate(startDate.getDate() + (i * 7));
+            } else if (formData.installmentFrequency === 'custom') {
+              dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
+            } else {
+              dueDate.setMonth(startDate.getMonth() + i);
+            }
+
+            installments.push({
+              installmentNumber: i + 1,
+              amount: installmentAmount,
+              dueDate: dueDate,
+              isPaid: false,
+              paidAmount: 0,
+              isInvoiced: formData.isInvoiced
+            });
+          }
         }
       }
 
