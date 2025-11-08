@@ -19,7 +19,8 @@ const activityLogSchema = new mongoose.Schema({
       'attendance',
       'setup',
       'login',
-      'logout'
+      'logout',
+      'reset'
     ]
   },
   entity: {
@@ -40,7 +41,8 @@ const activityLogSchema = new mongoose.Schema({
       'TrialLesson',
       'Settings',
       'System',
-      'User'
+      'User',
+      'Database'
     ]
   },
   entityId: {
