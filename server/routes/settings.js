@@ -5,7 +5,7 @@ const ActivityLog = require('../models/ActivityLog');
 const User = require('../models/User');
 const Student = require('../models/Student');
 const Course = require('../models/Course');
-const Enrollment = require('../models/Enrollment');
+const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 const PaymentPlan = require('../models/PaymentPlan');
 const Payment = require('../models/Payment');
 const Expense = require('../models/Expense');
@@ -221,7 +221,7 @@ router.post('/reset-database', async (req, res) => {
     await Course.deleteMany({});
     console.log('✓ Courses deleted');
 
-    await Enrollment.deleteMany({});
+    await StudentCourseEnrollment.deleteMany({});
     console.log('✓ Enrollments deleted');
 
     await PaymentPlan.deleteMany({});
