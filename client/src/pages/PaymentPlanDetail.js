@@ -65,8 +65,14 @@ const PaymentPlanDetail = () => {
   useEffect(() => {
     loadPaymentPlan();
     loadSettings();
-    loadCashRegisters();
   }, [id]);
+
+  // Load cash registers after payment plan is loaded
+  useEffect(() => {
+    if (paymentPlan) {
+      loadCashRegisters();
+    }
+  }, [paymentPlan]);
 
   const loadPaymentPlan = async () => {
     try {

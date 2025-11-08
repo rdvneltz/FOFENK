@@ -24,15 +24,18 @@ import {
   IconButton,
   Alert,
 } from '@mui/material';
-import { Add, Edit, Delete, Group, PersonAdd } from '@mui/icons-material';
+import { Add, Edit, Delete, Group, PersonAdd, Warning } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
+import { useNavigate } from 'react-router-dom';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import SetupRequired from '../components/Common/SetupRequired';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import BulkEnrollDialog from '../components/Courses/BulkEnrollDialog';
 
 const Courses = () => {
   const { institution, season } = useApp();
+  const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +45,7 @@ const Courses = () => {
   const [selectedCourse, setSelectedCourse] = useState(null);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [noInstructorDialog, setNoInstructorDialog] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -89,6 +93,12 @@ const Courses = () => {
   };
 
   const handleOpenDialog = (course = null) => {
+    // Check if instructors exist (only for new course)
+    if (!course && instructors.length === 0) {
+      setNoInstructorDialog(true);
+      return;
+    }
+
     if (course) {
       setSelectedCourse(course);
       setFormData({
@@ -459,6 +469,36 @@ const Courses = () => {
         course={selectedCourse}
         onSuccess={handleBulkEnrollSuccess}
       />
+
+      {/* No Instructor Dialog */}
+      <Dialog open={noInstructorDialog} onClose={() => setNoInstructorDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ bgcolor: 'warning.light', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Warning />
+          Eğitmen Gerekli
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          <Typography variant="body1" paragraph>
+            Ders oluşturmadan önce en az bir eğitmen kaydı oluşturmanız gerekmektedir.
+          </Typography>
+          <Alert severity="info">
+            Lütfen önce "Eğitmenler" sayfasından bir eğitmen ekleyin.
+          </Alert>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNoInstructorDialog(false)}>
+            İptal
+          </Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setNoInstructorDialog(false);
+              navigate('/instructors');
+            }}
+          >
+            Eğitmen Ekle
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

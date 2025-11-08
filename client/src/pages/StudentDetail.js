@@ -48,6 +48,12 @@ const StudentDetail = () => {
   const [payments, setPayments] = useState([]);
   const [paymentPlans, setPaymentPlans] = useState([]);
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [availableCourses, setAvailableCourses] = useState([]);
+  const [enrollDialog, setEnrollDialog] = useState({
+    open: false,
+    courseId: '',
+    startDate: new Date().toISOString().split('T')[0]
+  });
   const [refundDialog, setRefundDialog] = useState({
     open: false,
     payment: null
@@ -64,22 +70,40 @@ const StudentDetail = () => {
   const loadStudent = async () => {
     try {
       setLoading(true);
-      const [studentRes, coursesRes, paymentsRes, paymentPlansRes, cashRes] = await Promise.all([
+      const [studentRes, coursesRes, paymentsRes, paymentPlansRes, cashRes, allCoursesRes] = await Promise.all([
         api.get(`/students/${id}`),
         api.get(`/enrollments`, { params: { studentId: id } }),
         api.get(`/payments`, { params: { studentId: id } }),
         api.get(`/payment-plans`, { params: { studentId: id } }),
         api.get(`/cash-registers`, { params: { institution: institution._id } }),
+        api.get(`/courses`, { params: { institution: institution._id } }),
       ]);
       setStudent(studentRes.data);
       setCourses(coursesRes.data);
       setPayments(paymentsRes.data);
       setPaymentPlans(paymentPlansRes.data);
       setCashRegisters(cashRes.data);
+      setAvailableCourses(allCoursesRes.data);
     } catch (error) {
       console.error('Error loading student:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEnrollStudent = async () => {
+    try {
+      await api.post('/enrollments', {
+        student: id,
+        course: enrollDialog.courseId,
+        startDate: enrollDialog.startDate,
+        createdBy: user?.username
+      });
+      setEnrollDialog({ open: false, courseId: '', startDate: new Date().toISOString().split('T')[0] });
+      loadStudent(); // Reload to show new enrollment
+      alert('Öğrenci başarıyla kursa kaydedildi!');
+    } catch (error) {
+      alert('Kayıt hatası: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -266,7 +290,7 @@ const StudentDetail = () => {
                     <Button
                       variant="contained"
                       startIcon={<Add />}
-                      onClick={() => navigate(`/enrollments/new?studentId=${id}`)}
+                      onClick={() => setEnrollDialog({ ...enrollDialog, open: true })}
                     >
                       Kursa Kaydet
                     </Button>
@@ -460,6 +484,59 @@ const StudentDetail = () => {
             color="warning"
           >
             Arşivle
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Enrollment Dialog */}
+      <Dialog
+        open={enrollDialog.open}
+        onClose={() => setEnrollDialog({ ...enrollDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Kursa Kaydet</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <TextField
+                select
+                fullWidth
+                label="Ders Seçin"
+                value={enrollDialog.courseId}
+                onChange={(e) => setEnrollDialog({ ...enrollDialog, courseId: e.target.value })}
+                required
+              >
+                {availableCourses.map((course) => (
+                  <MenuItem key={course._id} value={course._id}>
+                    {course.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                type="date"
+                label="Başlangıç Tarihi"
+                value={enrollDialog.startDate}
+                onChange={(e) => setEnrollDialog({ ...enrollDialog, startDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEnrollDialog({ ...enrollDialog, open: false })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleEnrollStudent}
+            variant="contained"
+            disabled={!enrollDialog.courseId}
+          >
+            Kaydet
           </Button>
         </DialogActions>
       </Dialog>
