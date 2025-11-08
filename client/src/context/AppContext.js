@@ -194,6 +194,26 @@ export const AppProvider = ({ children }) => {
       try {
         const seasonsResponse = await api.get(`/seasons?institution=${institution._id}`);
         setSeasons(seasonsResponse.data);
+
+        // Auto-select season if none selected or if current season no longer exists
+        if (seasonsResponse.data.length > 0) {
+          const currentSeasonStillExists = season && seasonsResponse.data.find(s => s._id === season._id);
+
+          if (!currentSeasonStillExists) {
+            // Select active season or first season
+            const activeSeason = seasonsResponse.data.find(s => s.isActive);
+            const selectedSeason = activeSeason || seasonsResponse.data[0];
+
+            if (selectedSeason) {
+              setSeason(selectedSeason);
+              localStorage.setItem('selectedSeason', selectedSeason._id);
+            }
+          }
+        } else {
+          // No seasons available, clear selection
+          setSeason(null);
+          localStorage.removeItem('selectedSeason');
+        }
       } catch (error) {
         console.error('Error refreshing seasons:', error);
       }
