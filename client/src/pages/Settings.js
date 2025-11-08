@@ -67,6 +67,11 @@ const Settings = () => {
   }, [institution]);
 
   const loadSettings = async () => {
+    if (!institution) {
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const response = await api.get(`/settings/${institution._id}`);
@@ -181,13 +186,17 @@ const Settings = () => {
   };
 
   if (!institution) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 4 }}>
-        <Typography variant="h5" color="text.secondary">
-          Lütfen bir kurum seçin
-        </Typography>
-      </Box>
-    );
+    // If no institution, show a message only for non-superadmin on general settings tab
+    if (tabValue === 0 && currentUser?.role !== 'superadmin') {
+      return (
+        <Box sx={{ textAlign: 'center', mt: 4 }}>
+          <Typography variant="h5" color="text.secondary">
+            Lütfen bir kurum seçin
+          </Typography>
+        </Box>
+      );
+    }
+    // For superadmin or other tabs, continue rendering
   }
 
   return (

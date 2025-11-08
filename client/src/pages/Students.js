@@ -59,6 +59,8 @@ const Students = () => {
   useEffect(() => {
     if (institution && season) {
       loadStudents();
+    } else {
+      setLoading(false);
     }
   }, [institution, season]);
 
