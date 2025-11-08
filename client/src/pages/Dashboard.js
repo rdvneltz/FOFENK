@@ -24,6 +24,7 @@ import {
 import { useApp } from '../context/AppContext';
 import StatCard from '../components/Dashboard/StatCard';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import SetupRequired from '../components/Common/SetupRequired';
 import api from '../api';
 import {
   Chart as ChartJS,
@@ -94,6 +95,8 @@ const Dashboard = () => {
       loadChartData();
       loadExpectedPayments();
       loadCashRegisters();
+    } else {
+      setLoading(false);
     }
   }, [institution, season]);
 
@@ -270,14 +273,12 @@ const Dashboard = () => {
     return <LoadingSpinner message="Panel yükleniyor..." />;
   }
 
-  if (!institution || !season) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 4 }}>
-        <Typography variant="h5" color="text.secondary">
-          Lütfen bir kurum ve sezon seçin
-        </Typography>
-      </Box>
-    );
+  if (!institution) {
+    return <SetupRequired type="institution" />;
+  }
+
+  if (!season) {
+    return <SetupRequired type="season" />;
   }
 
   return (
