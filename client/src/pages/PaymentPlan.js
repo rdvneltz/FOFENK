@@ -112,14 +112,14 @@ const PaymentPlan = () => {
   };
 
   const getCreditCardCommissionRate = (installmentCount) => {
-    if (!settings || !settings.creditCardRates) return null;
+    if (!settings || !settings.creditCardRates) return 0;
     const rateObj = settings.creditCardRates.find(r => r.installments === installmentCount);
-    return rateObj ? rateObj.rate : null;
+    return rateObj ? rateObj.rate : 0;
   };
 
   const getVatRate = () => {
-    if (!settings || settings.vatRate === undefined || settings.vatRate === null) return null;
-    return settings.vatRate;
+    // Return settings VAT rate (settings should always exist from DB)
+    return settings?.vatRate || 10;
   };
 
   const handleChange = (e) => {
@@ -223,50 +223,23 @@ const PaymentPlan = () => {
 
       let subtotal = totalAmount - discountAmount;
 
-      // Check for commission rate if credit card
-      if (formData.paymentType === 'creditCard') {
-        const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
-        if (commissionRate === null) {
-          setRateDialog({
-            open: true,
-            type: 'commission',
-            value: '',
-            installmentCount: parseInt(formData.installmentCount)
-          });
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Check for VAT rate if invoiced
-      if (formData.isInvoiced) {
-        const vatRate = getVatRate();
-        if (vatRate === null) {
-          setRateDialog({
-            open: true,
-            type: 'vat',
-            value: ''
-          });
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Calculate credit card commission
+      // Calculate credit card commission (will use default rates if settings not found)
       let creditCardCommission = { rate: 0, amount: 0 };
       if (formData.paymentType === 'creditCard') {
         const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
-        creditCardCommission.rate = commissionRate;
-        creditCardCommission.amount = (subtotal * commissionRate) / 100;
+        if (commissionRate !== null) {
+          creditCardCommission.rate = commissionRate;
+          creditCardCommission.amount = (subtotal * commissionRate) / 100;
+        }
       }
 
       // Amount to charge from student (includes commission for credit card)
       let chargeAmount = subtotal + creditCardCommission.amount;
 
-      // Calculate VAT on the charge amount
+      // Calculate VAT on the charge amount (use getVatRate which has default)
       let vat = { rate: 0, amount: 0 };
-      if (formData.isInvoiced && settings) {
-        vat.rate = settings.vatRate || 10;
+      if (formData.isInvoiced) {
+        vat.rate = getVatRate();
         vat.amount = (chargeAmount * vat.rate) / 100;
       }
 
