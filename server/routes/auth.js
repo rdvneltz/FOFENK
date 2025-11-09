@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Institution = require('../models/Institution');
 const Season = require('../models/Season');
+const Settings = require('../models/Settings');
 const ActivityLog = require('../models/ActivityLog');
 const { requireAuth } = require('../middleware/auth');
 
@@ -67,6 +68,28 @@ router.post('/setup', async (req, res) => {
       }
     });
     await newInstitution.save();
+
+    // Create settings for the institution with defaults
+    const newSettings = new Settings({
+      institution: newInstitution._id,
+      vatRate: 10,
+      creditCardRates: [
+        { installments: 1, rate: 4 },
+        { installments: 2, rate: 6.5 },
+        { installments: 3, rate: 9 },
+        { installments: 4, rate: 11.5 },
+        { installments: 5, rate: 14 },
+        { installments: 6, rate: 16.5 },
+        { installments: 7, rate: 19 },
+        { installments: 8, rate: 21.51 },
+        { installments: 9, rate: 21.5 },
+        { installments: 10, rate: 24 },
+        { installments: 11, rate: 26.5 },
+        { installments: 12, rate: 29 }
+      ],
+      createdBy: username
+    });
+    await newSettings.save();
 
     // Create superadmin user with all permissions
     const newUser = new User({
