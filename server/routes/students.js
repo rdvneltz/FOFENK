@@ -176,11 +176,32 @@ router.get('/:id/check-related-records', async (req, res) => {
 
 router.delete('/:id', async (req, res) => {
   try {
+    const Payment = require('../models/Payment');
+    const Expense = require('../models/Expense');
+    const PaymentPlan = require('../models/PaymentPlan');
+    const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+
     const student = await Student.findById(req.params.id);
     if (!student) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
 
+    // Delete related records first
+    // 1. Delete all payments
+    await Payment.deleteMany({ student: req.params.id });
+
+    // 2. Delete related expenses (based on student name in description)
+    await Expense.deleteMany({
+      description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' }
+    });
+
+    // 3. Delete payment plans
+    await PaymentPlan.deleteMany({ student: req.params.id });
+
+    // 4. Delete enrollments
+    await StudentCourseEnrollment.deleteMany({ student: req.params.id });
+
+    // 5. Finally delete the student
     await Student.findByIdAndDelete(req.params.id);
 
     // Log activity
@@ -189,13 +210,19 @@ router.delete('/:id', async (req, res) => {
       action: 'delete',
       entity: 'Student',
       entityId: student._id,
-      description: `Öğrenci silindi: ${student.firstName} ${student.lastName}`,
+      description: `Öğrenci ve ilgili tüm kayıtlar silindi: ${student.firstName} ${student.lastName}`,
       institution: student.institution,
       season: student.season
     });
 
-    res.json({ message: 'Öğrenci silindi' });
+    res.json({
+      message: 'Öğrenci ve ilgili tüm kayıtlar başarıyla silindi',
+      deleted: {
+        student: student.firstName + ' ' + student.lastName
+      }
+    });
   } catch (error) {
+    console.error('Error deleting student:', error);
     res.status(500).json({ message: error.message });
   }
 });
