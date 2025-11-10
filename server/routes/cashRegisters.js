@@ -4,6 +4,9 @@ const CashRegister = require('../models/CashRegister');
 const Payment = require('../models/Payment');
 const Expense = require('../models/Expense');
 const ActivityLog = require('../models/ActivityLog');
+const User = require('../models/User');
+const Student = require('../models/Student');
+const bcrypt = require('bcrypt');
 
 // Get all cash registers with filtering
 router.get('/', async (req, res) => {
@@ -270,6 +273,99 @@ router.post('/transfer', async (req, res) => {
     res.json({ fromCash: populatedFromCash, toCash: populatedToCash });
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+});
+
+// Delete transaction (Payment or Expense) with admin approval
+router.post('/transactions/:id/delete', async (req, res) => {
+  try {
+    const { password, transactionType, userId } = req.body;
+    const transactionId = req.params.id;
+
+    // Verify admin password
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ message: 'Hatalı şifre' });
+    }
+
+    if (user.role !== 'superadmin' && user.role !== 'admin') {
+      return res.status(403).json({ message: 'Bu işlem için admin yetkisi gereklidir' });
+    }
+
+    let transaction;
+    let cashRegister;
+    let description;
+
+    if (transactionType === 'Payment') {
+      transaction = await Payment.findById(transactionId)
+        .populate('student', 'firstName lastName')
+        .populate('course', 'name');
+
+      if (!transaction) {
+        return res.status(404).json({ message: 'Ödeme kaydı bulunamadı' });
+      }
+
+      if (transaction.isRefunded) {
+        return res.status(400).json({ message: 'İade edilmiş ödeme silinemez' });
+      }
+
+      cashRegister = await CashRegister.findById(transaction.cashRegister);
+
+      // Reverse cash register balance (subtract payment amount)
+      cashRegister.balance -= transaction.amount;
+      await cashRegister.save();
+
+      // Reverse student balance (add back debt)
+      await Student.findByIdAndUpdate(transaction.student._id, {
+        $inc: { balance: transaction.amount }
+      });
+
+      description = `Ödeme silindi: ${transaction.student?.firstName} ${transaction.student?.lastName} - ${transaction.course?.name} - ₺${transaction.amount}`;
+
+      await Payment.findByIdAndDelete(transactionId);
+
+    } else if (transactionType === 'Expense') {
+      transaction = await Expense.findById(transactionId);
+
+      if (!transaction) {
+        return res.status(404).json({ message: 'Gider kaydı bulunamadı' });
+      }
+
+      cashRegister = await CashRegister.findById(transaction.cashRegister);
+
+      // Reverse cash register balance (add back expense amount)
+      cashRegister.balance += transaction.amount;
+      await cashRegister.save();
+
+      description = `Gider silindi: ${transaction.category} - ${transaction.description} - ₺${transaction.amount}`;
+
+      await Expense.findByIdAndDelete(transactionId);
+    } else {
+      return res.status(400).json({ message: 'Geçersiz işlem tipi' });
+    }
+
+    // Log activity
+    await ActivityLog.create({
+      user: user.username,
+      action: 'delete',
+      entity: transactionType,
+      entityId: transactionId,
+      description: description,
+      institution: cashRegister.institution
+    });
+
+    res.json({
+      message: 'Hareket başarıyla silindi ve kasa bakiyesi güncellendi',
+      cashRegister: await CashRegister.findById(cashRegister._id).populate('institution', 'name')
+    });
+  } catch (error) {
+    console.error('Error deleting transaction:', error);
+    res.status(500).json({ message: error.message });
   }
 });
 

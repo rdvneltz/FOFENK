@@ -44,7 +44,7 @@ const EXPENSE_CATEGORIES = [
 ];
 
 const Expenses = () => {
-  const { institution, season } = useApp();
+  const { institution, season, currentUser, user } = useApp();
   const [expenses, setExpenses] = useState([]);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +59,13 @@ const Expenses = () => {
     category: '',
     date: new Date().toISOString().split('T')[0],
     cashRegister: '',
+  });
+
+  // Admin approval dialog for delete
+  const [deleteDialog, setDeleteDialog] = useState({
+    open: false,
+    expense: null,
+    password: ''
   });
 
   useEffect(() => {
@@ -163,6 +170,28 @@ const Expenses = () => {
       setSelectedExpense(null);
     } catch (error) {
       setError(error.response?.data?.message || 'Silme işlemi başarısız');
+    }
+  };
+
+  const handleDeleteWithApproval = async () => {
+    try {
+      if (!deleteDialog.password) {
+        setError('Lütfen admin şifrenizi giriniz');
+        return;
+      }
+
+      await api.post(`/cash-registers/transactions/${deleteDialog.expense._id}/delete`, {
+        password: deleteDialog.password,
+        transactionType: 'Expense',
+        userId: currentUser._id
+      });
+
+      setError('');
+      alert('Gider başarıyla silindi');
+      setDeleteDialog({ open: false, expense: null, password: '' });
+      await loadData();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Silme işlemi sırasında hata oluştu');
     }
   };
 
@@ -292,11 +321,9 @@ const Expenses = () => {
                     </IconButton>
                     <IconButton
                       size="small"
-                      onClick={() => {
-                        setSelectedExpense(expense);
-                        setOpenConfirm(true);
-                      }}
+                      onClick={() => setDeleteDialog({ open: true, expense, password: '' })}
                       color="error"
+                      title="Sil"
                     >
                       <Delete />
                     </IconButton>
@@ -391,15 +418,57 @@ const Expenses = () => {
         </form>
       </Dialog>
 
-      <ConfirmDialog
-        open={openConfirm}
-        onClose={() => setOpenConfirm(false)}
-        onConfirm={handleDelete}
-        title="Gider Sil"
-        message="Bu gideri silmek istediğinizden emin misiniz?"
-        confirmText="Sil"
-        confirmColor="error"
-      />
+      {/* Delete Expense Confirmation Dialog with Admin Approval */}
+      <Dialog
+        open={deleteDialog.open}
+        onClose={() => setDeleteDialog({ open: false, expense: null, password: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Gideri Sil - Admin Onayı</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2, mt: 2 }}>
+            Bu gideri silmek kasa bakiyesini etkileyecektir. İşlem geri alınamaz!
+          </Alert>
+          {deleteDialog.expense && (
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Kategori:</strong> {deleteDialog.expense.category}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Açıklama:</strong> {deleteDialog.expense.description}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Tutar:</strong> ₺{deleteDialog.expense.amount?.toLocaleString('tr-TR')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                <strong>Tarih:</strong> {new Date(deleteDialog.expense.expenseDate).toLocaleDateString('tr-TR')}
+              </Typography>
+            </Box>
+          )}
+          <TextField
+            fullWidth
+            type="password"
+            label="Admin Şifresi"
+            value={deleteDialog.password}
+            onChange={(e) => setDeleteDialog({ ...deleteDialog, password: e.target.value })}
+            placeholder="Onaylamak için admin şifrenizi giriniz"
+            required
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialog({ open: false, expense: null, password: '' })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleDeleteWithApproval}
+            color="error"
+            variant="contained"
+          >
+            Sil
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
