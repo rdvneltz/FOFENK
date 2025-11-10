@@ -59,6 +59,8 @@ const PaymentPlan = () => {
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [selectedCashRegister, setSelectedCashRegister] = useState('');
+  const [monthlyLessonDetails, setMonthlyLessonDetails] = useState(null);
+  const [showLessonDetails, setShowLessonDetails] = useState(false);
   const [rateDialog, setRateDialog] = useState({
     open: false,
     type: '', // 'commission' or 'vat'
@@ -123,6 +125,30 @@ const PaymentPlan = () => {
     return settings?.vatRate || 10;
   };
 
+  const calculateMonthlyLessonDetails = async (enrollmentId, durationMonths) => {
+    if (!enrollmentId || !durationMonths || durationMonths <= 0) {
+      setMonthlyLessonDetails(null);
+      return;
+    }
+
+    try {
+      const enrollment = enrollments.find(e => e._id === enrollmentId);
+      if (!enrollment || !enrollment.course) return;
+
+      const response = await api.post('/courses/calculate-monthly-lessons', {
+        courseId: enrollment.course._id,
+        startDate: enrollment.enrollmentDate || new Date(),
+        durationMonths: parseInt(durationMonths)
+      });
+
+      setMonthlyLessonDetails(response.data);
+      setShowLessonDetails(true);
+    } catch (error) {
+      console.error('Error calculating monthly lessons:', error);
+      setMonthlyLessonDetails(null);
+    }
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
 
@@ -161,11 +187,16 @@ const PaymentPlan = () => {
           totalAmount: calculatedTotal,
           durationMonths: suggestedMonths
         }));
+
+        // Calculate monthly lesson details
+        if (suggestedMonths) {
+          calculateMonthlyLessonDetails(value, suggestedMonths);
+        }
         return;
       }
     }
 
-    // If duration months changed, recalculate total amount
+    // If duration months changed, recalculate total amount and lesson details
     if (name === 'durationMonths' && value && formData.monthlyFee) {
       const newTotal = formData.monthlyFee * parseFloat(value);
       setFormData((prev) => ({
@@ -173,6 +204,11 @@ const PaymentPlan = () => {
         [name]: value,
         totalAmount: newTotal
       }));
+
+      // Recalculate monthly lesson details
+      if (formData.enrollmentId && value > 0) {
+        calculateMonthlyLessonDetails(formData.enrollmentId, value);
+      }
       return;
     }
 
@@ -490,6 +526,76 @@ const PaymentPlan = () => {
                 helperText="Kayıt süresi"
               />
             </Grid>
+
+            {/* Monthly Lesson Details */}
+            {showLessonDetails && monthlyLessonDetails && (
+              <Grid item xs={12}>
+                <Alert
+                  severity={monthlyLessonDetails.hasSchedule ? "info" : "warning"}
+                  sx={{ mb: 2 }}
+                  onClose={() => setShowLessonDetails(false)}
+                >
+                  <Typography variant="subtitle1" gutterBottom>
+                    <strong>Ders Detayları - {monthlyLessonDetails.course.name}</strong>
+                  </Typography>
+
+                  {!monthlyLessonDetails.hasSchedule && (
+                    <Typography variant="body2" color="warning.main" sx={{ mb: 2 }}>
+                      ⚠️ <strong>Bu dersin aylık programı henüz oluşturulmamış!</strong> Ders başı ücret hesaplaması için lütfen dersi aylık programa ekleyiniz.
+                    </Typography>
+                  )}
+
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2">
+                      • <strong>Aylık Ücret:</strong> ₺{monthlyLessonDetails.course.monthlyFee.toLocaleString('tr-TR')}
+                      {' '}(Ayda {monthlyLessonDetails.course.expectedLessonsPerMonth} ders varsayılarak hesaplanmıştır)
+                    </Typography>
+                    <Typography variant="body2">
+                      • <strong>Ders Başı Ücret:</strong> ₺{monthlyLessonDetails.course.pricePerLesson.toLocaleString('tr-TR')}
+                    </Typography>
+                  </Box>
+
+                  <Typography variant="subtitle2" gutterBottom>Aylık Ders Dağılımı:</Typography>
+                  <Box sx={{ ml: 2, mb: 2 }}>
+                    {monthlyLessonDetails.monthlyDetails.map((month) => (
+                      <Typography key={month.monthIndex} variant="body2">
+                        • <strong>{month.month}:</strong> {month.lessonCount > 0 ? `${month.lessonCount} ders` : 'Program oluşturulmamış'}
+                        {month.lessonCount !== monthlyLessonDetails.course.expectedLessonsPerMonth && month.lessonCount > 0 && (
+                          <span style={{ color: 'orange' }}>
+                            {' '}(Standart: {monthlyLessonDetails.course.expectedLessonsPerMonth} ders)
+                          </span>
+                        )}
+                      </Typography>
+                    ))}
+                  </Box>
+
+                  <Box sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid #e0e0e0' }}>
+                    <Typography variant="subtitle2" gutterBottom><strong>Fiyatlandırma Karşılaştırması:</strong></Typography>
+                    <Typography variant="body2">
+                      • <strong>Aylık ücret üzerinden kayıt:</strong> ₺{monthlyLessonDetails.pricing.totalByMonthly.toLocaleString('tr-TR')}
+                    </Typography>
+                    {monthlyLessonDetails.hasSchedule && (
+                      <>
+                        <Typography variant="body2">
+                          • <strong>Ders başı ücret üzerinden kayıt:</strong> ₺{monthlyLessonDetails.pricing.totalByPerLesson.toLocaleString('tr-TR')}
+                        </Typography>
+                        <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold', color: monthlyLessonDetails.pricing.recommendMonthly ? 'success.main' : 'error.main' }}>
+                          {monthlyLessonDetails.pricing.recommendMonthly
+                            ? '✓ Aylık ücret daha avantajlı'
+                            : `⚠️ Fazla ders ücreti: ₺${Math.abs(monthlyLessonDetails.pricing.difference).toLocaleString('tr-TR')}`
+                          }
+                        </Typography>
+                      </>
+                    )}
+                    {!monthlyLessonDetails.hasSchedule && (
+                      <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+                        <em>Ders başı ücret hesaplaması yapılamıyor (aylık program eksik)</em>
+                      </Typography>
+                    )}
+                  </Box>
+                </Alert>
+              </Grid>
+            )}
 
             <Grid item xs={12} sm={4}>
               <FormControl fullWidth>
