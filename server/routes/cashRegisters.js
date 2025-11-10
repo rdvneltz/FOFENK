@@ -320,12 +320,23 @@ router.post('/transactions/:id/delete', async (req, res) => {
       cashRegister.balance -= transaction.amount;
       await cashRegister.save();
 
-      // Reverse student balance (add back debt)
-      await Student.findByIdAndUpdate(transaction.student._id, {
-        $inc: { balance: transaction.amount }
-      });
+      // Reverse student balance (add back debt) - only if student still exists
+      if (transaction.student && transaction.student._id) {
+        try {
+          await Student.findByIdAndUpdate(transaction.student._id, {
+            $inc: { balance: transaction.amount }
+          });
+        } catch (error) {
+          console.log('Student not found, skipping balance update:', error.message);
+        }
+      }
 
-      description = `Ödeme silindi: ${transaction.student?.firstName} ${transaction.student?.lastName} - ${transaction.course?.name} - ₺${transaction.amount}`;
+      const studentName = transaction.student
+        ? `${transaction.student.firstName} ${transaction.student.lastName}`
+        : 'Silinmiş Öğrenci';
+      const courseName = transaction.course?.name || 'Silinmiş Ders';
+
+      description = `Ödeme silindi: ${studentName} - ${courseName} - ₺${transaction.amount}`;
 
       await Payment.findByIdAndDelete(transactionId);
 
