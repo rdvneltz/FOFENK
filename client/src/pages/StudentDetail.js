@@ -94,10 +94,21 @@ const StudentDetail = () => {
 
   const handleEnrollStudent = async () => {
     try {
+      // Get active season
+      const seasonsRes = await api.get('/seasons', { params: { institution: institution._id } });
+      const activeSeason = seasonsRes.data.find(s => s.isActive);
+
+      if (!activeSeason) {
+        alert('Aktif sezon bulunamadı. Lütfen önce bir sezon oluşturun ve aktif edin.');
+        return;
+      }
+
       await api.post('/enrollments', {
         student: id,
         course: enrollDialog.courseId,
-        startDate: enrollDialog.startDate,
+        enrollmentDate: enrollDialog.startDate,
+        institution: institution._id,
+        season: activeSeason._id,
         createdBy: user?.username
       });
       setEnrollDialog({ open: false, courseId: '', startDate: new Date().toISOString().split('T')[0] });
@@ -279,7 +290,6 @@ const StudentDetail = () => {
             <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
               <Tab label="Kurs Kayıtları" />
               <Tab label="Ödeme Planları" />
-              <Tab label="Ödeme Geçmişi" />
               <Tab label="Yoklama Geçmişi" />
             </Tabs>
 
@@ -385,60 +395,8 @@ const StudentDetail = () => {
                 </Box>
               )}
 
-              {/* Payments Tab */}
-              {tabValue === 2 && (
-                <Box>
-                  {payments.length === 0 ? (
-                    <Typography color="text.secondary" align="center">
-                      Henüz ödeme kaydı bulunmuyor
-                    </Typography>
-                  ) : (
-                    <List>
-                      {payments.map((payment) => (
-                        <React.Fragment key={payment._id}>
-                          <ListItem
-                            secondaryAction={
-                              !payment.isRefunded && (
-                                <Button
-                                  startIcon={<Undo />}
-                                  size="small"
-                                  color="error"
-                                  onClick={() => handleOpenRefundDialog(payment)}
-                                >
-                                  İade Et
-                                </Button>
-                              )
-                            }
-                          >
-                            <ListItemText
-                              primary={`₺${payment.amount.toLocaleString('tr-TR')}`}
-                              secondary={`${new Date(payment.date).toLocaleDateString(
-                                'tr-TR'
-                              )} - ${
-                                payment.paymentMethod === 'cash'
-                                  ? 'Nakit'
-                                  : payment.paymentMethod === 'creditCard'
-                                  ? 'Kredi Kartı'
-                                  : 'Havale/EFT'
-                              }${payment.isRefunded ? ' (İade Edildi)' : ''}`}
-                            />
-                            <Chip
-                              label={payment.isRefunded ? 'İade Edildi' : payment.status === 'completed' ? 'Tamamlandı' : 'Bekliyor'}
-                              color={payment.isRefunded ? 'error' : payment.status === 'completed' ? 'success' : 'warning'}
-                              size="small"
-                              sx={{ mr: 1 }}
-                            />
-                          </ListItem>
-                          <Divider />
-                        </React.Fragment>
-                      ))}
-                    </List>
-                  )}
-                </Box>
-              )}
-
               {/* Attendance Tab */}
-              {tabValue === 3 && (
+              {tabValue === 2 && (
                 <Box>
                   <Typography color="text.secondary" align="center">
                     Yoklama geçmişi yakında eklenecek

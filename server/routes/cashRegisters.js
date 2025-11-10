@@ -47,7 +47,7 @@ router.get('/:id/transactions', async (req, res) => {
     const payments = await Payment.find({ cashRegister: cashRegisterId })
       .populate('student', 'firstName lastName')
       .populate('course', 'name')
-      .sort({ date: -1 });
+      .sort({ paymentDate: -1 });
 
     // Get all expenses for this cash register
     const expenses = await Expense.find({ cashRegister: cashRegisterId })
@@ -61,7 +61,7 @@ router.get('/:id/transactions', async (req, res) => {
       transactions.push({
         _id: payment._id,
         type: 'income',
-        date: payment.date,
+        date: payment.paymentDate,
         amount: payment.amount,
         description: `Ödeme - ${payment.student?.firstName || ''} ${payment.student?.lastName || ''} - ${payment.course?.name || ''}`,
         category: payment.paymentType === 'creditCard' ? 'Kredi Kartı' : 'Nakit',
