@@ -153,4 +153,85 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Calculate monthly lesson details for a course
+router.post('/calculate-monthly-lessons', async (req, res) => {
+  try {
+    const { courseId, startDate, durationMonths } = req.body;
+    const ScheduledLesson = require('../models/ScheduledLesson');
+
+    const course = await Course.findById(courseId);
+    if (!course) {
+      return res.status(404).json({ message: 'Ders bulunamadı' });
+    }
+
+    const start = new Date(startDate);
+    const monthlyDetails = [];
+    let hasSchedule = false;
+
+    // Calculate lesson counts for each month
+    for (let i = 0; i < durationMonths; i++) {
+      const monthStart = new Date(start.getFullYear(), start.getMonth() + i, start.getDate());
+      const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, start.getDate());
+
+      // Count scheduled lessons in this month
+      const lessonCount = await ScheduledLesson.countDocuments({
+        course: courseId,
+        date: {
+          $gte: monthStart,
+          $lt: monthEnd
+        },
+        status: { $ne: 'cancelled' }
+      });
+
+      if (lessonCount > 0) {
+        hasSchedule = true;
+      }
+
+      monthlyDetails.push({
+        month: monthStart.toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' }),
+        monthIndex: i,
+        lessonCount: lessonCount,
+        monthStart: monthStart,
+        monthEnd: monthEnd
+      });
+    }
+
+    // Calculate pricing details
+    const expectedLessonsPerMonth = course.weeklyFrequency * 4; // Assume 4 weeks per month
+    const pricePerLesson = course.pricePerLesson || (course.pricePerMonth / expectedLessonsPerMonth);
+    const monthlyFee = course.pricePerMonth || (pricePerLesson * expectedLessonsPerMonth);
+
+    // Calculate both pricing scenarios
+    let totalByMonthly = 0;
+    let totalByPerLesson = 0;
+
+    monthlyDetails.forEach(month => {
+      totalByMonthly += monthlyFee;
+      totalByPerLesson += (month.lessonCount * pricePerLesson);
+    });
+
+    res.json({
+      course: {
+        name: course.name,
+        pricingType: course.pricingType,
+        pricePerLesson,
+        monthlyFee,
+        weeklyFrequency: course.weeklyFrequency,
+        expectedLessonsPerMonth
+      },
+      hasSchedule,
+      monthlyDetails,
+      pricing: {
+        totalByMonthly,
+        totalByPerLesson,
+        difference: totalByMonthly - totalByPerLesson,
+        recommendMonthly: totalByMonthly <= totalByPerLesson
+      }
+    });
+  } catch (error) {
+    console.error('Error calculating monthly lessons:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

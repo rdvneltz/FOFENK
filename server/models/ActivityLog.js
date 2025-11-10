@@ -13,6 +13,8 @@ const activityLogSchema = new mongoose.Schema({
       'create',
       'update',
       'delete',
+      'archive',
+      'unarchive',
       'payment',
       'expense',
       'enrollment',

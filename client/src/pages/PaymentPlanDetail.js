@@ -341,6 +341,7 @@ const PaymentPlanDetail = () => {
                 <TableCell align="right">Ödenen</TableCell>
                 <TableCell align="right">Kalan</TableCell>
                 <TableCell>Durum</TableCell>
+                <TableCell>Ödeme Tarihi</TableCell>
                 <TableCell align="right">İşlemler</TableCell>
               </TableRow>
             </TableHead>
@@ -368,6 +369,15 @@ const PaymentPlanDetail = () => {
                         color={installment.isPaid ? 'success' : 'warning'}
                         size="small"
                       />
+                    </TableCell>
+                    <TableCell>
+                      {installment.isPaid && installment.paidDate ?
+                        new Date(installment.paidDate).toLocaleDateString('tr-TR', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit'
+                        })
+                        : '-'}
                     </TableCell>
                     <TableCell align="right">
                       <IconButton
