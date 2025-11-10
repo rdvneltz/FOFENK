@@ -41,6 +41,7 @@ const PaymentPlan = () => {
   const [formData, setFormData] = useState({
     enrollmentId: '',
     totalAmount: '',
+    monthlyFee: '', // Store monthly fee for auto-calculation
     durationMonths: '', // How many months registration
     discountType: 'none',
     discountValue: 0,
@@ -132,11 +133,11 @@ const PaymentPlan = () => {
         const course = selectedEnrollment.course;
 
         // Auto-fill price based on course pricing type
-        let autoPrice = '';
+        let monthlyFee = '';
         if (course.pricingType === 'monthly' && course.pricePerMonth) {
-          autoPrice = course.pricePerMonth;
+          monthlyFee = course.pricePerMonth;
         } else if (course.pricingType === 'perLesson' && course.pricePerLesson) {
-          autoPrice = course.pricePerLesson;
+          monthlyFee = course.pricePerLesson;
         }
 
         // Calculate months until season end
@@ -150,14 +151,29 @@ const PaymentPlan = () => {
           }
         }
 
+        // Calculate total amount: monthly fee × duration months
+        const calculatedTotal = monthlyFee && suggestedMonths ? monthlyFee * suggestedMonths : monthlyFee;
+
         setFormData((prev) => ({
           ...prev,
           [name]: value,
-          totalAmount: autoPrice,
+          monthlyFee: monthlyFee, // Store monthly fee for reference
+          totalAmount: calculatedTotal,
           durationMonths: suggestedMonths
         }));
         return;
       }
+    }
+
+    // If duration months changed, recalculate total amount
+    if (name === 'durationMonths' && value && formData.monthlyFee) {
+      const newTotal = formData.monthlyFee * parseFloat(value);
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+        totalAmount: newTotal
+      }));
+      return;
     }
 
     setFormData((prev) => ({ ...prev, [name]: value }));
