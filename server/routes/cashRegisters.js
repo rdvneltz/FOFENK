@@ -282,8 +282,8 @@ router.post('/transactions/:id/delete', async (req, res) => {
     const { password, transactionType, userId } = req.body;
     const transactionId = req.params.id;
 
-    // Verify admin password
-    const user = await User.findById(userId);
+    // Verify admin password - must explicitly select password field
+    const user = await User.findById(userId).select('+password');
     if (!user) {
       return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
     }
