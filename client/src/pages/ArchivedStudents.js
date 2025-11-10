@@ -29,7 +29,13 @@ const ArchivedStudents = () => {
   const { institution, season, user } = useApp();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [deleteDialog, setDeleteDialog] = useState({ open: false, student: null });
+  const [deleteDialog, setDeleteDialog] = useState({
+    open: false,
+    student: null,
+    relatedRecords: null,
+    loading: false,
+    showDeleteConfirm: false
+  });
 
   useEffect(() => {
     if (season && institution) {
@@ -66,13 +72,30 @@ const ArchivedStudents = () => {
     }
   };
 
+  const handleOpenDeleteDialog = async (student) => {
+    try {
+      setDeleteDialog({ open: true, student, relatedRecords: null, loading: true, showDeleteConfirm: false });
+
+      // Fetch related records
+      const response = await api.get(`/students/${student._id}/check-related-records`);
+      setDeleteDialog(prev => ({
+        ...prev,
+        relatedRecords: response.data,
+        loading: false
+      }));
+    } catch (error) {
+      alert('İlgili kayıtlar yüklenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+      setDeleteDialog({ open: false, student: null, relatedRecords: null, loading: false, showDeleteConfirm: false });
+    }
+  };
+
   const handleDelete = async () => {
     try {
       await api.delete(`/students/${deleteDialog.student._id}`, {
         data: { deletedBy: user?.username }
       });
       alert(`${deleteDialog.student.firstName} ${deleteDialog.student.lastName} kalıcı olarak silindi`);
-      setDeleteDialog({ open: false, student: null });
+      setDeleteDialog({ open: false, student: null, relatedRecords: null, loading: false, showDeleteConfirm: false });
       loadArchivedStudents();
     } catch (error) {
       alert('Silme hatası: ' + (error.response?.data?.message || error.message));
@@ -154,7 +177,7 @@ const ArchivedStudents = () => {
                     <IconButton
                       size="small"
                       color="error"
-                      onClick={() => setDeleteDialog({ open: true, student })}
+                      onClick={() => handleOpenDeleteDialog(student)}
                       title="Kalıcı Sil"
                     >
                       <Delete />
@@ -170,34 +193,94 @@ const ArchivedStudents = () => {
       {/* Delete Confirmation Dialog */}
       <Dialog
         open={deleteDialog.open}
-        onClose={() => setDeleteDialog({ open: false, student: null })}
+        onClose={() => setDeleteDialog({ open: false, student: null, relatedRecords: null, loading: false, showDeleteConfirm: false })}
+        maxWidth="md"
+        fullWidth
       >
         <DialogTitle>Öğrenciyi Kalıcı Olarak Sil</DialogTitle>
         <DialogContent>
-          {deleteDialog.student && (
+          {deleteDialog.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <LoadingSpinner message="İlgili kayıtlar kontrol ediliyor..." />
+            </Box>
+          ) : deleteDialog.student && deleteDialog.relatedRecords ? (
             <>
-              <Alert severity="error" sx={{ mb: 2 }}>
-                ⚠️ Bu işlem geri alınamaz! Tüm kayıtlar silinecek.
+              <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
+                ⚠️ Bu işlem geri alınamaz! Öğrenci ve ilgili tüm kayıtlar silinecek.
               </Alert>
-              <Typography>
-                <strong>{deleteDialog.student.firstName} {deleteDialog.student.lastName}</strong> öğrencisini
-                kalıcı olarak silmek istediğinizden emin misiniz?
+              <Typography sx={{ mb: 2 }}>
+                <strong>{deleteDialog.student.firstName} {deleteDialog.student.lastName}</strong> öğrencisi için
+                {' '}{deleteDialog.relatedRecords.totals.paymentCount} gelir ve {deleteDialog.relatedRecords.totals.expenseCount} gider kaydı bulundu:
               </Typography>
-              {deleteDialog.student.balance > 0 && (
-                <Typography color="warning.main" sx={{ mt: 2 }}>
-                  Bu öğrencinin {deleteDialog.student.balance.toLocaleString('tr-TR')} TL borcu var!
+
+              {/* Totals Summary */}
+              <Box sx={{ mb: 3, p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                <Typography variant="h6" gutterBottom>Özet</Typography>
+                <Typography>
+                  <strong>Toplam Gelir:</strong> ₺{deleteDialog.relatedRecords.totals.totalIncome.toLocaleString('tr-TR')}
+                  {' '}({deleteDialog.relatedRecords.totals.paymentCount} kayıt)
                 </Typography>
+                <Typography>
+                  <strong>Toplam Gider:</strong> ₺{deleteDialog.relatedRecords.totals.totalExpense.toLocaleString('tr-TR')}
+                  {' '}({deleteDialog.relatedRecords.totals.expenseCount} kayıt)
+                </Typography>
+                {deleteDialog.relatedRecords.student.balance > 0 && (
+                  <Typography color="warning.main">
+                    <strong>Kalan Borç:</strong> ₺{deleteDialog.relatedRecords.student.balance.toLocaleString('tr-TR')}
+                  </Typography>
+                )}
+              </Box>
+
+              {/* Payments List */}
+              {deleteDialog.relatedRecords.payments.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle1" gutterBottom><strong>Gelir Kayıtları:</strong></Typography>
+                  <Box sx={{ maxHeight: 200, overflow: 'auto', p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
+                    {deleteDialog.relatedRecords.payments.map((payment) => (
+                      <Typography key={payment._id} variant="body2" sx={{ mb: 0.5 }}>
+                        • {new Date(payment.date).toLocaleDateString('tr-TR')} -
+                        {' '}₺{payment.amount.toLocaleString('tr-TR')} -
+                        {' '}{payment.course} - {payment.paymentType === 'creditCard' ? 'Kredi Kartı' : 'Nakit'}
+                        {payment.isInvoiced && ' (Faturalı)'}
+                        {payment.isRefunded && ' (İade Edilmiş)'}
+                      </Typography>
+                    ))}
+                  </Box>
+                </Box>
               )}
+
+              {/* Expenses List */}
+              {deleteDialog.relatedRecords.expenses.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle1" gutterBottom><strong>Gider Kayıtları:</strong></Typography>
+                  <Box sx={{ maxHeight: 200, overflow: 'auto', p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
+                    {deleteDialog.relatedRecords.expenses.map((expense) => (
+                      <Typography key={expense._id} variant="body2" sx={{ mb: 0.5 }}>
+                        • {new Date(expense.date).toLocaleDateString('tr-TR')} -
+                        {' '}₺{expense.amount.toLocaleString('tr-TR')} -
+                        {' '}{expense.category} - {expense.description}
+                        {expense.isAutoGenerated && ' (Otomatik)'}
+                      </Typography>
+                    ))}
+                  </Box>
+                </Box>
+              )}
+
+              <Alert severity="warning" sx={{ mt: 2 }}>
+                Bu kayıtları da silmek istiyor musunuz?
+              </Alert>
             </>
-          )}
+          ) : null}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialog({ open: false, student: null })}>
+          <Button onClick={() => setDeleteDialog({ open: false, student: null, relatedRecords: null, loading: false, showDeleteConfirm: false })}>
             İptal
           </Button>
-          <Button onClick={handleDelete} variant="contained" color="error">
-            Kalıcı Sil
-          </Button>
+          {deleteDialog.relatedRecords && (
+            <Button onClick={handleDelete} variant="contained" color="error">
+              Tümünü Sil
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>
