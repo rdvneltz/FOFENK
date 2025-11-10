@@ -6,7 +6,7 @@ const Expense = require('../models/Expense');
 const ActivityLog = require('../models/ActivityLog');
 const User = require('../models/User');
 const Student = require('../models/Student');
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 // Get all cash registers with filtering
 router.get('/', async (req, res) => {
