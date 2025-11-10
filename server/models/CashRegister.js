@@ -11,7 +11,7 @@ const cashRegisterSchema = new mongoose.Schema({
     default: 0
   },
   // Mevcut bakiye
-  currentBalance: {
+  balance: {
     type: Number,
     default: 0
   },

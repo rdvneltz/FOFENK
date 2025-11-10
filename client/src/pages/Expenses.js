@@ -270,7 +270,7 @@ const Expenses = () => {
               filteredExpenses.map((expense) => (
                 <TableRow key={expense._id}>
                   <TableCell>
-                    {new Date(expense.date).toLocaleDateString('tr-TR')}
+                    {new Date(expense.expenseDate).toLocaleDateString('tr-TR')}
                   </TableCell>
                   <TableCell>{expense.description}</TableCell>
                   <TableCell>

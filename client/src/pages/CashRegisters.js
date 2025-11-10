@@ -19,8 +19,15 @@ import {
   Select,
   MenuItem,
   Tooltip,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
 } from '@mui/material';
-import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz } from '@mui/icons-material';
+import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz, Receipt } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -55,6 +62,14 @@ const CashRegisters = () => {
     toCashRegisterId: '',
     amount: '',
     description: ''
+  });
+
+  // Transactions dialog state
+  const [transactionsDialog, setTransactionsDialog] = useState({
+    open: false,
+    cashRegister: null,
+    transactions: [],
+    loading: false
   });
 
   useEffect(() => {
@@ -221,6 +236,23 @@ const CashRegisters = () => {
     }
   };
 
+  // Load transactions for a cash register
+  const loadTransactions = async (cashRegister) => {
+    try {
+      setTransactionsDialog(prev => ({ ...prev, loading: true, open: true, cashRegister }));
+      const response = await api.get(`/cash-registers/${cashRegister._id}/transactions`);
+      setTransactionsDialog(prev => ({
+        ...prev,
+        transactions: response.data,
+        loading: false
+      }));
+    } catch (error) {
+      console.error('Error loading transactions:', error);
+      setError('Hareketler yüklenirken bir hata oluştu');
+      setTransactionsDialog(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Kasalar yükleniyor..." />;
   }
@@ -343,6 +375,17 @@ const CashRegisters = () => {
                     <Typography variant="body1">
                       ₺{(register.initialBalance || 0).toLocaleString('tr-TR')}
                     </Typography>
+                  </Box>
+
+                  <Box sx={{ mt: 3 }}>
+                    <Button
+                      fullWidth
+                      variant="outlined"
+                      startIcon={<Receipt />}
+                      onClick={() => loadTransactions(register)}
+                    >
+                      Hareketler
+                    </Button>
                   </Box>
                 </CardContent>
               </Card>
@@ -528,6 +571,92 @@ const CashRegisters = () => {
             disabled={loading}
           >
             {loading ? 'İşleniyor...' : 'Virman Yap'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Transactions Dialog */}
+      <Dialog
+        open={transactionsDialog.open}
+        onClose={() => setTransactionsDialog({ open: false, cashRegister: null, transactions: [], loading: false })}
+        maxWidth="lg"
+        fullWidth
+      >
+        <DialogTitle>
+          Kasa Hareketleri - {transactionsDialog.cashRegister?.name}
+        </DialogTitle>
+        <DialogContent>
+          {transactionsDialog.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <LoadingSpinner message="Hareketler yükleniyor..." />
+            </Box>
+          ) : transactionsDialog.transactions.length === 0 ? (
+            <Box sx={{ textAlign: 'center', p: 3 }}>
+              <Typography color="text.secondary">Henüz hareket bulunmamaktadır</Typography>
+            </Box>
+          ) : (
+            <TableContainer sx={{ mt: 2 }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Tarih</TableCell>
+                    <TableCell>Tür</TableCell>
+                    <TableCell>Açıklama</TableCell>
+                    <TableCell>Kategori</TableCell>
+                    <TableCell align="right">Tutar</TableCell>
+                    <TableCell>Notlar</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {transactionsDialog.transactions.map((transaction) => (
+                    <TableRow key={`${transaction.relatedTo}-${transaction._id}`}>
+                      <TableCell>
+                        {new Date(transaction.date).toLocaleDateString('tr-TR', {
+                          year: 'numeric',
+                          month: '2-digit',
+                          day: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={transaction.type === 'income' ? 'Gelir' : 'Gider'}
+                          color={transaction.type === 'income' ? 'success' : 'error'}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>{transaction.description}</TableCell>
+                      <TableCell>{transaction.category}</TableCell>
+                      <TableCell align="right">
+                        <Typography
+                          sx={{
+                            color: transaction.type === 'income' ? 'success.main' : 'error.main',
+                            fontWeight: 600
+                          }}
+                        >
+                          {transaction.type === 'income' ? '+' : '-'}₺{transaction.amount.toLocaleString('tr-TR')}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {transaction.notes || '-'}
+                        {transaction.isInvoiced && (
+                          <Chip label="Faturalı" size="small" color="info" sx={{ ml: 1 }} />
+                        )}
+                        {transaction.isAutoGenerated && (
+                          <Chip label="Otomatik" size="small" color="default" sx={{ ml: 1 }} />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTransactionsDialog({ open: false, cashRegister: null, transactions: [], loading: false })}>
+            Kapat
           </Button>
         </DialogActions>
       </Dialog>
