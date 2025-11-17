@@ -32,6 +32,7 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import { exportExpenses } from '../utils/exportHelpers';
 
 const EXPENSE_CATEGORIES = [
+  'Eğitmen Ödemesi',
   'Maaş',
   'Kira',
   'Elektrik',
@@ -47,6 +48,7 @@ const Expenses = () => {
   const { institution, season, currentUser, user } = useApp();
   const [expenses, setExpenses] = useState([]);
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
@@ -59,6 +61,7 @@ const Expenses = () => {
     category: '',
     date: new Date().toISOString().split('T')[0],
     cashRegister: '',
+    instructor: '',
   });
 
   // Admin approval dialog for delete
@@ -77,7 +80,7 @@ const Expenses = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [expensesRes, cashRes] = await Promise.all([
+      const [expensesRes, cashRes, instructorsRes] = await Promise.all([
         api.get('/expenses', {
           params: {
             institution: institution._id,
@@ -87,9 +90,16 @@ const Expenses = () => {
         api.get('/cash-registers', {
           params: { institution: institution._id },
         }),
+        api.get('/instructors', {
+          params: {
+            institutionId: institution._id,
+            seasonId: season._id,
+          },
+        }),
       ]);
       setExpenses(expensesRes.data);
       setCashRegisters(cashRes.data);
+      setInstructors(instructorsRes.data);
       if (cashRes.data.length > 0) {
         setFormData((prev) => ({ ...prev, cashRegister: cashRes.data[0]._id }));
       }
@@ -109,6 +119,7 @@ const Expenses = () => {
         category: expense.category || '',
         date: expense.date ? expense.date.split('T')[0] : '',
         cashRegister: expense.cashRegister?._id || '',
+        instructor: expense.instructor?._id || '',
       });
     } else {
       setSelectedExpense(null);
@@ -118,6 +129,7 @@ const Expenses = () => {
         category: '',
         date: new Date().toISOString().split('T')[0],
         cashRegister: cashRegisters[0]?._id || '',
+        instructor: '',
       });
     }
     setOpenDialog(true);
@@ -283,6 +295,7 @@ const Expenses = () => {
               <TableCell>Tarih</TableCell>
               <TableCell>Açıklama</TableCell>
               <TableCell>Kategori</TableCell>
+              <TableCell>Eğitmen</TableCell>
               <TableCell>Tutar</TableCell>
               <TableCell>Kasa</TableCell>
               <TableCell align="right">İşlemler</TableCell>
@@ -291,7 +304,7 @@ const Expenses = () => {
           <TableBody>
             {filteredExpenses.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={7} align="center">
                   <Typography color="text.secondary">Henüz gider kaydı yok</Typography>
                 </TableCell>
               </TableRow>
@@ -304,6 +317,13 @@ const Expenses = () => {
                   <TableCell>{expense.description}</TableCell>
                   <TableCell>
                     <Chip label={expense.category} size="small" />
+                  </TableCell>
+                  <TableCell>
+                    {expense.instructor ? (
+                      <Typography variant="body2">
+                        {expense.instructor.firstName} {expense.instructor.lastName}
+                      </Typography>
+                    ) : '-'}
                   </TableCell>
                   <TableCell>
                     <Typography color="error.main" sx={{ fontWeight: 'bold' }}>
@@ -378,6 +398,25 @@ const Expenses = () => {
                   </Select>
                 </FormControl>
               </Grid>
+              {formData.category === 'Eğitmen Ödemesi' && (
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Eğitmen</InputLabel>
+                    <Select
+                      name="instructor"
+                      value={formData.instructor}
+                      onChange={handleChange}
+                      label="Eğitmen"
+                    >
+                      {instructors.map((instructor) => (
+                        <MenuItem key={instructor._id} value={instructor._id}>
+                          {instructor.firstName} {instructor.lastName}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth

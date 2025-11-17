@@ -26,6 +26,7 @@ import ArchivedStudents from './pages/ArchivedStudents';
 import Courses from './pages/Courses';
 import Calendar from './pages/Calendar';
 import Instructors from './pages/Instructors';
+import InstructorDetail from './pages/InstructorDetail';
 import Payments from './pages/Payments';
 import PaymentPlan from './pages/PaymentPlan';
 import PaymentPlanDetail from './pages/PaymentPlanDetail';
@@ -163,6 +164,7 @@ function App() {
                       <Route path="/courses" element={<Courses />} />
                       <Route path="/calendar" element={<Calendar />} />
                       <Route path="/instructors" element={<Instructors />} />
+                      <Route path="/instructors/:id" element={<InstructorDetail />} />
                       <Route path="/payments" element={<Payments />} />
                       <Route path="/payment-plan/:studentId" element={<PaymentPlan />} />
                       <Route path="/payment-plan-detail/:id" element={<PaymentPlanDetail />} />
