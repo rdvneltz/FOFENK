@@ -59,7 +59,7 @@ const Expenses = () => {
     description: '',
     amount: '',
     category: '',
-    date: new Date().toISOString().split('T')[0],
+    expenseDate: new Date().toISOString().split('T')[0],
     cashRegister: '',
     instructor: '',
   });
@@ -117,7 +117,7 @@ const Expenses = () => {
         description: expense.description || '',
         amount: expense.amount || '',
         category: expense.category || '',
-        date: expense.date ? expense.date.split('T')[0] : '',
+        expenseDate: expense.expenseDate ? expense.expenseDate.split('T')[0] : '',
         cashRegister: expense.cashRegister?._id || '',
         instructor: expense.instructor?._id || '',
       });
@@ -127,7 +127,7 @@ const Expenses = () => {
         description: '',
         amount: '',
         category: '',
-        date: new Date().toISOString().split('T')[0],
+        expenseDate: new Date().toISOString().split('T')[0],
         cashRegister: cashRegisters[0]?._id || '',
         instructor: '',
       });
@@ -421,9 +421,9 @@ const Expenses = () => {
                 <TextField
                   fullWidth
                   label="Tarih"
-                  name="date"
+                  name="expenseDate"
                   type="date"
-                  value={formData.date}
+                  value={formData.expenseDate}
                   onChange={handleChange}
                   InputLabelProps={{ shrink: true }}
                   required
