@@ -9,10 +9,16 @@
     "client": "cd client && npm start",
     "build": "cd client && npm run build"
   },
-  "keywords": ["theatre", "management", "education", "payment"],
+  "keywords": [
+    "theatre",
+    "management",
+    "education",
+    "payment"
+  ],
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "concurrently": "^8.2.2"
   }
 }
