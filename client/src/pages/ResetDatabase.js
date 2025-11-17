@@ -41,6 +41,13 @@ const ResetDatabase = () => {
       setCounts(response.data.counts);
       setSuccess(true);
 
+      // localStorage'dan tüm verileri temizle
+      localStorage.removeItem('selectedInstitution');
+      localStorage.removeItem('selectedSeason');
+      localStorage.removeItem('selectedUser');
+      // Token'ı da temizle ve tekrar login yapsın
+      localStorage.removeItem('token');
+
       // 3 saniye sonra setup sayfasına yönlendir
       setTimeout(() => {
         navigate('/setup');
