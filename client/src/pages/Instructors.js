@@ -24,7 +24,8 @@ import {
   Select,
   MenuItem,
 } from '@mui/material';
-import { Add, Edit, Delete, Phone, Email } from '@mui/icons-material';
+import { Add, Edit, Delete, Phone, Email, Visibility } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -32,6 +33,7 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter';
 
 const Instructors = () => {
+  const navigate = useNavigate();
   const { institution, season } = useApp();
   const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -199,13 +201,14 @@ const Instructors = () => {
               <TableCell>E-posta</TableCell>
               <TableCell>Ödeme Tipi</TableCell>
               <TableCell>Ödeme Tutarı</TableCell>
+              <TableCell>Bakiye</TableCell>
               <TableCell align="right">İşlemler</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {instructors.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} align="center">
+                <TableCell colSpan={7} align="center">
                   <Typography color="text.secondary">Henüz eğitmen eklenmedi</Typography>
                 </TableCell>
               </TableRow>
@@ -229,7 +232,23 @@ const Instructors = () => {
                   <TableCell>
                     {instructor.paymentAmount ? `₺${instructor.paymentAmount}` : '-'}
                   </TableCell>
+                  <TableCell>
+                    <Typography
+                      variant="body2"
+                      color={instructor.balance > 0 ? 'error.main' : 'success.main'}
+                    >
+                      {instructor.balance > 0 ? '+' : ''}
+                      ₺{Math.abs(instructor.balance || 0).toLocaleString('tr-TR')}
+                    </Typography>
+                  </TableCell>
                   <TableCell align="right">
+                    <IconButton
+                      size="small"
+                      onClick={() => navigate(`/instructors/${instructor._id}`)}
+                      color="info"
+                    >
+                      <Visibility />
+                    </IconButton>
                     <IconButton
                       size="small"
                       onClick={() => handleOpenDialog(instructor)}

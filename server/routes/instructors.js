@@ -32,13 +32,73 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const instructor = await Instructor.findById(req.params.id)
-      .populate('institution', 'name');
+      .populate('institution', 'name')
+      .populate('season', 'name');
 
     if (!instructor) {
       return res.status(404).json({ message: 'Eğitmen bulunamadı' });
     }
     res.json(instructor);
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get instructor details with payments
+router.get('/:id/details', async (req, res) => {
+  try {
+    const Expense = require('../models/Expense');
+    const ScheduledLesson = require('../models/ScheduledLesson');
+
+    const instructor = await Instructor.findById(req.params.id)
+      .populate('institution', 'name')
+      .populate('season', 'name');
+
+    if (!instructor) {
+      return res.status(404).json({ message: 'Eğitmen bulunamadı' });
+    }
+
+    // Get all instructor payments (expenses with category "Eğitmen Ödemesi")
+    const payments = await Expense.find({
+      instructor: req.params.id,
+      category: 'Eğitmen Ödemesi'
+    })
+      .populate('cashRegister', 'name')
+      .sort({ expenseDate: -1 });
+
+    // Get total completed lessons
+    const completedLessons = await ScheduledLesson.countDocuments({
+      instructor: req.params.id,
+      status: 'completed'
+    });
+
+    // Calculate total paid
+    const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
+    // Calculate expected payment based on payment type
+    let expectedPayment = 0;
+    if (instructor.paymentType === 'perLesson') {
+      expectedPayment = completedLessons * instructor.paymentAmount;
+    } else if (instructor.paymentType === 'monthly') {
+      // For monthly, we can't auto-calculate without knowing the period
+      // User needs to manually create the payment
+      expectedPayment = instructor.paymentAmount;
+    }
+
+    res.json({
+      instructor,
+      payments,
+      statistics: {
+        totalPaid,
+        balance: instructor.balance,
+        completedLessons,
+        expectedPayment: instructor.paymentType === 'perLesson' ? expectedPayment : null,
+        paymentType: instructor.paymentType,
+        paymentAmount: instructor.paymentAmount
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching instructor details:', error);
     res.status(500).json({ message: error.message });
   }
 });

@@ -1,0 +1,414 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Paper,
+  Typography,
+  Grid,
+  Button,
+  Tabs,
+  Tab,
+  Card,
+  CardContent,
+  List,
+  ListItem,
+  ListItemText,
+  Chip,
+  Avatar,
+  Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+} from '@mui/material';
+import {
+  ArrowBack,
+  Edit,
+  Phone,
+  Email,
+  Add,
+  Payment as PaymentIcon,
+} from '@mui/icons-material';
+import { useApp } from '../context/AppContext';
+import api from '../api';
+import LoadingSpinner from '../components/Common/LoadingSpinner';
+
+const InstructorDetail = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user, institution, season } = useApp();
+  const [instructor, setInstructor] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tabValue, setTabValue] = useState(0);
+  const [payments, setPayments] = useState([]);
+  const [statistics, setStatistics] = useState({
+    totalPaid: 0,
+    balance: 0,
+    completedLessons: 0,
+    expectedPayment: null,
+    paymentType: '',
+    paymentAmount: 0
+  });
+  const [cashRegisters, setCashRegisters] = useState([]);
+  const [paymentDialog, setPaymentDialog] = useState({
+    open: false,
+    amount: '',
+    cashRegisterId: '',
+    description: ''
+  });
+
+  useEffect(() => {
+    loadInstructor();
+  }, [id]);
+
+  const loadInstructor = async () => {
+    try {
+      setLoading(true);
+      const [detailsRes, cashRes] = await Promise.all([
+        api.get(`/instructors/${id}/details`),
+        api.get(`/cash-registers`, { params: { institution: institution._id } }),
+      ]);
+
+      setInstructor(detailsRes.data.instructor);
+      setPayments(detailsRes.data.payments || []);
+      setStatistics(detailsRes.data.statistics || {});
+      setCashRegisters(cashRes.data);
+
+      if (cashRes.data.length > 0) {
+        setPaymentDialog(prev => ({ ...prev, cashRegisterId: cashRes.data[0]._id }));
+      }
+    } catch (error) {
+      console.error('Error loading instructor:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreatePayment = async () => {
+    try {
+      if (!paymentDialog.amount || parseFloat(paymentDialog.amount) <= 0) {
+        alert('Lütfen geçerli bir tutar giriniz');
+        return;
+      }
+
+      if (!paymentDialog.cashRegisterId) {
+        alert('Lütfen bir kasa seçiniz');
+        return;
+      }
+
+      await api.post('/expenses', {
+        category: 'Eğitmen Ödemesi',
+        amount: parseFloat(paymentDialog.amount),
+        description: paymentDialog.description || `${instructor.firstName} ${instructor.lastName} - Eğitmen ödemesi`,
+        expenseDate: new Date(),
+        cashRegister: paymentDialog.cashRegisterId,
+        instructor: id,
+        institution: institution._id,
+        season: season._id,
+        createdBy: user?.username
+      });
+
+      alert('Ödeme başarıyla kaydedildi');
+      setPaymentDialog({ open: false, amount: '', cashRegisterId: cashRegisters[0]?._id || '', description: '' });
+      loadInstructor(); // Reload to show new payment
+    } catch (error) {
+      alert('Ödeme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  if (loading) {
+    return <LoadingSpinner message="Eğitmen bilgileri yükleniyor..." />;
+  }
+
+  if (!instructor) {
+    return (
+      <Box sx={{ textAlign: 'center', mt: 4 }}>
+        <Typography variant="h5" color="text.secondary">
+          Eğitmen bulunamadı
+        </Typography>
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+        <Button startIcon={<ArrowBack />} onClick={() => navigate('/instructors')}>
+          Geri
+        </Button>
+        <Typography variant="h4" sx={{ flexGrow: 1 }}>
+          Eğitmen Detayı
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<Edit />}
+          onClick={() => navigate('/instructors')}
+        >
+          Düzenle
+        </Button>
+        <Button
+          variant="contained"
+          startIcon={<PaymentIcon />}
+          onClick={() => setPaymentDialog({ ...paymentDialog, open: true })}
+        >
+          Ödeme Yap
+        </Button>
+      </Box>
+
+      <Grid container spacing={3}>
+        {/* Instructor Info Card */}
+        <Grid item xs={12} md={4}>
+          <Paper sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 3 }}>
+              <Avatar
+                sx={{
+                  width: 100,
+                  height: 100,
+                  fontSize: '2.5rem',
+                  bgcolor: 'primary.main',
+                  mb: 2,
+                }}
+              >
+                {instructor.firstName?.charAt(0)}
+                {instructor.lastName?.charAt(0)}
+              </Avatar>
+              <Typography variant="h5" gutterBottom>
+                {instructor.firstName} {instructor.lastName}
+              </Typography>
+              <Chip
+                label={
+                  instructor.paymentType === 'monthly' ? 'Aylık' :
+                  instructor.paymentType === 'perLesson' ? 'Ders Başı' :
+                  instructor.paymentType === 'hourly' ? 'Saatlik' :
+                  instructor.paymentType === 'perStudent' ? 'Öğrenci Başı' : 'Diğer'
+                }
+                color="primary"
+              />
+            </Box>
+
+            <Divider sx={{ my: 2 }} />
+
+            <List>
+              <ListItem>
+                <ListItemText
+                  primary="TC Kimlik No"
+                  secondary={instructor.tcNo || '-'}
+                />
+              </ListItem>
+              <ListItem>
+                <Phone sx={{ mr: 2, color: 'action.active' }} />
+                <ListItemText primary="Telefon" secondary={instructor.phone || '-'} />
+              </ListItem>
+              <ListItem>
+                <Email sx={{ mr: 2, color: 'action.active' }} />
+                <ListItemText primary="E-posta" secondary={instructor.email || '-'} />
+              </ListItem>
+              <ListItem>
+                <ListItemText primary="Adres" secondary={instructor.address || '-'} />
+              </ListItem>
+              <ListItem>
+                <ListItemText
+                  primary="Ödeme Tutarı"
+                  secondary={`₺${(instructor.paymentAmount || 0).toLocaleString('tr-TR')}`}
+                />
+              </ListItem>
+            </List>
+
+            {instructor.notes && (
+              <>
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Notlar:</strong> {instructor.notes}
+                </Typography>
+              </>
+            )}
+          </Paper>
+
+          {/* Balance Card */}
+          <Paper sx={{ p: 3, mt: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              Bakiye Durumu
+            </Typography>
+            <Typography
+              variant="h3"
+              color={statistics.balance > 0 ? 'error.main' : 'success.main'}
+            >
+              {statistics.balance > 0 ? '+' : ''}₺
+              {Math.abs(statistics.balance || 0).toLocaleString('tr-TR')}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {statistics.balance > 0 ? 'Borcumuz' : 'Ödendi'}
+            </Typography>
+          </Paper>
+
+          {/* Statistics Card */}
+          <Paper sx={{ p: 3, mt: 3 }}>
+            <Typography variant="h6" gutterBottom>
+              İstatistikler
+            </Typography>
+            <List dense>
+              <ListItem>
+                <ListItemText
+                  primary="Toplam Ödenen"
+                  secondary={`₺${(statistics.totalPaid || 0).toLocaleString('tr-TR')}`}
+                />
+              </ListItem>
+              <ListItem>
+                <ListItemText
+                  primary="Tamamlanan Dersler"
+                  secondary={statistics.completedLessons || 0}
+                />
+              </ListItem>
+              {statistics.expectedPayment && (
+                <ListItem>
+                  <ListItemText
+                    primary="Beklenen Ödeme (Ders Başı)"
+                    secondary={`₺${(statistics.expectedPayment || 0).toLocaleString('tr-TR')}`}
+                  />
+                </ListItem>
+              )}
+            </List>
+          </Paper>
+        </Grid>
+
+        {/* Tabs Section */}
+        <Grid item xs={12} md={8}>
+          <Paper>
+            <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
+              <Tab label="Ödeme Geçmişi" />
+              <Tab label="Dersler" />
+            </Tabs>
+
+            <Box sx={{ p: 3 }}>
+              {/* Payments Tab */}
+              {tabValue === 0 && (
+                <Box>
+                  {payments.length === 0 ? (
+                    <Typography color="text.secondary" align="center">
+                      Henüz ödeme kaydı bulunmuyor
+                    </Typography>
+                  ) : (
+                    <TableContainer>
+                      <Table>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Tarih</TableCell>
+                            <TableCell>Açıklama</TableCell>
+                            <TableCell>Tutar</TableCell>
+                            <TableCell>Kasa</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {payments.map((payment) => (
+                            <TableRow key={payment._id}>
+                              <TableCell>
+                                {new Date(payment.expenseDate).toLocaleDateString('tr-TR')}
+                              </TableCell>
+                              <TableCell>{payment.description}</TableCell>
+                              <TableCell>
+                                <Typography color="error.main" fontWeight="bold">
+                                  ₺{payment.amount.toLocaleString('tr-TR')}
+                                </Typography>
+                              </TableCell>
+                              <TableCell>{payment.cashRegister?.name || '-'}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </Box>
+              )}
+
+              {/* Lessons Tab */}
+              {tabValue === 1 && (
+                <Box>
+                  <Typography color="text.secondary" align="center">
+                    Ders geçmişi yakında eklenecek
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* Payment Dialog */}
+      <Dialog
+        open={paymentDialog.open}
+        onClose={() => setPaymentDialog({ ...paymentDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Eğitmen Ödemesi</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Tutar (₺)"
+                type="number"
+                value={paymentDialog.amount}
+                onChange={(e) => setPaymentDialog({ ...paymentDialog, amount: e.target.value })}
+                required
+                inputProps={{ min: 0, step: 0.01 }}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth required>
+                <InputLabel>Kasa</InputLabel>
+                <Select
+                  value={paymentDialog.cashRegisterId}
+                  onChange={(e) => setPaymentDialog({ ...paymentDialog, cashRegisterId: e.target.value })}
+                  label="Kasa"
+                >
+                  {cashRegisters.map((register) => (
+                    <MenuItem key={register._id} value={register._id}>
+                      {register.name} - Bakiye: ₺{register.balance?.toLocaleString('tr-TR')}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Açıklama (Opsiyonel)"
+                multiline
+                rows={3}
+                value={paymentDialog.description}
+                onChange={(e) => setPaymentDialog({ ...paymentDialog, description: e.target.value })}
+                placeholder={`${instructor.firstName} ${instructor.lastName} - Eğitmen ödemesi`}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentDialog({ ...paymentDialog, open: false })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleCreatePayment}
+            variant="contained"
+            color="primary"
+          >
+            Ödeme Yap
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default InstructorDetail;

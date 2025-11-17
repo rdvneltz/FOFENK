@@ -127,7 +127,10 @@ router.get('/:id/check-related-records', async (req, res) => {
 
     // Find all expenses that might be related (auto-generated expenses like VAT, commission)
     const relatedExpenses = await Expense.find({
-      description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' }
+      $or: [
+        { relatedStudent: studentId },
+        { description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' } }
+      ]
     })
       .populate('cashRegister', 'name')
       .sort({ expenseDate: -1 });
@@ -180,19 +183,46 @@ router.delete('/:id', async (req, res) => {
     const Expense = require('../models/Expense');
     const PaymentPlan = require('../models/PaymentPlan');
     const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+    const CashRegister = require('../models/CashRegister');
 
     const student = await Student.findById(req.params.id);
     if (!student) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
 
-    // Delete related records first
-    // 1. Delete all payments
+    // Delete related records and revert cash register balances
+    // 1. Get all payments and revert their effects before deleting
+    const payments = await Payment.find({ student: req.params.id });
+    for (const payment of payments) {
+      // Revert cash register balance (subtract payment amount)
+      if (payment.cashRegister) {
+        await CashRegister.findByIdAndUpdate(payment.cashRegister, {
+          $inc: { balance: -payment.amount }
+        });
+      }
+    }
     await Payment.deleteMany({ student: req.params.id });
 
-    // 2. Delete related expenses (based on student name in description)
+    // 2. Get all related expenses and revert their effects before deleting
+    const relatedExpenses = await Expense.find({
+      $or: [
+        { relatedStudent: req.params.id },
+        { description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' } }
+      ]
+    });
+    for (const expense of relatedExpenses) {
+      // Revert cash register balance (add back expense amount)
+      if (expense.cashRegister) {
+        await CashRegister.findByIdAndUpdate(expense.cashRegister, {
+          $inc: { balance: expense.amount }
+        });
+      }
+    }
     await Expense.deleteMany({
-      description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' }
+      $or: [
+        { relatedStudent: req.params.id },
+        { description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' } }
+      ]
     });
 
     // 3. Delete payment plans

@@ -82,6 +82,11 @@ const expenseSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Payment'
   },
+  // İlişkili öğrenci (otomatik giderler için)
+  relatedStudent: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Student'
+  },
   season: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Season',

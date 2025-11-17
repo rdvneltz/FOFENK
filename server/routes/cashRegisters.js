@@ -163,6 +163,16 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Kasa bulunamadı' });
     }
 
+    // Check for related transactions before deletion
+    const paymentCount = await Payment.countDocuments({ cashRegister: req.params.id });
+    const expenseCount = await Expense.countDocuments({ cashRegister: req.params.id });
+
+    if (paymentCount > 0 || expenseCount > 0) {
+      return res.status(400).json({
+        message: `Bu kasa silinemez. ${paymentCount} ödeme ve ${expenseCount} gider kaydı bulunmaktadır. Lütfen önce bu kayıtları silin veya başka bir kasaya taşıyın.`
+      });
+    }
+
     await CashRegister.findByIdAndDelete(req.params.id);
 
     // Log activity
