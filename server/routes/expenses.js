@@ -56,12 +56,36 @@ router.get('/:id', async (req, res) => {
 // Create expense
 router.post('/', async (req, res) => {
   try {
+    // Validate foreign keys
+    if (req.body.cashRegister) {
+      const cashRegisterExists = await CashRegister.exists({ _id: req.body.cashRegister });
+      if (!cashRegisterExists) {
+        return res.status(404).json({ message: 'Kasa bulunamadı' });
+      }
+    }
+
+    if (req.body.instructor) {
+      const Instructor = require('../models/Instructor');
+      const instructorExists = await Instructor.exists({ _id: req.body.instructor });
+      if (!instructorExists) {
+        return res.status(404).json({ message: 'Eğitmen bulunamadı' });
+      }
+    }
+
     const expense = new Expense(req.body);
     const newExpense = await expense.save();
 
     // Update cash register balance
     if (newExpense.cashRegister) {
       await CashRegister.findByIdAndUpdate(newExpense.cashRegister, {
+        $inc: { balance: -newExpense.amount }
+      });
+    }
+
+    // Update instructor balance if this is an instructor payment
+    if (newExpense.instructor && newExpense.category === 'Eğitmen Ödemesi') {
+      const Instructor = require('../models/Instructor');
+      await Instructor.findByIdAndUpdate(newExpense.instructor, {
         $inc: { balance: -newExpense.amount }
       });
     }
@@ -81,7 +105,8 @@ router.post('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('category', 'name')
-      .populate('cashRegister', 'name');
+      .populate('cashRegister', 'name')
+      .populate('instructor', 'firstName lastName');
 
     res.status(201).json(populatedExpense);
   } catch (error) {
@@ -104,6 +129,14 @@ router.put('/:id', async (req, res) => {
       });
     }
 
+    // Revert old instructor balance if it was an instructor payment
+    if (oldExpense.instructor && oldExpense.category === 'Eğitmen Ödemesi') {
+      const Instructor = require('../models/Instructor');
+      await Instructor.findByIdAndUpdate(oldExpense.instructor, {
+        $inc: { balance: oldExpense.amount }
+      });
+    }
+
     const expense = await Expense.findByIdAndUpdate(
       req.params.id,
       { ...req.body, updatedBy: req.body.updatedBy },
@@ -111,11 +144,20 @@ router.put('/:id', async (req, res) => {
     ).populate('institution', 'name')
      .populate('season', 'name startDate endDate')
      .populate('category', 'name')
-     .populate('cashRegister', 'name');
+     .populate('cashRegister', 'name')
+     .populate('instructor', 'firstName lastName');
 
     // Apply new expense effects
     if (expense.cashRegister) {
       await CashRegister.findByIdAndUpdate(expense.cashRegister, {
+        $inc: { balance: -expense.amount }
+      });
+    }
+
+    // Update new instructor balance if this is an instructor payment
+    if (expense.instructor && expense.category === 'Eğitmen Ödemesi') {
+      const Instructor = require('../models/Instructor');
+      await Instructor.findByIdAndUpdate(expense.instructor, {
         $inc: { balance: -expense.amount }
       });
     }
@@ -148,6 +190,14 @@ router.delete('/:id', async (req, res) => {
     // Revert expense effects
     if (expense.cashRegister) {
       await CashRegister.findByIdAndUpdate(expense.cashRegister, {
+        $inc: { balance: expense.amount }
+      });
+    }
+
+    // Revert instructor balance if this was an instructor payment
+    if (expense.instructor && expense.category === 'Eğitmen Ödemesi') {
+      const Instructor = require('../models/Instructor');
+      await Instructor.findByIdAndUpdate(expense.instructor, {
         $inc: { balance: expense.amount }
       });
     }

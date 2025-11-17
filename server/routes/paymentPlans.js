@@ -51,6 +51,21 @@ router.get('/:id', async (req, res) => {
 // Create payment plan
 router.post('/', async (req, res) => {
   try {
+    // Validate foreign keys
+    if (req.body.student) {
+      const studentExists = await Student.exists({ _id: req.body.student });
+      if (!studentExists) {
+        return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+      }
+    }
+
+    if (req.body.cashRegister) {
+      const cashRegisterExists = await CashRegister.exists({ _id: req.body.cashRegister });
+      if (!cashRegisterExists) {
+        return res.status(404).json({ message: 'Kasa bulunamadı' });
+      }
+    }
+
     // Set pending status for future credit card payments
     const paymentPlanData = {
       ...req.body,
