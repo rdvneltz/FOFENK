@@ -127,7 +127,10 @@ router.get('/:id/check-related-records', async (req, res) => {
 
     // Find all expenses that might be related (auto-generated expenses like VAT, commission)
     const relatedExpenses = await Expense.find({
-      description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' }
+      $or: [
+        { relatedStudent: studentId },
+        { description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' } }
+      ]
     })
       .populate('cashRegister', 'name')
       .sort({ expenseDate: -1 });
@@ -202,7 +205,10 @@ router.delete('/:id', async (req, res) => {
 
     // 2. Get all related expenses and revert their effects before deleting
     const relatedExpenses = await Expense.find({
-      description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' }
+      $or: [
+        { relatedStudent: req.params.id },
+        { description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' } }
+      ]
     });
     for (const expense of relatedExpenses) {
       // Revert cash register balance (add back expense amount)
@@ -213,7 +219,10 @@ router.delete('/:id', async (req, res) => {
       }
     }
     await Expense.deleteMany({
-      description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' }
+      $or: [
+        { relatedStudent: req.params.id },
+        { description: { $regex: `${student.firstName}.*${student.lastName}|${student.lastName}.*${student.firstName}`, $options: 'i' } }
+      ]
     });
 
     // 3. Delete payment plans
