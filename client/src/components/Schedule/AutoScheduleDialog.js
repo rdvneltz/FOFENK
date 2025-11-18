@@ -58,6 +58,8 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
     skipHolidays: true
   });
   const [error, setError] = useState('');
+  const [conflicts, setConflicts] = useState(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   useEffect(() => {
     if (open && institution && season) {
@@ -139,11 +141,58 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
     return true;
   };
 
+  const checkConflicts = async () => {
+    try {
+      // Get existing lessons for this course in the date range
+      const response = await api.get('/scheduled-lessons', {
+        params: {
+          courseId: formData.courseId,
+          startDate: formData.startDate.toISOString(),
+          endDate: formData.endDate.toISOString()
+        }
+      });
+
+      const existingLessons = response.data;
+
+      // Check for time conflicts
+      const conflictingLessons = existingLessons.filter(lesson => {
+        const lessonDay = new Date(lesson.date).getDay();
+        const hasTimeOverlap =
+          formData.daysOfWeek.includes(lessonDay) &&
+          lesson.startTime === formData.startTime &&
+          lesson.endTime === formData.endTime;
+
+        return hasTimeOverlap && lesson.status !== 'cancelled';
+      });
+
+      return conflictingLessons;
+    } catch (error) {
+      console.error('Error checking conflicts:', error);
+      return [];
+    }
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
+    // Check for conflicts first
+    setLoading(true);
+    const conflictingLessons = await checkConflicts();
+    setLoading(false);
+
+    if (conflictingLessons.length > 0) {
+      setConflicts(conflictingLessons);
+      setShowConfirmDialog(true);
+    } else {
+      await proceedWithGeneration();
+    }
+  };
+
+  const proceedWithGeneration = async () => {
     try {
       setLoading(true);
+      setShowConfirmDialog(false);
+
       const response = await api.post('/scheduled-lessons/generate-schedule', {
         courseId: formData.courseId,
         instructorId: formData.instructorId || null,
@@ -186,11 +235,14 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
       skipHolidays: true
     });
     setError('');
+    setConflicts(null);
+    setShowConfirmDialog(false);
     onClose();
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+    <>
+      <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle>Otomatik Program Oluştur</DialogTitle>
       <DialogContent>
         {error && (
@@ -361,6 +413,40 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
         </Button>
       </DialogActions>
     </Dialog>
+
+      {/* Conflict Confirmation Dialog */}
+      <Dialog
+        open={showConfirmDialog}
+        onClose={() => setShowConfirmDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ders Çakışması Uyarısı</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Bu tarih aralığında <strong>{conflicts?.length || 0} adet</strong> ders zaten mevcut
+            ve seçtiğiniz gün/saat ile çakışıyor.
+          </Alert>
+          <Typography variant="body2" gutterBottom>
+            Yine de devam etmek istiyor musunuz? Aynı gün ve saatte birden fazla ders
+            oluşturulacaktır. Bu, farklı gruplar veya eğitmenler için normal olabilir.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowConfirmDialog(false)}>
+            İptal
+          </Button>
+          <Button
+            onClick={proceedWithGeneration}
+            variant="contained"
+            color="warning"
+            disabled={loading}
+          >
+            Yine De Ekle
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 };
 

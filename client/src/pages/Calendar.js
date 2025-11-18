@@ -9,10 +9,11 @@ import {
   Snackbar,
   Alert
 } from '@mui/material';
-import { ChevronLeft, ChevronRight, CalendarMonth } from '@mui/icons-material';
+import { ChevronLeft, ChevronRight, CalendarMonth, Delete } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import CalendarDay from '../components/Calendar/CalendarDay';
 import AutoScheduleDialog from '../components/Schedule/AutoScheduleDialog';
+import BulkDeleteLessonsDialog from '../components/Calendar/BulkDeleteLessonsDialog';
 import LessonDetailDialog from '../components/Calendar/LessonDetailDialog';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -23,6 +24,7 @@ const Calendar = () => {
   const [lessons, setLessons] = useState({});
   const [loading, setLoading] = useState(true);
   const [autoScheduleOpen, setAutoScheduleOpen] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -132,20 +134,9 @@ const Calendar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
-  const handleDayClick = (date) => {
-    const dayLessons = lessons[date.toDateString()];
-    if (dayLessons && dayLessons.length > 0) {
-      // If there's only one lesson, open it directly
-      if (dayLessons.length === 1) {
-        setSelectedLesson(dayLessons[0]);
-        setLessonDetailOpen(true);
-      } else {
-        // TODO: Show a list of lessons to choose from
-        // For now, open the first lesson
-        setSelectedLesson(dayLessons[0]);
-        setLessonDetailOpen(true);
-      }
-    }
+  const handleLessonClick = (lesson) => {
+    setSelectedLesson(lesson);
+    setLessonDetailOpen(true);
   };
 
   const handleLessonDetailClose = () => {
@@ -169,6 +160,15 @@ const Calendar = () => {
     setSnackbar({
       open: true,
       message: 'Ders başarıyla silindi!',
+      severity: 'success'
+    });
+  };
+
+  const handleBulkDeleteSuccess = () => {
+    loadLessons(); // Reload calendar
+    setSnackbar({
+      open: true,
+      message: 'Dersler başarıyla silindi!',
       severity: 'success'
     });
   };
@@ -205,13 +205,23 @@ const Calendar = () => {
               <ChevronRight />
             </IconButton>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<CalendarMonth />}
-            onClick={() => setAutoScheduleOpen(true)}
-          >
-            Otomatik Program Oluştur
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button
+              variant="outlined"
+              color="error"
+              startIcon={<Delete />}
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              Toplu Ders Sil
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<CalendarMonth />}
+              onClick={() => setAutoScheduleOpen(true)}
+            >
+              Otomatik Program Oluştur
+            </Button>
+          </Box>
         </Box>
       </Paper>
 
@@ -234,7 +244,7 @@ const Calendar = () => {
                 isCurrentMonth={day.isCurrentMonth}
                 isToday={isToday(day.date)}
                 lessons={lessons[day.date.toDateString()]}
-                onClick={() => handleDayClick(day.date)}
+                onLessonClick={handleLessonClick}
               />
             </Grid>
           ))}
@@ -246,6 +256,13 @@ const Calendar = () => {
         open={autoScheduleOpen}
         onClose={() => setAutoScheduleOpen(false)}
         onSuccess={handleAutoScheduleSuccess}
+      />
+
+      {/* Bulk Delete Lessons Dialog */}
+      <BulkDeleteLessonsDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        onSuccess={handleBulkDeleteSuccess}
       />
 
       {/* Lesson Detail Dialog */}
