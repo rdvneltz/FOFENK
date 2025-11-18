@@ -13,6 +13,7 @@ import { ChevronLeft, ChevronRight, CalendarMonth } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import CalendarDay from '../components/Calendar/CalendarDay';
 import AutoScheduleDialog from '../components/Schedule/AutoScheduleDialog';
+import LessonDetailDialog from '../components/Calendar/LessonDetailDialog';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 
@@ -22,6 +23,8 @@ const Calendar = () => {
   const [lessons, setLessons] = useState({});
   const [loading, setLoading] = useState(true);
   const [autoScheduleOpen, setAutoScheduleOpen] = useState(false);
+  const [selectedLesson, setSelectedLesson] = useState(null);
+  const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   useEffect(() => {
@@ -129,6 +132,47 @@ const Calendar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
+  const handleDayClick = (date) => {
+    const dayLessons = lessons[date.toDateString()];
+    if (dayLessons && dayLessons.length > 0) {
+      // If there's only one lesson, open it directly
+      if (dayLessons.length === 1) {
+        setSelectedLesson(dayLessons[0]);
+        setLessonDetailOpen(true);
+      } else {
+        // TODO: Show a list of lessons to choose from
+        // For now, open the first lesson
+        setSelectedLesson(dayLessons[0]);
+        setLessonDetailOpen(true);
+      }
+    }
+  };
+
+  const handleLessonDetailClose = () => {
+    setLessonDetailOpen(false);
+    setSelectedLesson(null);
+  };
+
+  const handleLessonUpdated = () => {
+    loadLessons(); // Reload calendar
+    setSnackbar({
+      open: true,
+      message: 'Ders başarıyla güncellendi!',
+      severity: 'success'
+    });
+  };
+
+  const handleLessonDeleted = () => {
+    setLessonDetailOpen(false);
+    setSelectedLesson(null);
+    loadLessons(); // Reload calendar
+    setSnackbar({
+      open: true,
+      message: 'Ders başarıyla silindi!',
+      severity: 'success'
+    });
+  };
+
   if (loading) {
     return <LoadingSpinner message="Takvim yükleniyor..." />;
   }
@@ -190,7 +234,7 @@ const Calendar = () => {
                 isCurrentMonth={day.isCurrentMonth}
                 isToday={isToday(day.date)}
                 lessons={lessons[day.date.toDateString()]}
-                onClick={() => console.log('Day clicked:', day.date)}
+                onClick={() => handleDayClick(day.date)}
               />
             </Grid>
           ))}
@@ -203,6 +247,17 @@ const Calendar = () => {
         onClose={() => setAutoScheduleOpen(false)}
         onSuccess={handleAutoScheduleSuccess}
       />
+
+      {/* Lesson Detail Dialog */}
+      {selectedLesson && (
+        <LessonDetailDialog
+          open={lessonDetailOpen}
+          onClose={handleLessonDetailClose}
+          lesson={selectedLesson}
+          onUpdated={handleLessonUpdated}
+          onDeleted={handleLessonDeleted}
+        />
+      )}
 
       {/* Snackbar */}
       <Snackbar

@@ -44,7 +44,7 @@ const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onClick }) => {
               whiteSpace: 'nowrap',
             }}
           >
-            {lesson.time} - {lesson.courseName}
+            {lesson.startTime}-{lesson.endTime} - {lesson.course?.name || 'Ders'}
           </Box>
         ))}
         {lessons && lessons.length > 3 && (

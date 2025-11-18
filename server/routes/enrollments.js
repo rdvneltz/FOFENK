@@ -6,13 +6,14 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all enrollments with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, studentId, courseId } = req.query;
+    const { institutionId, seasonId, studentId, courseId, isActive } = req.query;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
     if (studentId) filter.student = studentId;
     if (courseId) filter.course = courseId;
+    if (isActive !== undefined) filter.isActive = isActive === 'true';
 
     const enrollments = await StudentCourseEnrollment.find(filter)
       .populate('institution', 'name')
