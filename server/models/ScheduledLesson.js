@@ -33,6 +33,16 @@ const scheduledLessonSchema = new mongoose.Schema({
     enum: ['scheduled', 'completed', 'cancelled', 'postponed'],
     default: 'scheduled'
   },
+  // Eğitmen dersi onayladı mı (derse girdi mi)
+  instructorConfirmed: {
+    type: Boolean,
+    default: false
+  },
+  // Dersin gerçekte kaç saat sürdüğü (planlanan ile farklı olabilir)
+  actualDuration: {
+    type: Number, // Saat cinsinden (örn: 2.5 saat)
+    default: null
+  },
   // Eğitmen ücreti bu ders için hesaplandı mı
   instructorPaymentCalculated: {
     type: Boolean,
