@@ -383,7 +383,7 @@ const PaymentPlan = () => {
         institution: institution._id,
         season: season._id,
         notes: formData.description,
-        createdBy: user?.username || 'user',
+        createdBy: user?.username || 'System',
         // For credit card payments, auto-create payment only if date is today
         autoCreatePayment: shouldProcessImmediately,
         paymentDate: formData.paymentType === 'creditCard' ? formData.paymentDate : undefined,

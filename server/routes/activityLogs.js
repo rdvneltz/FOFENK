@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
     if (user) filter.user = user;
 
     if (startDate && endDate) {
-      filter.timestamp = {
+      filter.createdAt = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
     const activityLogs = await ActivityLog.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .sort({ timestamp: -1 })
+      .sort({ createdAt: -1 })
       .limit(1000); // Limit to last 1000 records
 
     res.json(activityLogs);
@@ -55,7 +55,7 @@ router.get('/entity/:entityId', async (req, res) => {
     const activityLogs = await ActivityLog.find({ entityId: req.params.entityId })
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .sort({ timestamp: -1 });
+      .sort({ createdAt: -1 });
 
     res.json(activityLogs);
   } catch (error) {
@@ -76,7 +76,7 @@ router.get('/recent/:limit', async (req, res) => {
     const activityLogs = await ActivityLog.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .sort({ timestamp: -1 })
+      .sort({ createdAt: -1 })
       .limit(limit);
 
     res.json(activityLogs);

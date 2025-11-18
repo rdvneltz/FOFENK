@@ -167,7 +167,7 @@ const Dashboard = () => {
       setError('');
       await api.post(`/payment-plans/${paymentDialog.payment.paymentPlanId}/process-credit-card-payment`, {
         cashRegisterId: paymentDialog.cashRegisterId,
-        createdBy: user?.username || 'user'
+        createdBy: user?.username || 'System'
       });
 
       // Close dialog

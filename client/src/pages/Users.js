@@ -161,7 +161,7 @@ const Users = () => {
         permissions: formData.permissions,
         avatarColor: formData.avatarColor,
         institution: institution._id,
-        [selectedUser ? 'updatedBy' : 'createdBy']: currentUser
+        [selectedUser ? 'updatedBy' : 'createdBy']: currentUser?.username
       };
 
       if (formData.password) {
@@ -188,7 +188,7 @@ const Users = () => {
   const handleDelete = async () => {
     try {
       await api.delete(`/users/${confirmDialog.user._id}`, {
-        data: { deletedBy: currentUser }
+        data: { deletedBy: currentUser?.username }
       });
       showAlert('Kullanıcı pasif edildi');
       loadUsers();

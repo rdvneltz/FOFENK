@@ -15,7 +15,7 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter';
 
 const InstitutionSetup = () => {
-  const { institution, loadInitialData } = useApp();
+  const { institution, loadInitialData, currentUser } = useApp();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -64,6 +64,8 @@ const InstitutionSetup = () => {
       const institutionData = {
         ...formData,
         phone: unformatPhoneNumber(formData.phone),
+        createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       if (institution) {

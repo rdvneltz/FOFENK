@@ -42,7 +42,7 @@ const FREQUENCIES = [
 ];
 
 const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
-  const { institution, season } = useApp();
+  const { institution, season, user, currentUser } = useApp();
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
@@ -156,7 +156,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
         seasonId: season._id,
         institutionId: institution._id,
         skipHolidays: formData.skipHolidays,
-        createdBy: 'user' // TODO: Get from auth context
+        createdBy: currentUser?.username || user || 'System'
       });
 
       if (response.data.success) {

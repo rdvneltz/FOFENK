@@ -36,7 +36,7 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 
 const SeasonManagement = () => {
-  const { institution, seasons, refreshSeasons } = useApp();
+  const { institution, seasons, refreshSeasons, currentUser } = useApp();
   const [loading, setLoading] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
@@ -95,6 +95,8 @@ const SeasonManagement = () => {
       const seasonData = {
         ...formData,
         institution: institution._id,
+        createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       if (selectedSeason) {
@@ -175,6 +177,7 @@ const SeasonManagement = () => {
         sourceSeasonId: copyFormData.sourceSeasonId,
         dataTypes: copyFormData.dataTypes,
         institution: institution._id,
+        createdBy: currentUser?.username,
       });
 
       if (response.data.success) {
