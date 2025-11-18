@@ -116,6 +116,7 @@ const Settings = () => {
         creditCardCommission: parseFloat(formData.creditCardCommission),
         defaultInstallments: parseInt(formData.defaultInstallments),
         cardCommissions: cardCommissions,
+        createdBy: currentUser?.username,
       };
 
       await api.post('/settings', settingsData);

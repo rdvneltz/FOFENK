@@ -141,6 +141,8 @@ const CashRegisters = () => {
         institution: institution._id,
         season: season._id,
         initialBalance: parseFloat(formData.initialBalance),
+        createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       if (selectedRegister) {
@@ -185,7 +187,7 @@ const CashRegisters = () => {
         amount: parseFloat(adjustDialog.amount),
         description: adjustDialog.description,
         type: adjustDialog.type,
-        userId: currentUser?._id
+        createdBy: currentUser?.username
       });
 
       await loadCashRegisters();
@@ -230,7 +232,7 @@ const CashRegisters = () => {
         toCashRegisterId: transferDialog.toCashRegisterId,
         amount: parseFloat(transferDialog.amount),
         description: transferDialog.description,
-        userId: currentUser?._id
+        createdBy: currentUser?.username
       });
 
       await loadCashRegisters();
@@ -270,7 +272,7 @@ const CashRegisters = () => {
       await api.post(`/cash-registers/transactions/${deleteDialog.transaction.relatedId}/delete`, {
         password: deleteDialog.password,
         transactionType: deleteDialog.transaction.relatedTo,
-        userId: currentUser._id
+        createdBy: currentUser?.username
       });
 
       setSuccess('Hareket başarıyla silindi');

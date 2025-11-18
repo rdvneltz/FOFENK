@@ -23,7 +23,7 @@ import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter'
 const StudentForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { institution, season } = useApp();
+  const { institution, season, currentUser } = useApp();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -176,6 +176,8 @@ const StudentForm = () => {
         status: formData.status,
         institution: institution._id,
         season: season._id,
+        createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       if (id) {

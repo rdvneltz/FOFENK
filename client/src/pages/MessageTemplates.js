@@ -27,7 +27,7 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 
 const MessageTemplates = () => {
-  const { institution } = useApp();
+  const { institution, currentUser } = useApp();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -103,6 +103,8 @@ const MessageTemplates = () => {
       const templateData = {
         ...formData,
         institution: institution._id,
+        createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       if (selectedTemplate) {

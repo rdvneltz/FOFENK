@@ -30,7 +30,7 @@ import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 
 const TrialLessons = () => {
-  const { institution, season } = useApp();
+  const { institution, season, currentUser } = useApp();
   const [trials, setTrials] = useState([]);
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -113,6 +113,7 @@ const TrialLessons = () => {
         ...formData,
         institution: institution._id,
         season: season._id,
+        createdBy: currentUser?.username,
       };
 
       await api.post('/trial-lessons', trialData);
@@ -127,7 +128,10 @@ const TrialLessons = () => {
 
   const handleUpdateStatus = async (id, status) => {
     try {
-      await api.put(`/trial-lessons/${id}`, { status });
+      await api.put(`/trial-lessons/${id}`, {
+        status,
+        updatedBy: currentUser?.username
+      });
       await loadData();
     } catch (error) {
       setError(error.response?.data?.message || 'Durum güncellenemedi');

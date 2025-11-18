@@ -34,7 +34,7 @@ import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter'
 
 const Instructors = () => {
   const navigate = useNavigate();
-  const { institution, season } = useApp();
+  const { institution, season, currentUser } = useApp();
   const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -135,6 +135,8 @@ const Instructors = () => {
         phone: unformatPhoneNumber(formData.phone),
         institution: institution._id,
         season: season._id,
+        createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       if (selectedInstructor) {

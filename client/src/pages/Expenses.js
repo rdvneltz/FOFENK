@@ -157,6 +157,8 @@ const Expenses = () => {
         institution: institution._id,
         season: season._id,
         amount: parseFloat(formData.amount),
+        createdBy: currentUser?.username || user,
+        updatedBy: currentUser?.username || user,
       };
 
       if (selectedExpense) {

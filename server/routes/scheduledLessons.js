@@ -177,6 +177,7 @@ router.post('/generate-schedule', async (req, res) => {
 
     // Log activity
     await ActivityLog.create({
+      user: createdBy || 'System',
       action: 'create',
       entity: 'ScheduledLesson',
       description: `Otomatik program oluşturuldu: ${result.count} ders`,

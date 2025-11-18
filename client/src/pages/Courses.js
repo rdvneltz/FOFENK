@@ -34,7 +34,7 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import BulkEnrollDialog from '../components/Courses/BulkEnrollDialog';
 
 const Courses = () => {
-  const { institution, season } = useApp();
+  const { institution, season, currentUser } = useApp();
   const navigate = useNavigate();
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
@@ -154,6 +154,8 @@ const Courses = () => {
         ...formData,
         institution: institution._id,
         season: season._id,
+        createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       if (selectedCourse) {
