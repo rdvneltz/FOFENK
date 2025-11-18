@@ -75,6 +75,8 @@ const generateSchedule = async (params) => {
   // Generate lesson dates
   const lessonDates = [];
   let currentDate = new Date(start);
+  // Normalize to local date to avoid timezone issues
+  currentDate.setHours(12, 0, 0, 0);
   let weekCounter = 0;
 
   while (currentDate <= end) {
@@ -122,7 +124,9 @@ const generateSchedule = async (params) => {
         );
 
         if (!hasConflict) {
-          lessonDates.push(new Date(currentDate));
+          // Create new date with same day, normalized time
+          const lessonDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 12, 0, 0, 0);
+          lessonDates.push(lessonDate);
         }
       }
     }
