@@ -7,7 +7,7 @@ const scheduleGenerator = require('../utils/scheduleGenerator');
 // Get all scheduled lessons with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, courseId, instructorId, startDate, endDate } = req.query;
+    const { institutionId, seasonId, courseId, instructorId, startDate, endDate, month, year } = req.query;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -15,8 +15,20 @@ router.get('/', async (req, res) => {
     if (courseId) filter.course = courseId;
     if (instructorId) filter.instructor = instructorId;
 
-    if (startDate && endDate) {
-      filter.startTime = {
+    // Month/year filter for calendar view
+    if (month && year) {
+      const monthNum = parseInt(month);
+      const yearNum = parseInt(year);
+      const startOfMonth = new Date(yearNum, monthNum - 1, 1);
+      const endOfMonth = new Date(yearNum, monthNum, 0, 23, 59, 59, 999);
+
+      filter.date = {
+        $gte: startOfMonth,
+        $lte: endOfMonth
+      };
+    } else if (startDate && endDate) {
+      // Date range filter
+      filter.date = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
@@ -27,7 +39,7 @@ router.get('/', async (req, res) => {
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
       .populate('instructor', 'firstName lastName')
-      .sort({ startTime: 1 });
+      .sort({ date: 1, startTime: 1 });
 
     res.json(scheduledLessons);
   } catch (error) {
