@@ -115,6 +115,19 @@ const generateSchedule = async (params) => {
       }
 
       if (shouldInclude) {
+        // Check for duplicate lesson (same course, date, time)
+        const hasDuplicate = await checkDuplicateLesson(
+          courseId,
+          currentDate,
+          startTime,
+          endTime
+        );
+
+        if (hasDuplicate) {
+          console.log(`Skipping duplicate lesson for ${currentDate.toDateString()} at ${startTime}-${endTime}`);
+          continue; // Skip this date, already exists
+        }
+
         // Check for instructor conflicts
         const hasConflict = await checkInstructorConflict(
           instructorId,
@@ -167,6 +180,32 @@ const generateSchedule = async (params) => {
     lessons: createdLessons,
     skippedDays: lessonDates.length < calculateMaxPossibleDays(start, end, daysOfWeek)
   };
+};
+
+/**
+ * Check if duplicate lesson exists (same course, date, time)
+ */
+const checkDuplicateLesson = async (courseId, date, startTime, endTime) => {
+  // Set date boundaries (start and end of the day)
+  const dayStart = new Date(date);
+  dayStart.setHours(0, 0, 0, 0);
+
+  const dayEnd = new Date(date);
+  dayEnd.setHours(23, 59, 59, 999);
+
+  // Find lessons for this course on this day with same time
+  const existingLesson = await ScheduledLesson.findOne({
+    course: courseId,
+    date: {
+      $gte: dayStart,
+      $lte: dayEnd
+    },
+    startTime: startTime,
+    endTime: endTime,
+    status: { $ne: 'cancelled' }
+  });
+
+  return existingLesson !== null;
 };
 
 /**

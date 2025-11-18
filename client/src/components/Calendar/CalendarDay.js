@@ -1,7 +1,12 @@
 import React from 'react';
 import { Box, Typography, Paper } from '@mui/material';
 
-const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onClick }) => {
+const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onLessonClick }) => {
+  const handleDayClick = (e) => {
+    // Eğer lesson'a tıklanmadıysa ve boş gün ise, yeni ders ekleme dialog'u açılabilir (gelecekte)
+    // Şimdilik boş günlere tıklanınca hiçbir şey yapma
+  };
+
   return (
     <Paper
       elevation={isToday ? 3 : 1}
@@ -20,7 +25,7 @@ const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onClick }) => {
         display: 'flex',
         flexDirection: 'column',
       }}
-      onClick={onClick}
+      onClick={handleDayClick}
     >
       <Typography
         variant="body1"
@@ -35,7 +40,7 @@ const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onClick }) => {
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, overflow: 'hidden' }}>
         {lessons && lessons.slice(0, 4).map((lesson, index) => (
           <Box
-            key={index}
+            key={lesson._id || index}
             sx={{
               fontSize: '0.75rem',
               p: 0.75,
@@ -49,8 +54,18 @@ const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onClick }) => {
               whiteSpace: 'nowrap',
               fontWeight: 500,
               lineHeight: 1.3,
+              cursor: 'pointer',
+              '&:hover': {
+                opacity: 0.8,
+                transform: 'scale(1.02)',
+              },
+              transition: 'all 0.2s',
             }}
             title={`${lesson.startTime}-${lesson.endTime} ${lesson.course?.name || 'Ders'}`}
+            onClick={(e) => {
+              e.stopPropagation(); // Prevent day click
+              onLessonClick(lesson);
+            }}
           >
             <Box sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
               {lesson.startTime}-{lesson.endTime}

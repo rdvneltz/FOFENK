@@ -132,20 +132,9 @@ const Calendar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
 
-  const handleDayClick = (date) => {
-    const dayLessons = lessons[date.toDateString()];
-    if (dayLessons && dayLessons.length > 0) {
-      // If there's only one lesson, open it directly
-      if (dayLessons.length === 1) {
-        setSelectedLesson(dayLessons[0]);
-        setLessonDetailOpen(true);
-      } else {
-        // TODO: Show a list of lessons to choose from
-        // For now, open the first lesson
-        setSelectedLesson(dayLessons[0]);
-        setLessonDetailOpen(true);
-      }
-    }
+  const handleLessonClick = (lesson) => {
+    setSelectedLesson(lesson);
+    setLessonDetailOpen(true);
   };
 
   const handleLessonDetailClose = () => {
@@ -234,7 +223,7 @@ const Calendar = () => {
                 isCurrentMonth={day.isCurrentMonth}
                 isToday={isToday(day.date)}
                 lessons={lessons[day.date.toDateString()]}
-                onClick={() => handleDayClick(day.date)}
+                onLessonClick={handleLessonClick}
               />
             </Grid>
           ))}
