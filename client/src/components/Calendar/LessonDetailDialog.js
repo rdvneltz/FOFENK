@@ -21,6 +21,9 @@ import {
   Chip,
   Alert,
   IconButton,
+  FormControl,
+  InputLabel,
+  Select,
 } from '@mui/material';
 import {
   Close,
@@ -35,15 +38,20 @@ import {
 import { useApp } from '../../context/AppContext';
 import api from '../../api';
 import LoadingSpinner from '../Common/LoadingSpinner';
+import CompleteLessonDialog from './CompleteLessonDialog';
 
 const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => {
-  const { user } = useApp();
+  const { user, institution, season } = useApp();
   const [loading, setLoading] = useState(true);
   const [lessonData, setLessonData] = useState(null);
   const [enrolledStudents, setEnrolledStudents] = useState([]);
+  const [instructors, setInstructors] = useState([]);
+  const [selectedInstructor, setSelectedInstructor] = useState('');
+  const [instructorConfirmed, setInstructorConfirmed] = useState(false);
   const [attendance, setAttendance] = useState({});
   const [status, setStatus] = useState('scheduled');
   const [saving, setSaving] = useState(false);
+  const [completeLessonOpen, setCompleteLessonOpen] = useState(false);
 
   useEffect(() => {
     if (open && lesson) {
@@ -59,6 +67,8 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       const lessonRes = await api.get(`/scheduled-lessons/${lesson._id}`);
       setLessonData(lessonRes.data);
       setStatus(lessonRes.data.status);
+      setSelectedInstructor(lessonRes.data.instructor?._id || '');
+      setInstructorConfirmed(lessonRes.data.instructorConfirmed || false);
 
       // Get enrolled students for this course
       const enrollmentsRes = await api.get('/enrollments', {
@@ -68,6 +78,15 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
         }
       });
       setEnrolledStudents(enrollmentsRes.data);
+
+      // Get all instructors for this institution/season
+      const instructorsRes = await api.get('/instructors', {
+        params: {
+          institutionId: institution._id,
+          seasonId: season._id
+        }
+      });
+      setInstructors(instructorsRes.data);
 
       // Get attendance records for this lesson
       const attendanceRes = await api.get('/attendance', {
@@ -91,6 +110,19 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   };
 
   const handleStatusChange = async (newStatus) => {
+    // If completing lesson, check instructor confirmation first
+    if (newStatus === 'completed') {
+      if (!instructorConfirmed) {
+        alert('Dersi tamamlamak için önce eğitmen onayı vermelisiniz!');
+        return;
+      }
+
+      // Open complete lesson dialog
+      setCompleteLessonOpen(true);
+      return;
+    }
+
+    // For other status changes, just update
     try {
       await api.put(`/scheduled-lessons/${lesson._id}`, {
         status: newStatus,
@@ -100,6 +132,76 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       onUpdated();
     } catch (error) {
       alert('Durum güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleInstructorChange = async (newInstructorId) => {
+    try {
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        instructor: newInstructorId || null,
+        updatedBy: user?.username
+      });
+      setSelectedInstructor(newInstructorId);
+      loadLessonDetails(); // Reload to get new instructor details
+      onUpdated();
+    } catch (error) {
+      alert('Eğitmen güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleInstructorConfirmation = async (confirmed) => {
+    try {
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        instructorConfirmed: confirmed,
+        updatedBy: user?.username
+      });
+      setInstructorConfirmed(confirmed);
+      onUpdated();
+    } catch (error) {
+      alert('Eğitmen onayı güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleCompleteLesson = async (completionData) => {
+    try {
+      // Update lesson status and actual duration
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        status: 'completed',
+        actualDuration: completionData.actualDuration,
+        instructorPaymentCalculated: true,
+        instructorPaymentAmount: completionData.paymentAmount,
+        updatedBy: user?.username
+      });
+
+      // Get instructor details for balance update
+      const currentInstructor = instructors.find(i => i._id === selectedInstructor);
+      if (currentInstructor) {
+        // Update instructor balance
+        await api.put(`/instructors/${selectedInstructor}`, {
+          balance: currentInstructor.balance + completionData.paymentAmount,
+          updatedBy: user?.username
+        });
+
+        // Create expense record
+        await api.post('/expenses', {
+          category: 'Eğitmen Ödemesi',
+          amount: completionData.paymentAmount,
+          expenseDate: new Date().toISOString().split('T')[0],
+          description: `${lessonData.course?.name || 'Ders'} - ${new Date(lessonData.date).toLocaleDateString('tr-TR')} - ${currentInstructor.firstName} ${currentInstructor.lastName}`,
+          instructor: selectedInstructor,
+          institution: institution._id,
+          season: season._id,
+          createdBy: user?.username
+        });
+      }
+
+      setStatus('completed');
+      alert(`Ders tamamlandı! Eğitmene ₺${completionData.paymentAmount.toFixed(2)} ödeme yansıtıldı.`);
+      loadLessonDetails();
+      onUpdated();
+    } catch (error) {
+      alert('Ders tamamlanırken hata oluştu: ' + (error.response?.data?.message || error.message));
+      throw error;
     }
   };
 
@@ -328,15 +430,42 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
                       {lessonData.startTime} - {lessonData.endTime}
                     </Typography>
                   </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary">
+                  <Grid item xs={12}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
                       Eğitmen
                     </Typography>
-                    <Typography variant="body1">
-                      {lessonData.instructor
-                        ? `${lessonData.instructor.firstName} ${lessonData.instructor.lastName}`
-                        : 'Belirtilmemiş'}
-                    </Typography>
+                    <FormControl fullWidth size="small">
+                      <Select
+                        value={selectedInstructor}
+                        onChange={(e) => handleInstructorChange(e.target.value)}
+                        displayEmpty
+                      >
+                        <MenuItem value="">
+                          <em>Eğitmen Seçilmedi</em>
+                        </MenuItem>
+                        {instructors.map((instructor) => (
+                          <MenuItem key={instructor._id} value={instructor._id}>
+                            {instructor.firstName} {instructor.lastName}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControlLabel
+                      sx={{ mt: 1 }}
+                      control={
+                        <Checkbox
+                          checked={instructorConfirmed}
+                          onChange={(e) => handleInstructorConfirmation(e.target.checked)}
+                          disabled={!selectedInstructor}
+                        />
+                      }
+                      label="Eğitmen derse girdi (onaylandı)"
+                    />
+                    {!instructorConfirmed && (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        Dersi tamamlamak için eğitmen onayı gereklidir
+                      </Alert>
+                    )}
                   </Grid>
                   <Grid item xs={12} sm={6}>
                     <Typography variant="body2" color="text.secondary">
@@ -535,6 +664,15 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
           Düzenle
         </Button>
       </DialogActions>
+
+      {/* Complete Lesson Dialog */}
+      <CompleteLessonDialog
+        open={completeLessonOpen}
+        onClose={() => setCompleteLessonOpen(false)}
+        lesson={lessonData}
+        instructor={instructors.find(i => i._id === selectedInstructor)}
+        onComplete={handleCompleteLesson}
+      />
     </Dialog>
   );
 };

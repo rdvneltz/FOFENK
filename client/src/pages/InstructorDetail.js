@@ -52,10 +52,12 @@ const InstructorDetail = () => {
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const [payments, setPayments] = useState([]);
+  const [lessonHistory, setLessonHistory] = useState([]);
   const [statistics, setStatistics] = useState({
     totalPaid: 0,
     balance: 0,
     completedLessons: 0,
+    totalHours: 0,
     expectedPayment: null,
     paymentType: '',
     paymentAmount: 0
@@ -75,15 +77,36 @@ const InstructorDetail = () => {
   const loadInstructor = async () => {
     try {
       setLoading(true);
-      const [detailsRes, cashRes] = await Promise.all([
+      const [detailsRes, cashRes, lessonsRes] = await Promise.all([
         api.get(`/instructors/${id}/details`),
         api.get(`/cash-registers`, { params: { institution: institution._id } }),
+        api.get(`/scheduled-lessons`, {
+          params: {
+            instructorId: id,
+            institution: institution._id,
+            season: season._id
+          }
+        }),
       ]);
 
       setInstructor(detailsRes.data.instructor);
       setPayments(detailsRes.data.payments || []);
       setStatistics(detailsRes.data.statistics || {});
       setCashRegisters(cashRes.data);
+
+      // Filter and sort lessons - only confirmed lessons
+      const confirmedLessons = lessonsRes.data
+        .filter(l => l.instructorConfirmed)
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      setLessonHistory(confirmedLessons);
+
+      // Calculate total hours from confirmed lessons
+      const totalHours = confirmedLessons.reduce((sum, lesson) => {
+        return sum + (lesson.actualDuration || 0);
+      }, 0);
+
+      setStatistics(prev => ({ ...prev, totalHours }));
 
       if (cashRes.data.length > 0) {
         setPaymentDialog(prev => ({ ...prev, cashRegisterId: cashRes.data[0]._id }));
@@ -270,6 +293,12 @@ const InstructorDetail = () => {
                   secondary={statistics.completedLessons || 0}
                 />
               </ListItem>
+              <ListItem>
+                <ListItemText
+                  primary="Toplam Eğitim Saati"
+                  secondary={`${(statistics.totalHours || 0).toFixed(1)} saat`}
+                />
+              </ListItem>
               {statistics.expectedPayment && (
                 <ListItem>
                   <ListItemText
@@ -334,9 +363,87 @@ const InstructorDetail = () => {
               {/* Lessons Tab */}
               {tabValue === 1 && (
                 <Box>
-                  <Typography color="text.secondary" align="center">
-                    Ders geçmişi yakında eklenecek
+                  <Typography variant="h6" gutterBottom>
+                    Ders Geçmişi
                   </Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Sadece eğitmen onayı verilen dersler gösterilir
+                  </Typography>
+
+                  {lessonHistory.length === 0 ? (
+                    <Typography color="text.secondary" align="center" sx={{ mt: 3 }}>
+                      Henüz onaylanmış ders bulunmuyor
+                    </Typography>
+                  ) : (
+                    <>
+                      <Box sx={{ mb: 2, mt: 2, p: 2, bgcolor: 'primary.light', borderRadius: 1 }}>
+                        <Typography variant="subtitle1" color="primary.contrastText">
+                          Toplam {lessonHistory.length} ders - {statistics.totalHours.toFixed(1)} saat
+                        </Typography>
+                      </Box>
+
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Tarih</TableCell>
+                              <TableCell>Ders</TableCell>
+                              <TableCell>Saat</TableCell>
+                              <TableCell>Süre</TableCell>
+                              <TableCell>Durum</TableCell>
+                              <TableCell>Ödeme</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {lessonHistory.map((lesson) => (
+                              <TableRow key={lesson._id}>
+                                <TableCell>
+                                  {new Date(lesson.date).toLocaleDateString('tr-TR', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric'
+                                  })}
+                                </TableCell>
+                                <TableCell>
+                                  <Typography variant="body2" fontWeight="medium">
+                                    {lesson.course?.name || 'Ders'}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  {lesson.startTime} - {lesson.endTime}
+                                </TableCell>
+                                <TableCell>
+                                  <Typography variant="body2" color="primary">
+                                    {lesson.actualDuration
+                                      ? `${lesson.actualDuration} saat`
+                                      : '-'}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  <Chip
+                                    label={lesson.status === 'completed' ? 'Tamamlandı' : lesson.status}
+                                    color={lesson.status === 'completed' ? 'success' : 'default'}
+                                    size="small"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  {lesson.instructorPaymentCalculated ? (
+                                    <Typography variant="body2" color="success.main" fontWeight="bold">
+                                      ₺{(lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
+                                    </Typography>
+                                  ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                      Bekliyor
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </>
+                  )}
                 </Box>
               )}
             </Box>
