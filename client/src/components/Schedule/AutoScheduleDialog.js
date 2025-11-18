@@ -153,8 +153,8 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
         startTime: formData.startTime,
         endTime: formData.endTime,
         frequency: formData.frequency,
-        season: season._id,
-        institution: institution._id,
+        seasonId: season._id,
+        institutionId: institution._id,
         skipHolidays: formData.skipHolidays,
         createdBy: 'user' // TODO: Get from auth context
       });
