@@ -114,7 +114,8 @@ const InstructorDetail = () => {
           l.instructorConfirmed &&
           l.status === 'completed' &&
           l.instructorPaymentCalculated === true &&
-          l.instructorPaymentAmount > 0
+          l.instructorPaymentAmount > 0 &&
+          !l.instructorPaymentPaid
         )
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -194,6 +195,13 @@ const InstructorDetail = () => {
         institution: institution._id,
         season: season._id,
         createdBy: user?.username
+      });
+
+      // Mark lesson as paid
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        instructorPaymentPaid: true,
+        instructorPaymentDate: new Date(),
+        updatedBy: user?.username
       });
 
       // Update instructor balance (subtract paid amount)
