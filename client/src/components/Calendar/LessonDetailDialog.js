@@ -176,27 +176,18 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       // Get instructor details for balance update
       const currentInstructor = instructors.find(i => i._id === selectedInstructor);
       if (currentInstructor) {
-        // Update instructor balance
+        // Update instructor balance (add unpaid debt)
         await api.put(`/instructors/${selectedInstructor}`, {
           balance: currentInstructor.balance + completionData.paymentAmount,
           updatedBy: user?.username
         });
-
-        // Create expense record
-        await api.post('/expenses', {
-          category: 'Eğitmen Ödemesi',
-          amount: completionData.paymentAmount,
-          expenseDate: new Date().toISOString().split('T')[0],
-          description: `${lessonData.course?.name || 'Ders'} - ${new Date(lessonData.date).toLocaleDateString('tr-TR')} - ${currentInstructor.firstName} ${currentInstructor.lastName}`,
-          instructor: selectedInstructor,
-          institution: institution._id,
-          season: season._id,
-          createdBy: user?.username
-        });
       }
 
+      // NOTE: Expense record will be created when payment is made from InstructorDetail page
+      // This keeps lessons as unpaid until manually paid
+
       setStatus('completed');
-      alert(`Ders tamamlandı! Eğitmene ₺${completionData.paymentAmount.toFixed(2)} ödeme yansıtıldı.`);
+      alert(`Ders tamamlandı! Eğitmene ₺${completionData.paymentAmount.toFixed(2)} borç olarak kaydedildi.\nÖdeme yapmak için eğitmen detay sayfasına gidin.`);
       loadLessonDetails();
       onUpdated();
     } catch (error) {

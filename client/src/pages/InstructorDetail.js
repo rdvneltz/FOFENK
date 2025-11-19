@@ -53,6 +53,7 @@ const InstructorDetail = () => {
   const [tabValue, setTabValue] = useState(0);
   const [payments, setPayments] = useState([]);
   const [lessonHistory, setLessonHistory] = useState([]);
+  const [unpaidLessons, setUnpaidLessons] = useState([]);
   const [statistics, setStatistics] = useState({
     totalPaid: 0,
     balance: 0,
@@ -68,6 +69,11 @@ const InstructorDetail = () => {
     amount: '',
     cashRegisterId: '',
     description: ''
+  });
+  const [payLessonDialog, setPayLessonDialog] = useState({
+    open: false,
+    lesson: null,
+    cashRegisterId: ''
   });
 
   useEffect(() => {
@@ -100,6 +106,18 @@ const InstructorDetail = () => {
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
       setLessonHistory(confirmedLessons);
+
+      // Separate unpaid lessons (completed but payment not made yet)
+      const unpaid = lessonsRes.data
+        .filter(l =>
+          l.instructorConfirmed &&
+          l.status === 'completed' &&
+          l.instructorPaymentCalculated === true &&
+          l.instructorPaymentAmount > 0
+        )
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      setUnpaidLessons(unpaid);
 
       // Calculate total hours from confirmed lessons
       const totalHours = confirmedLessons.reduce((sum, lesson) => {
@@ -145,6 +163,47 @@ const InstructorDetail = () => {
       alert('Ödeme başarıyla kaydedildi');
       setPaymentDialog({ open: false, amount: '', cashRegisterId: cashRegisters[0]?._id || '', description: '' });
       loadInstructor(); // Reload to show new payment
+    } catch (error) {
+      alert('Ödeme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handlePayLesson = async () => {
+    try {
+      const { lesson, cashRegisterId } = payLessonDialog;
+
+      if (!cashRegisterId) {
+        alert('Lütfen bir kasa seçiniz');
+        return;
+      }
+
+      if (!lesson || !lesson.instructorPaymentAmount) {
+        alert('Ödeme tutarı bulunamadı');
+        return;
+      }
+
+      // Create expense record
+      await api.post('/expenses', {
+        category: 'Eğitmen Ödemesi',
+        amount: lesson.instructorPaymentAmount,
+        description: `${lesson.course?.name || 'Ders'} - ${new Date(lesson.date).toLocaleDateString('tr-TR')} - ${instructor.firstName} ${instructor.lastName} (${lesson.actualDuration || 0} saat)`,
+        expenseDate: new Date(),
+        cashRegister: cashRegisterId,
+        instructor: id,
+        institution: institution._id,
+        season: season._id,
+        createdBy: user?.username
+      });
+
+      // Update instructor balance (subtract paid amount)
+      await api.put(`/instructors/${id}`, {
+        balance: instructor.balance - lesson.instructorPaymentAmount,
+        updatedBy: user?.username
+      });
+
+      alert(`Ödeme başarıyla yapıldı! ₺${lesson.instructorPaymentAmount.toFixed(2)}`);
+      setPayLessonDialog({ open: false, lesson: null, cashRegisterId: '' });
+      loadInstructor(); // Reload to update balance and lesson list
     } catch (error) {
       alert('Ödeme hatası: ' + (error.response?.data?.message || error.message));
     }
@@ -316,7 +375,8 @@ const InstructorDetail = () => {
           <Paper>
             <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
               <Tab label="Ödeme Geçmişi" />
-              <Tab label="Dersler" />
+              <Tab label={`Ödenmemiş Dersler (${unpaidLessons.length})`} />
+              <Tab label="Tüm Dersler" />
             </Tabs>
 
             <Box sx={{ p: 3 }}>
@@ -360,8 +420,99 @@ const InstructorDetail = () => {
                 </Box>
               )}
 
-              {/* Lessons Tab */}
+              {/* Unpaid Lessons Tab */}
               {tabValue === 1 && (
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Ödenme Bekleyen Dersler
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Tamamlanmış ancak henüz ödeme yapılmamış dersler
+                  </Typography>
+
+                  {unpaidLessons.length === 0 ? (
+                    <Typography color="text.secondary" align="center" sx={{ mt: 3 }}>
+                      Ödenecek ders bulunmuyor
+                    </Typography>
+                  ) : (
+                    <>
+                      <Alert severity="warning" sx={{ mb: 2, mt: 2 }}>
+                        <Typography variant="subtitle2">
+                          Toplam Borç: <strong>₺{unpaidLessons.reduce((sum, l) => sum + (l.instructorPaymentAmount || 0), 0).toLocaleString('tr-TR')}</strong>
+                        </Typography>
+                        <Typography variant="caption">
+                          {unpaidLessons.length} adet ders için ödeme bekleniyor
+                        </Typography>
+                      </Alert>
+
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Tarih</TableCell>
+                              <TableCell>Ders</TableCell>
+                              <TableCell>Süre</TableCell>
+                              <TableCell>Tutar</TableCell>
+                              <TableCell>İşlem</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {unpaidLessons.map((lesson) => (
+                              <TableRow key={lesson._id}>
+                                <TableCell>
+                                  {new Date(lesson.date).toLocaleDateString('tr-TR', {
+                                    day: '2-digit',
+                                    month: 'short',
+                                    year: 'numeric'
+                                  })}
+                                </TableCell>
+                                <TableCell>
+                                  <Typography variant="body2" fontWeight="medium">
+                                    {lesson.course?.name || 'Ders'}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {lesson.startTime} - {lesson.endTime}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  <Typography variant="body2" color="primary">
+                                    {lesson.actualDuration || 0} saat
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  <Typography variant="body2" color="error" fontWeight="bold">
+                                    ₺{(lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  <Button
+                                    variant="contained"
+                                    color="success"
+                                    size="small"
+                                    startIcon={<PaymentIcon />}
+                                    onClick={() => {
+                                      setPayLessonDialog({
+                                        open: true,
+                                        lesson: lesson,
+                                        cashRegisterId: cashRegisters[0]?._id || ''
+                                      });
+                                    }}
+                                  >
+                                    Öde
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </>
+                  )}
+                </Box>
+              )}
+
+              {/* All Lessons Tab */}
+              {tabValue === 2 && (
                 <Box>
                   <Typography variant="h6" gutterBottom>
                     Ders Geçmişi
@@ -450,6 +601,68 @@ const InstructorDetail = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Pay Lesson Dialog */}
+      <Dialog
+        open={payLessonDialog.open}
+        onClose={() => setPayLessonDialog({ ...payLessonDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ders Ödemesi Yap</DialogTitle>
+        <DialogContent>
+          {payLessonDialog.lesson && (
+            <>
+              <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  {payLessonDialog.lesson.course?.name || 'Ders'}
+                </Typography>
+                <Typography variant="body2">
+                  Tarih: {new Date(payLessonDialog.lesson.date).toLocaleDateString('tr-TR')}
+                </Typography>
+                <Typography variant="body2">
+                  Süre: {payLessonDialog.lesson.actualDuration || 0} saat
+                </Typography>
+                <Typography variant="h6" sx={{ mt: 1 }}>
+                  Tutar: ₺{(payLessonDialog.lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
+                </Typography>
+              </Alert>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Kasa Seç</InputLabel>
+                    <Select
+                      value={payLessonDialog.cashRegisterId}
+                      onChange={(e) => setPayLessonDialog({ ...payLessonDialog, cashRegisterId: e.target.value })}
+                      label="Kasa Seç"
+                    >
+                      {cashRegisters.map((register) => (
+                        <MenuItem key={register._id} value={register._id}>
+                          {register.name} - Bakiye: ₺{register.balance?.toLocaleString('tr-TR')}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPayLessonDialog({ open: false, lesson: null, cashRegisterId: '' })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handlePayLesson}
+            variant="contained"
+            color="success"
+            startIcon={<PaymentIcon />}
+          >
+            Ödeme Yap
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Payment Dialog */}
       <Dialog

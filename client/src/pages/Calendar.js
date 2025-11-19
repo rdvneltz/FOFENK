@@ -14,6 +14,7 @@ import { useApp } from '../context/AppContext';
 import CalendarDay from '../components/Calendar/CalendarDay';
 import AutoScheduleDialog from '../components/Schedule/AutoScheduleDialog';
 import BulkDeleteLessonsDialog from '../components/Calendar/BulkDeleteLessonsDialog';
+import CreateLessonDialog from '../components/Calendar/CreateLessonDialog';
 import LessonDetailDialog from '../components/Calendar/LessonDetailDialog';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -25,6 +26,8 @@ const Calendar = () => {
   const [loading, setLoading] = useState(true);
   const [autoScheduleOpen, setAutoScheduleOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [createLessonOpen, setCreateLessonOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -173,6 +176,20 @@ const Calendar = () => {
     });
   };
 
+  const handleDayClick = (date) => {
+    setSelectedDate(date);
+    setCreateLessonOpen(true);
+  };
+
+  const handleCreateLessonSuccess = () => {
+    loadLessons(); // Reload calendar
+    setSnackbar({
+      open: true,
+      message: 'Ders başarıyla oluşturuldu!',
+      severity: 'success'
+    });
+  };
+
   if (loading) {
     return <LoadingSpinner message="Takvim yükleniyor..." />;
   }
@@ -245,6 +262,7 @@ const Calendar = () => {
                 isToday={isToday(day.date)}
                 lessons={lessons[day.date.toDateString()]}
                 onLessonClick={handleLessonClick}
+                onDayClick={handleDayClick}
               />
             </Grid>
           ))}
@@ -263,6 +281,14 @@ const Calendar = () => {
         open={bulkDeleteOpen}
         onClose={() => setBulkDeleteOpen(false)}
         onSuccess={handleBulkDeleteSuccess}
+      />
+
+      {/* Create Single Lesson Dialog */}
+      <CreateLessonDialog
+        open={createLessonOpen}
+        onClose={() => setCreateLessonOpen(false)}
+        selectedDate={selectedDate}
+        onSuccess={handleCreateLessonSuccess}
       />
 
       {/* Lesson Detail Dialog */}
