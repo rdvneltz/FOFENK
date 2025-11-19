@@ -30,6 +30,8 @@ import {
   Layers as SeasonIcon,
   Business as BusinessIcon,
 } from '@mui/icons-material';
+import useServerHealth from '../../hooks/useServerHealth';
+import ServerStatusIndicator from '../Common/ServerStatusIndicator';
 
 const menuItems = [
   { text: 'Panel', icon: <DashboardIcon />, path: '/' },
@@ -54,13 +56,17 @@ const menuItems = [
 const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { status, lastChecked } = useServerHealth();
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Toolbar>
-        <Typography variant="h6" noWrap component="div" sx={{ color: 'white' }}>
-          FOFENK
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
+          <Typography variant="h6" noWrap component="div" sx={{ color: 'white', flexGrow: 1 }}>
+            FOFENK
+          </Typography>
+          <ServerStatusIndicator status={status} lastChecked={lastChecked} />
+        </Box>
       </Toolbar>
       <Divider sx={{ backgroundColor: 'rgba(255, 255, 255, 0.12)' }} />
       <List sx={{ flexGrow: 1, pt: 2 }}>
