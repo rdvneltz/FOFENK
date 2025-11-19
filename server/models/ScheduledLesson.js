@@ -50,6 +50,13 @@ const scheduledLessonSchema = new mongoose.Schema({
   },
   // Bu ders için eğitmene yansıtılan ücret
   instructorPaymentAmount: Number,
+  // Eğitmen ücreti ödendi mi
+  instructorPaymentPaid: {
+    type: Boolean,
+    default: false
+  },
+  // Ödeme tarihi
+  instructorPaymentDate: Date,
   notes: String,
   season: {
     type: mongoose.Schema.Types.ObjectId,
