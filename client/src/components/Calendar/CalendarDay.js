@@ -1,10 +1,12 @@
 import React from 'react';
 import { Box, Typography, Paper } from '@mui/material';
 
-const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onLessonClick }) => {
+const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onLessonClick, onDayClick }) => {
   const handleDayClick = (e) => {
-    // Eğer lesson'a tıklanmadıysa ve boş gün ise, yeni ders ekleme dialog'u açılabilir (gelecekte)
-    // Şimdilik boş günlere tıklanınca hiçbir şey yapma
+    // Only allow clicking on current month days
+    if (isCurrentMonth && onDayClick) {
+      onDayClick(date);
+    }
   };
 
   return (

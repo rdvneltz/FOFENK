@@ -244,10 +244,10 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
           </Grid>
 
           <Grid item xs={12}>
-            <Alert severity="warning" sx={{ mt: 1 }}>
+            <Alert severity="info" sx={{ mt: 1 }}>
               <Typography variant="body2">
-                Bu tutar eğitmenin bakiyesine eklenecek ve gider kaydı oluşturulacaktır.
-                Emin misiniz?
+                <strong>Not:</strong> Bu tutar eğitmenin bakiyesine borç olarak eklenecektir.
+                Gerçek ödeme yapmak için eğitmen detay sayfasından "Öde" butonunu kullanın.
               </Typography>
             </Alert>
           </Grid>
