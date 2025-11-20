@@ -33,6 +33,7 @@ const activityLogSchema = new mongoose.Schema({
       'Season',
       'Student',
       'Course',
+      'StudentCourseEnrollment',
       'Instructor',
       'Payment',
       'Expense',

@@ -502,30 +502,95 @@ const PaymentPlan = () => {
               </FormControl>
             </Grid>
 
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                label="Toplam Tutar (₺)"
-                name="totalAmount"
-                type="number"
-                value={formData.totalAmount}
-                onChange={handleChange}
-                required
-              />
-            </Grid>
+            {/* Show Monthly Fee field for monthly courses */}
+            {formData.enrollmentId && (() => {
+              const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
+              const isMonthlyPricing = selectedEnrollment?.course?.pricingType === 'monthly';
 
-            <Grid item xs={12} sm={2}>
-              <TextField
-                fullWidth
-                label="Kaç Aylık?"
-                name="durationMonths"
-                type="number"
-                value={formData.durationMonths}
-                onChange={handleChange}
-                inputProps={{ min: 1 }}
-                helperText="Kayıt süresi"
-              />
-            </Grid>
+              return isMonthlyPricing ? (
+                <>
+                  <Grid item xs={12} sm={4}>
+                    <TextField
+                      fullWidth
+                      label="Aylık Ders Ücreti (₺)"
+                      name="monthlyFee"
+                      type="number"
+                      value={formData.monthlyFee}
+                      onChange={(e) => {
+                        const newMonthlyFee = parseFloat(e.target.value) || 0;
+                        const newTotal = formData.durationMonths ? newMonthlyFee * parseFloat(formData.durationMonths) : newMonthlyFee;
+                        setFormData(prev => ({
+                          ...prev,
+                          monthlyFee: e.target.value,
+                          totalAmount: newTotal
+                        }));
+                      }}
+                      required
+                      helperText="Aylık ödenecek tutar"
+                    />
+                  </Grid>
+
+                  <Grid item xs={12} sm={2}>
+                    <TextField
+                      fullWidth
+                      label="Kaç Aylık?"
+                      name="durationMonths"
+                      type="number"
+                      value={formData.durationMonths}
+                      onChange={handleChange}
+                      inputProps={{ min: 1 }}
+                      required
+                      helperText="Kayıt süresi (ay)"
+                    />
+                  </Grid>
+
+                  <Grid item xs={12} sm={4}>
+                    <TextField
+                      fullWidth
+                      label="Toplam Tutar (₺)"
+                      value={formData.totalAmount || 0}
+                      InputProps={{
+                        readOnly: true,
+                      }}
+                      helperText={`${formData.monthlyFee || 0} × ${formData.durationMonths || 0} ay`}
+                      sx={{
+                        '& .MuiInputBase-input': {
+                          color: 'primary.main',
+                          fontWeight: 600
+                        }
+                      }}
+                    />
+                  </Grid>
+                </>
+              ) : (
+                <>
+                  <Grid item xs={12} sm={4}>
+                    <TextField
+                      fullWidth
+                      label="Toplam Tutar (₺)"
+                      name="totalAmount"
+                      type="number"
+                      value={formData.totalAmount}
+                      onChange={handleChange}
+                      required
+                    />
+                  </Grid>
+
+                  <Grid item xs={12} sm={2}>
+                    <TextField
+                      fullWidth
+                      label="Kaç Aylık?"
+                      name="durationMonths"
+                      type="number"
+                      value={formData.durationMonths}
+                      onChange={handleChange}
+                      inputProps={{ min: 1 }}
+                      helperText="Kayıt süresi"
+                    />
+                  </Grid>
+                </>
+              );
+            })()}
 
             {/* Monthly Lesson Details */}
             {showLessonDetails && monthlyLessonDetails && (
