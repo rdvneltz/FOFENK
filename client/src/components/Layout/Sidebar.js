@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Drawer,
@@ -57,6 +57,31 @@ const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { status, lastChecked } = useServerHealth();
+  const [currentDateTime, setCurrentDateTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDateTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatDate = (date) => {
+    return date.toLocaleDateString('tr-TR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+  };
+
+  const formatTime = (date) => {
+    return date.toLocaleTimeString('tr-TR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -68,6 +93,44 @@ const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
           <ServerStatusIndicator status={status} lastChecked={lastChecked} />
         </Box>
       </Toolbar>
+
+      {/* Date and Time Display */}
+      <Box
+        sx={{
+          px: 2,
+          py: 1.5,
+          textAlign: 'center',
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        }}
+      >
+        <Typography
+          variant="body2"
+          sx={{
+            color: 'rgba(255, 255, 255, 0.9)',
+            fontWeight: 500,
+            fontSize: '0.875rem',
+            letterSpacing: '0.5px',
+            mb: 0.5
+          }}
+        >
+          {formatDate(currentDateTime)}
+        </Typography>
+        <Typography
+          variant="h6"
+          sx={{
+            color: 'primary.main',
+            fontWeight: 600,
+            fontSize: '1.25rem',
+            fontFamily: 'monospace',
+            letterSpacing: '1px'
+          }}
+        >
+          {formatTime(currentDateTime)}
+        </Typography>
+      </Box>
+
       <Divider sx={{ backgroundColor: 'rgba(255, 255, 255, 0.12)' }} />
       <List sx={{ flexGrow: 1, pt: 2 }}>
         {menuItems.map((item, index) => {

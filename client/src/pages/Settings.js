@@ -74,7 +74,7 @@ const Settings = () => {
 
     try {
       setLoading(true);
-      const response = await api.get(`/settings/${institution._id}`);
+      const response = await api.get(`/settings/institution/${institution._id}`);
       if (response.data) {
         setFormData({
           vatRate: response.data.vatRate || 10,

@@ -13,6 +13,9 @@ const CashRegister = require('../models/CashRegister');
 const Instructor = require('../models/Instructor');
 const Season = require('../models/Season');
 const Institution = require('../models/Institution');
+const ScheduledLesson = require('../models/ScheduledLesson');
+const Attendance = require('../models/Attendance');
+const TrialLesson = require('../models/TrialLesson');
 
 // Get all settings with filtering
 router.get('/', async (req, res) => {
@@ -28,6 +31,21 @@ router.get('/', async (req, res) => {
       .sort({ category: 1, key: 1 });
 
     res.json(settings);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get setting by institution ID
+router.get('/institution/:institutionId', async (req, res) => {
+  try {
+    const setting = await Settings.findOne({ institution: req.params.institutionId })
+      .populate('institution', 'name');
+
+    if (!setting) {
+      return res.status(404).json({ message: 'Ayar bulunamadı' });
+    }
+    res.json(setting);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -68,26 +86,53 @@ router.get('/key/:key', async (req, res) => {
   }
 });
 
-// Create setting
+// Create or Update setting (upsert)
 router.post('/', async (req, res) => {
   try {
-    const setting = new Settings(req.body);
-    const newSetting = await setting.save();
+    // Check if settings exist for this institution
+    const existingSetting = await Settings.findOne({ institution: req.body.institution });
 
-    // Log activity
-    await ActivityLog.create({
-      user: req.body.createdBy || 'System',
-      action: 'create',
-      entity: 'Settings',
-      entityId: newSetting._id,
-      description: `Yeni ayar oluşturuldu: ${newSetting.key}`,
-      institution: newSetting.institution
-    });
+    let setting;
+    let isNew = false;
 
-    const populatedSetting = await Settings.findById(newSetting._id)
-      .populate('institution', 'name');
+    if (existingSetting) {
+      // Update existing settings
+      setting = await Settings.findByIdAndUpdate(
+        existingSetting._id,
+        { ...req.body, updatedBy: req.body.createdBy || req.body.updatedBy },
+        { new: true }
+      ).populate('institution', 'name');
 
-    res.status(201).json(populatedSetting);
+      // Log activity
+      await ActivityLog.create({
+        user: req.body.createdBy || req.body.updatedBy || 'System',
+        action: 'update',
+        entity: 'Settings',
+        entityId: setting._id,
+        description: 'Ayarlar güncellendi',
+        institution: setting.institution._id
+      });
+    } else {
+      // Create new settings
+      const newSettingDoc = new Settings(req.body);
+      const newSetting = await newSettingDoc.save();
+      isNew = true;
+
+      // Log activity
+      await ActivityLog.create({
+        user: req.body.createdBy || 'System',
+        action: 'create',
+        entity: 'Settings',
+        entityId: newSetting._id,
+        description: 'Yeni ayar oluşturuldu',
+        institution: newSetting.institution
+      });
+
+      setting = await Settings.findById(newSetting._id)
+        .populate('institution', 'name');
+    }
+
+    res.status(isNew ? 201 : 200).json(setting);
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -223,6 +268,15 @@ router.post('/reset-database', async (req, res) => {
 
     await StudentCourseEnrollment.deleteMany({});
     console.log('✓ Enrollments deleted');
+
+    await ScheduledLesson.deleteMany({});
+    console.log('✓ Scheduled Lessons deleted');
+
+    await Attendance.deleteMany({});
+    console.log('✓ Attendance records deleted');
+
+    await TrialLesson.deleteMany({});
+    console.log('✓ Trial Lessons deleted');
 
     await PaymentPlan.deleteMany({});
     console.log('✓ Payment Plans deleted');
