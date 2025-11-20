@@ -83,8 +83,27 @@ const Settings = () => {
           logo: response.data.logo || '',
           invoiceHeader: response.data.invoiceHeader || '',
         });
-        if (response.data.cardCommissions) {
-          setCardCommissions(response.data.cardCommissions);
+
+        // Convert creditCardRates from backend to cardCommissions format
+        if (response.data.creditCardRates && Array.isArray(response.data.creditCardRates)) {
+          const rates = response.data.creditCardRates;
+          const commissionsMap = {};
+          rates.forEach(rate => {
+            if (rate.installments === 1) commissionsMap.single = rate.rate;
+            else if (rate.installments === 2) commissionsMap.installment2 = rate.rate;
+            else if (rate.installments === 3) commissionsMap.installment3 = rate.rate;
+            else if (rate.installments === 6) commissionsMap.installment6 = rate.rate;
+            else if (rate.installments === 9) commissionsMap.installment9 = rate.rate;
+            else if (rate.installments === 12) commissionsMap.installment12 = rate.rate;
+          });
+          setCardCommissions({
+            single: commissionsMap.single || 4,
+            installment2: commissionsMap.installment2 || 5,
+            installment3: commissionsMap.installment3 || 6,
+            installment6: commissionsMap.installment6 || 8,
+            installment9: commissionsMap.installment9 || 10,
+            installment12: commissionsMap.installment12 || 12
+          });
         }
       }
     } catch (error) {
@@ -109,14 +128,22 @@ const Settings = () => {
     setLoading(true);
 
     try {
+      // Convert cardCommissions to creditCardRates format for backend
+      const creditCardRates = [
+        { installments: 1, rate: parseFloat(cardCommissions.single) },
+        { installments: 2, rate: parseFloat(cardCommissions.installment2) },
+        { installments: 3, rate: parseFloat(cardCommissions.installment3) },
+        { installments: 6, rate: parseFloat(cardCommissions.installment6) },
+        { installments: 9, rate: parseFloat(cardCommissions.installment9) },
+        { installments: 12, rate: parseFloat(cardCommissions.installment12) }
+      ];
+
       const settingsData = {
-        ...formData,
         institution: institution._id,
         vatRate: parseFloat(formData.vatRate),
-        creditCardCommission: parseFloat(formData.creditCardCommission),
-        defaultInstallments: parseInt(formData.defaultInstallments),
-        cardCommissions: cardCommissions,
+        creditCardRates: creditCardRates,
         createdBy: currentUser?.username,
+        updatedBy: currentUser?.username,
       };
 
       await api.post('/settings', settingsData);
