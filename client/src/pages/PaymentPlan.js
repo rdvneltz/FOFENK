@@ -40,6 +40,7 @@ const PaymentPlan = () => {
   const [enrollments, setEnrollments] = useState([]);
   const [formData, setFormData] = useState({
     enrollmentId: '',
+    courseType: '', // 'monthly' or 'perLesson' - to avoid state synchronization issues
     totalAmount: '',
     monthlyFee: '', // Store monthly fee for auto-calculation
     durationMonths: '', // How many months registration
@@ -105,7 +106,8 @@ const PaymentPlan = () => {
       // Set first enrollment as default and populate form data
       if (enrollmentsRes.data.length > 0) {
         const firstEnrollmentId = enrollmentsRes.data[0]._id;
-        setFormData((prev) => ({ ...prev, enrollmentId: firstEnrollmentId }));
+        // Don't set enrollmentId separately - handleEnrollmentChange will set everything
+        // This prevents race condition between two setFormData calls
 
         // Manually populate form with enrollment data (don't rely on useEffect)
         // IMPORTANT: await to ensure API call completes for monthly courses
@@ -212,6 +214,7 @@ const PaymentPlan = () => {
     setFormData((prev) => ({
       ...prev,
       enrollmentId: enrollmentId,
+      courseType: isMonthly ? 'monthly' : 'perLesson', // Store course type for conditional rendering
       monthlyFee: isMonthly ? priceValue : '', // Only set monthlyFee for monthly courses
       totalAmount: calculatedTotal,
       durationMonths: suggestedMonths
@@ -548,8 +551,8 @@ const PaymentPlan = () => {
 
             {/* Show Monthly Fee field for monthly courses */}
             {formData.enrollmentId && (() => {
-              const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
-              const isMonthlyPricing = selectedEnrollment?.course?.pricingType === 'monthly';
+              // Use formData.courseType instead of looking up enrollment to avoid state sync issues
+              const isMonthlyPricing = formData.courseType === 'monthly';
 
               return isMonthlyPricing ? (
                 <>
