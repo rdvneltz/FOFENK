@@ -177,10 +177,21 @@ const PaymentPlan = () => {
     const enrollmentsToUse = enrollmentsList || enrollments;
     const selectedEnrollment = enrollmentsToUse.find(e => e._id === enrollmentId);
 
-    if (!selectedEnrollment || !selectedEnrollment.course) return;
+    console.log('🔍 DEBUG - handleEnrollmentChange called');
+    console.log('📋 Selected Enrollment:', selectedEnrollment);
+    console.log('📚 Course:', selectedEnrollment?.course);
+    console.log('💰 Price Per Month:', selectedEnrollment?.course?.pricePerMonth);
+    console.log('📊 Pricing Type:', selectedEnrollment?.course?.pricingType);
+
+    if (!selectedEnrollment || !selectedEnrollment.course) {
+      console.log('❌ No enrollment or course found!');
+      return;
+    }
 
     const course = selectedEnrollment.course;
     const isMonthly = course.pricingType === 'monthly';
+
+    console.log('✅ Is Monthly:', isMonthly);
 
     // Auto-fill price based on course pricing type
     let priceValue = '';
@@ -189,6 +200,8 @@ const PaymentPlan = () => {
     } else if (!isMonthly && course.pricePerLesson) {
       priceValue = course.pricePerLesson;
     }
+
+    console.log('💵 Price Value:', priceValue);
 
     // Calculate months until season end
     let suggestedMonths = '';
@@ -211,13 +224,19 @@ const PaymentPlan = () => {
       calculatedTotal = priceValue;
     }
 
-    setFormData((prev) => ({
-      ...prev,
+    const newFormData = {
       enrollmentId: enrollmentId,
       courseType: isMonthly ? 'monthly' : 'perLesson', // Store course type for conditional rendering
       monthlyFee: isMonthly ? priceValue : '', // Only set monthlyFee for monthly courses
       totalAmount: calculatedTotal,
       durationMonths: suggestedMonths
+    };
+
+    console.log('📝 Setting Form Data:', newFormData);
+
+    setFormData((prev) => ({
+      ...prev,
+      ...newFormData
     }));
 
     // Only calculate monthly lesson details for monthly pricing courses

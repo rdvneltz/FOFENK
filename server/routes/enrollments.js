@@ -19,7 +19,8 @@ router.get('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('course', 'name')
+      .populate('course', 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth')
+      .populate('course.instructor', 'name')
       .sort({ enrollmentDate: -1 });
 
     res.json(enrollments);
@@ -35,7 +36,8 @@ router.get('/:id', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId email phone')
-      .populate('course', 'name');
+      .populate('course', 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth')
+      .populate('course.instructor', 'name');
 
     if (!enrollment) {
       return res.status(404).json({ message: 'Kayıt bulunamadı' });
@@ -67,7 +69,8 @@ router.post('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('course', 'name');
+      .populate('course', 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth')
+      .populate('course.instructor', 'name');
 
     res.status(201).json(populatedEnrollment);
   } catch (error) {
@@ -85,7 +88,8 @@ router.put('/:id', async (req, res) => {
     ).populate('institution', 'name')
      .populate('season', 'name startDate endDate')
      .populate('student', 'firstName lastName studentId')
-     .populate('course', 'name');
+     .populate('course', 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth')
+     .populate('course.instructor', 'name');
 
     if (!enrollment) {
       return res.status(404).json({ message: 'Kayıt bulunamadı' });
@@ -198,7 +202,8 @@ router.post('/bulk', async (req, res) => {
       _id: { $in: enrollments.map(e => e._id) }
     })
       .populate('student', 'firstName lastName studentId')
-      .populate('course', 'name');
+      .populate('course', 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth')
+      .populate('course.instructor', 'name');
 
     res.status(201).json({
       success: true,
