@@ -108,7 +108,8 @@ const PaymentPlan = () => {
         setFormData((prev) => ({ ...prev, enrollmentId: firstEnrollmentId }));
 
         // Manually populate form with enrollment data (don't rely on useEffect)
-        handleEnrollmentChange(firstEnrollmentId, enrollmentsRes.data);
+        // IMPORTANT: await to ensure API call completes for monthly courses
+        await handleEnrollmentChange(firstEnrollmentId, enrollmentsRes.data);
       }
     } catch (error) {
       setError('Veri yüklenirken bir hata oluştu');
@@ -169,7 +170,7 @@ const PaymentPlan = () => {
     }
   };
 
-  const handleEnrollmentChange = (enrollmentId, enrollmentsList = null) => {
+  const handleEnrollmentChange = async (enrollmentId, enrollmentsList = null) => {
     // Use provided enrollmentsList or fall back to state
     const enrollmentsToUse = enrollmentsList || enrollments;
     const selectedEnrollment = enrollmentsToUse.find(e => e._id === enrollmentId);
@@ -218,7 +219,8 @@ const PaymentPlan = () => {
 
     // Only calculate monthly lesson details for monthly pricing courses
     if (isMonthly && suggestedMonths > 0) {
-      calculateMonthlyLessonDetails(enrollmentId, suggestedMonths, enrollmentsToUse);
+      // IMPORTANT: await this to ensure API call completes before continuing
+      await calculateMonthlyLessonDetails(enrollmentId, suggestedMonths, enrollmentsToUse);
     } else {
       // Clear lesson details for per-lesson courses
       setMonthlyLessonDetails(null);
