@@ -156,7 +156,7 @@ router.delete('/:id', async (req, res) => {
 // Calculate monthly lesson details for a course
 router.post('/calculate-monthly-lessons', async (req, res) => {
   try {
-    const { courseId, startDate, durationMonths } = req.body;
+    const { courseId, startDate, durationMonths, enrollmentDate } = req.body;
     const ScheduledLesson = require('../models/ScheduledLesson');
 
     const course = await Course.findById(courseId);
@@ -165,15 +165,17 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
     }
 
     const start = new Date(startDate);
+    const enrollment = enrollmentDate ? new Date(enrollmentDate) : new Date();
     const monthlyDetails = [];
     let hasSchedule = false;
+    let firstMonthPartial = null;
 
     // Calculate lesson counts for each month
     for (let i = 0; i < durationMonths; i++) {
-      const monthStart = new Date(start.getFullYear(), start.getMonth() + i, start.getDate());
-      const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, start.getDate());
+      const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1);
+      const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, 1);
 
-      // Count scheduled lessons in this month
+      // Count ALL scheduled lessons in this month
       const lessonCount = await ScheduledLesson.countDocuments({
         course: courseId,
         date: {
@@ -183,6 +185,42 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
         status: { $ne: 'cancelled' }
       });
 
+      // For first month, also count lessons AFTER enrollment date
+      let lessonsAfterEnrollment = lessonCount;
+      let lessonsBeforeEnrollment = 0;
+
+      if (i === 0 && enrollmentDate) {
+        // Count lessons before enrollment date (student won't attend)
+        lessonsBeforeEnrollment = await ScheduledLesson.countDocuments({
+          course: courseId,
+          date: {
+            $gte: monthStart,
+            $lt: enrollment
+          },
+          status: { $ne: 'cancelled' }
+        });
+
+        // Count lessons after enrollment date (student will attend)
+        lessonsAfterEnrollment = await ScheduledLesson.countDocuments({
+          course: courseId,
+          date: {
+            $gte: enrollment,
+            $lt: monthEnd
+          },
+          status: { $ne: 'cancelled' }
+        });
+
+        // Store partial pricing info for first month
+        if (lessonsBeforeEnrollment > 0 && lessonsAfterEnrollment > 0) {
+          firstMonthPartial = {
+            totalLessons: lessonCount,
+            lessonsBeforeEnrollment: lessonsBeforeEnrollment,
+            lessonsAfterEnrollment: lessonsAfterEnrollment,
+            enrollmentDate: enrollment.toLocaleDateString('tr-TR')
+          };
+        }
+      }
+
       if (lessonCount > 0) {
         hasSchedule = true;
       }
@@ -191,24 +229,41 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
         month: monthStart.toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' }),
         monthIndex: i,
         lessonCount: lessonCount,
+        lessonsAfterEnrollment: i === 0 ? lessonsAfterEnrollment : lessonCount,
+        lessonsBeforeEnrollment: i === 0 ? lessonsBeforeEnrollment : 0,
         monthStart: monthStart,
         monthEnd: monthEnd
       });
     }
 
     // Calculate pricing details
-    const expectedLessonsPerMonth = course.weeklyFrequency * 4; // Assume 4 weeks per month
+    const expectedLessonsPerMonth = course.weeklyFrequency * 4;
     const pricePerLesson = course.pricePerLesson || (course.pricePerMonth / expectedLessonsPerMonth);
     const monthlyFee = course.pricePerMonth || (pricePerLesson * expectedLessonsPerMonth);
 
-    // Calculate both pricing scenarios
-    let totalByMonthly = 0;
-    let totalByPerLesson = 0;
+    // Calculate three pricing scenarios
+    let totalByMonthly = 0; // Full monthly fee for all months
+    let totalByPerLesson = 0; // Per-lesson pricing based on actual lessons
+    let totalByPartialFirst = 0; // Monthly for full months, partial for first month
 
-    monthlyDetails.forEach(month => {
+    monthlyDetails.forEach((month, index) => {
       totalByMonthly += monthlyFee;
       totalByPerLesson += (month.lessonCount * pricePerLesson);
+
+      if (index === 0 && firstMonthPartial) {
+        // First month: charge only for lessons after enrollment
+        totalByPartialFirst += (month.lessonsAfterEnrollment * pricePerLesson);
+      } else {
+        // Other months: full monthly fee
+        totalByPartialFirst += monthlyFee;
+      }
     });
+
+    // Calculate partial first month pricing if applicable
+    let partialFirstMonthFee = null;
+    if (firstMonthPartial) {
+      partialFirstMonthFee = firstMonthPartial.lessonsAfterEnrollment * pricePerLesson;
+    }
 
     res.json({
       course: {
@@ -221,11 +276,15 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
       },
       hasSchedule,
       monthlyDetails,
+      firstMonthPartial, // Info about partial first month
       pricing: {
         totalByMonthly,
         totalByPerLesson,
+        totalByPartialFirst, // New: monthly with partial first month
+        partialFirstMonthFee, // How much for first month if partial
         difference: totalByMonthly - totalByPerLesson,
-        recommendMonthly: totalByMonthly <= totalByPerLesson
+        recommendMonthly: totalByMonthly <= totalByPerLesson,
+        hasPartialOption: firstMonthPartial !== null
       }
     });
   } catch (error) {

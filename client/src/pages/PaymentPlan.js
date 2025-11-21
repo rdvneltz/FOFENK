@@ -20,6 +20,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Radio,
+  RadioGroup,
 } from '@mui/material';
 import { ArrowBack } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -41,6 +43,7 @@ const PaymentPlan = () => {
   const [formData, setFormData] = useState({
     enrollmentId: '',
     courseType: '', // 'monthly' or 'perLesson' - to avoid state synchronization issues
+    enrollmentDate: new Date().toISOString().split('T')[0], // Student enrollment date
     totalAmount: '',
     monthlyFee: '', // Store monthly fee for auto-calculation
     durationMonths: '', // How many months registration
@@ -56,12 +59,14 @@ const PaymentPlan = () => {
     customInstallments: [],
     isInvoiced: false,
     description: '',
+    partialPricingChoice: 'full', // 'full' or 'partial' - for first month partial pricing
   });
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [selectedCashRegister, setSelectedCashRegister] = useState('');
   const [monthlyLessonDetails, setMonthlyLessonDetails] = useState(null);
   const [showLessonDetails, setShowLessonDetails] = useState(false);
+  const [showPartialPricingDialog, setShowPartialPricingDialog] = useState(false);
   const [rateDialog, setRateDialog] = useState({
     open: false,
     type: '', // 'commission' or 'vat'
@@ -160,11 +165,17 @@ const PaymentPlan = () => {
       const response = await api.post('/courses/calculate-monthly-lessons', {
         courseId: enrollment.course._id,
         startDate: enrollment.enrollmentDate || new Date(),
-        durationMonths: parseInt(durationMonths)
+        durationMonths: parseInt(durationMonths),
+        enrollmentDate: formData.enrollmentDate // Include enrollment date for partial pricing
       });
 
       setMonthlyLessonDetails(response.data);
       setShowLessonDetails(true);
+
+      // If there's a partial pricing option, show the dialog
+      if (response.data.firstMonthPartial && response.data.pricing.hasPartialOption) {
+        setShowPartialPricingDialog(true);
+      }
     } catch (error) {
       console.error('Error calculating monthly lessons:', error);
       setMonthlyLessonDetails(null);
@@ -227,6 +238,7 @@ const PaymentPlan = () => {
     const newFormData = {
       enrollmentId: enrollmentId,
       courseType: isMonthly ? 'monthly' : 'perLesson', // Store course type for conditional rendering
+      enrollmentDate: selectedEnrollment.enrollmentDate ? new Date(selectedEnrollment.enrollmentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       monthlyFee: isMonthly ? priceValue : '', // Only set monthlyFee for monthly courses
       totalAmount: calculatedTotal,
       durationMonths: suggestedMonths
@@ -575,14 +587,38 @@ const PaymentPlan = () => {
 
               return isMonthlyPricing ? (
                 <>
-                  <Grid item xs={12} sm={4}>
+                  <Grid item xs={12} sm={3}>
+                    <TextField
+                      fullWidth
+                      label="Öğrenci Kayıt Tarihi"
+                      name="enrollmentDate"
+                      type="date"
+                      value={formData.enrollmentDate}
+                      onChange={async (e) => {
+                        setFormData(prev => ({
+                          ...prev,
+                          enrollmentDate: e.target.value
+                        }));
+
+                        // Recalculate lesson details when enrollment date changes
+                        if (formData.enrollmentId && formData.durationMonths > 0) {
+                          await calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths);
+                        }
+                      }}
+                      InputLabelProps={{ shrink: true }}
+                      required
+                      helperText="Öğrencinin derse kayıt tarihi"
+                    />
+                  </Grid>
+
+                  <Grid item xs={12} sm={3}>
                     <TextField
                       fullWidth
                       label="Aylık Ders Ücreti (₺)"
                       name="monthlyFee"
                       type="number"
                       value={formData.monthlyFee}
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const newMonthlyFee = parseFloat(e.target.value) || 0;
                         const newTotal = formData.durationMonths ? newMonthlyFee * parseFloat(formData.durationMonths) : newMonthlyFee;
                         setFormData(prev => ({
@@ -590,6 +626,11 @@ const PaymentPlan = () => {
                           monthlyFee: e.target.value,
                           totalAmount: newTotal
                         }));
+
+                        // Recalculate lesson details when monthly fee changes
+                        if (formData.enrollmentId && formData.durationMonths > 0) {
+                          await calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths);
+                        }
                       }}
                       required
                       helperText="Aylık ödenecek tutar"
@@ -657,6 +698,20 @@ const PaymentPlan = () => {
                 </>
               );
             })()}
+
+            {/* Show "Re-open Details" link if details were closed */}
+            {!showLessonDetails && monthlyLessonDetails && formData.courseType === 'monthly' && (
+              <Grid item xs={12}>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => setShowLessonDetails(true)}
+                  sx={{ textTransform: 'none' }}
+                >
+                  📊 Ders detaylarını tekrar göster
+                </Button>
+              </Grid>
+            )}
 
             {/* Monthly Lesson Details */}
             {showLessonDetails && monthlyLessonDetails && (
@@ -1054,6 +1109,41 @@ const PaymentPlan = () => {
                           </Typography>
                         </>
                       )}
+
+                      {/* Show total lessons and final payment info if monthly details available */}
+                      {monthlyLessonDetails && monthlyLessonDetails.hasSchedule && formData.courseType === 'monthly' && (
+                        <>
+                          <Divider sx={{ my: 2 }} />
+                          <Box sx={{ bgcolor: 'success.light', p: 2, borderRadius: 1 }}>
+                            <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+                              📚 Öğrencinin Alacağı Dersler
+                            </Typography>
+                            {monthlyLessonDetails.monthlyDetails.map((month, index) => (
+                              <Typography key={index} variant="body2" sx={{ mb: 0.5 }}>
+                                • {month.month}: {index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial'
+                                  ? `${month.lessonsAfterEnrollment} ders (kayıt sonrası)`
+                                  : `${month.lessonCount} ders`
+                                }
+                              </Typography>
+                            ))}
+                            <Divider sx={{ my: 1 }} />
+                            <Typography variant="subtitle1" fontWeight="bold" color="success.dark">
+                              Toplam Ders Sayısı: {monthlyLessonDetails.monthlyDetails.reduce((sum, month, index) => {
+                                if (index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial') {
+                                  return sum + month.lessonsAfterEnrollment;
+                                }
+                                return sum + month.lessonCount;
+                              }, 0)} ders
+                            </Typography>
+                            <Typography variant="body2" color="success.dark" sx={{ mt: 1 }}>
+                              Ders Başı Ücret: ₺{monthlyLessonDetails.course.pricePerLesson.toLocaleString('tr-TR')}
+                            </Typography>
+                            <Typography variant="body2" color="success.dark" fontWeight="bold">
+                              Toplam Ödeme: ₺{(formData.isInvoiced ? chargeAmount + vatAmount : chargeAmount).toLocaleString('tr-TR')}
+                            </Typography>
+                          </Box>
+                        </>
+                      )}
                     </Box>
                   );
                 })()}
@@ -1082,6 +1172,106 @@ const PaymentPlan = () => {
           </Grid>
         </form>
       </Paper>
+
+      {/* Partial Pricing Dialog */}
+      <Dialog
+        open={showPartialPricingDialog}
+        onClose={() => setShowPartialPricingDialog(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          ⚠️ İlk Ay Ücretlendirme Seçenekleri
+        </DialogTitle>
+        <DialogContent>
+          {monthlyLessonDetails && monthlyLessonDetails.firstMonthPartial && (
+            <>
+              <Alert severity="info" sx={{ mb: 3 }}>
+                <Typography variant="body2" gutterBottom>
+                  <strong>{monthlyLessonDetails.monthlyDetails[0]?.month}</strong> ayında öğrenci kayıt tarihinden <strong>önce</strong> {' '}
+                  <strong>{monthlyLessonDetails.firstMonthPartial.lessonsBeforeEnrollment} ders</strong> yapılmış.
+                </Typography>
+                <Typography variant="body2">
+                  Öğrenci <strong>{monthlyLessonDetails.firstMonthPartial.enrollmentDate}</strong> tarihinde kayıt oldu.
+                  Kayıt tarihinden <strong>sonra</strong> {monthlyLessonDetails.firstMonthPartial.lessonsAfterEnrollment} ders var.
+                </Typography>
+              </Alert>
+
+              <RadioGroup
+                value={formData.partialPricingChoice}
+                onChange={(e) => {
+                  const choice = e.target.value;
+                  setFormData(prev => ({ ...prev, partialPricingChoice: choice }));
+
+                  // Update total amount based on choice
+                  const newTotal = choice === 'full'
+                    ? monthlyLessonDetails.pricing.totalByMonthly
+                    : monthlyLessonDetails.pricing.totalByPartialFirst;
+
+                  setFormData(prev => ({ ...prev, totalAmount: newTotal }));
+                }}
+              >
+                <Box sx={{ border: '2px solid', borderColor: 'divider', borderRadius: 2, p: 2, mb: 2 }}>
+                  <FormControlLabel
+                    value="full"
+                    control={<Radio />}
+                    label={
+                      <Box>
+                        <Typography variant="subtitle1" fontWeight="bold">
+                          ✅ Seçenek 1: Tam Aylık Ücret
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                          • İlk ay (tam aylık ücret): ₺{monthlyLessonDetails.course.monthlyFee.toLocaleString('tr-TR')}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          • Sonraki {formData.durationMonths - 1} ay: ₺{(monthlyLessonDetails.course.monthlyFee * (formData.durationMonths - 1)).toLocaleString('tr-TR')}
+                        </Typography>
+                        <Divider sx={{ my: 1 }} />
+                        <Typography variant="subtitle2" color="primary">
+                          <strong>TOPLAM: ₺{monthlyLessonDetails.pricing.totalByMonthly.toLocaleString('tr-TR')}</strong>
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                </Box>
+
+                <Box sx={{ border: '2px solid', borderColor: 'success.main', borderRadius: 2, p: 2, bgcolor: 'success.50' }}>
+                  <FormControlLabel
+                    value="partial"
+                    control={<Radio />}
+                    label={
+                      <Box>
+                        <Typography variant="subtitle1" fontWeight="bold" color="success.main">
+                          💰 Seçenek 2: Kısmi Ücret (Sadece Katılacağı Dersler) - ÖNERİLEN
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                          • İlk ay ({monthlyLessonDetails.firstMonthPartial.lessonsAfterEnrollment} ders × ₺{monthlyLessonDetails.course.pricePerLesson.toLocaleString('tr-TR')}):
+                          ₺{monthlyLessonDetails.pricing.partialFirstMonthFee.toLocaleString('tr-TR')}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          • Sonraki {formData.durationMonths - 1} ay: ₺{(monthlyLessonDetails.course.monthlyFee * (formData.durationMonths - 1)).toLocaleString('tr-TR')}
+                        </Typography>
+                        <Divider sx={{ my: 1 }} />
+                        <Typography variant="subtitle2" color="success.main">
+                          <strong>TOPLAM: ₺{monthlyLessonDetails.pricing.totalByPartialFirst.toLocaleString('tr-TR')}</strong>
+                        </Typography>
+                        <Typography variant="body2" color="success.dark" sx={{ mt: 1 }}>
+                          ✨ TASARRUF: ₺{(monthlyLessonDetails.pricing.totalByMonthly - monthlyLessonDetails.pricing.totalByPartialFirst).toLocaleString('tr-TR')}
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                </Box>
+              </RadioGroup>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowPartialPricingDialog(false)} variant="contained">
+            Seçimi Onayla
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Rate Dialog */}
       <Dialog open={rateDialog.open} onClose={() => setRateDialog({ ...rateDialog, open: false })}>
