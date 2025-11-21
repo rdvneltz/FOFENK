@@ -41,6 +41,7 @@ const PaymentPlan = () => {
   const [formData, setFormData] = useState({
     enrollmentId: '',
     courseType: '', // 'monthly' or 'perLesson' - to avoid state synchronization issues
+    enrollmentDate: new Date().toISOString().split('T')[0], // Student enrollment date
     totalAmount: '',
     monthlyFee: '', // Store monthly fee for auto-calculation
     durationMonths: '', // How many months registration
@@ -56,12 +57,14 @@ const PaymentPlan = () => {
     customInstallments: [],
     isInvoiced: false,
     description: '',
+    partialPricingChoice: 'full', // 'full' or 'partial' - for first month partial pricing
   });
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [selectedCashRegister, setSelectedCashRegister] = useState('');
   const [monthlyLessonDetails, setMonthlyLessonDetails] = useState(null);
   const [showLessonDetails, setShowLessonDetails] = useState(false);
+  const [showPartialPricingDialog, setShowPartialPricingDialog] = useState(false);
   const [rateDialog, setRateDialog] = useState({
     open: false,
     type: '', // 'commission' or 'vat'
