@@ -170,8 +170,11 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
 
     // Calculate lesson counts for each month
     for (let i = 0; i < durationMonths; i++) {
-      const monthStart = new Date(start.getFullYear(), start.getMonth() + i, start.getDate());
-      const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, start.getDate());
+      // IMPORTANT: Use first day of month, not start date's day
+      // This ensures we count ALL lessons in the month, not just from start date's day onwards
+      // Example: If start is Nov 21, we want to count Nov 1-30, not Nov 21-Dec 21
+      const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1); // Day 1 of month
+      const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, 1); // Day 1 of next month
 
       // Count scheduled lessons in this month
       const lessonCount = await ScheduledLesson.countDocuments({

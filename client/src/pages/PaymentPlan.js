@@ -582,7 +582,7 @@ const PaymentPlan = () => {
                       name="monthlyFee"
                       type="number"
                       value={formData.monthlyFee}
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const newMonthlyFee = parseFloat(e.target.value) || 0;
                         const newTotal = formData.durationMonths ? newMonthlyFee * parseFloat(formData.durationMonths) : newMonthlyFee;
                         setFormData(prev => ({
@@ -590,6 +590,11 @@ const PaymentPlan = () => {
                           monthlyFee: e.target.value,
                           totalAmount: newTotal
                         }));
+
+                        // Recalculate lesson details when monthly fee changes
+                        if (formData.enrollmentId && formData.durationMonths > 0) {
+                          await calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths);
+                        }
                       }}
                       required
                       helperText="Aylık ödenecek tutar"
@@ -657,6 +662,20 @@ const PaymentPlan = () => {
                 </>
               );
             })()}
+
+            {/* Show "Re-open Details" link if details were closed */}
+            {!showLessonDetails && monthlyLessonDetails && formData.courseType === 'monthly' && (
+              <Grid item xs={12}>
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={() => setShowLessonDetails(true)}
+                  sx={{ textTransform: 'none' }}
+                >
+                  📊 Ders detaylarını tekrar göster
+                </Button>
+              </Grid>
+            )}
 
             {/* Monthly Lesson Details */}
             {showLessonDetails && monthlyLessonDetails && (
