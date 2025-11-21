@@ -102,9 +102,13 @@ const PaymentPlan = () => {
         setSettings(settingsRes.data[0]);
       }
 
-      // Set first enrollment as default
+      // Set first enrollment as default and populate form data
       if (enrollmentsRes.data.length > 0) {
-        setFormData((prev) => ({ ...prev, enrollmentId: enrollmentsRes.data[0]._id }));
+        const firstEnrollmentId = enrollmentsRes.data[0]._id;
+        setFormData((prev) => ({ ...prev, enrollmentId: firstEnrollmentId }));
+
+        // Manually populate form with enrollment data (don't rely on useEffect)
+        handleEnrollmentChange(firstEnrollmentId, enrollmentsRes.data);
       }
     } catch (error) {
       setError('Veri yüklenirken bir hata oluştu');
@@ -125,7 +129,7 @@ const PaymentPlan = () => {
     return settings?.vatRate || 10;
   };
 
-  const calculateMonthlyLessonDetails = async (enrollmentId, durationMonths) => {
+  const calculateMonthlyLessonDetails = async (enrollmentId, durationMonths, enrollmentsList = null) => {
     if (!enrollmentId || !durationMonths || durationMonths <= 0) {
       setMonthlyLessonDetails(null);
       setShowLessonDetails(false);
@@ -133,7 +137,10 @@ const PaymentPlan = () => {
     }
 
     try {
-      const enrollment = enrollments.find(e => e._id === enrollmentId);
+      // Use provided enrollmentsList or fall back to state
+      const enrollmentsToUse = enrollmentsList || enrollments;
+      const enrollment = enrollmentsToUse.find(e => e._id === enrollmentId);
+
       if (!enrollment || !enrollment.course) {
         setMonthlyLessonDetails(null);
         setShowLessonDetails(false);
@@ -162,8 +169,11 @@ const PaymentPlan = () => {
     }
   };
 
-  const handleEnrollmentChange = (enrollmentId) => {
-    const selectedEnrollment = enrollments.find(e => e._id === enrollmentId);
+  const handleEnrollmentChange = (enrollmentId, enrollmentsList = null) => {
+    // Use provided enrollmentsList or fall back to state
+    const enrollmentsToUse = enrollmentsList || enrollments;
+    const selectedEnrollment = enrollmentsToUse.find(e => e._id === enrollmentId);
+
     if (!selectedEnrollment || !selectedEnrollment.course) return;
 
     const course = selectedEnrollment.course;
@@ -208,24 +218,13 @@ const PaymentPlan = () => {
 
     // Only calculate monthly lesson details for monthly pricing courses
     if (isMonthly && suggestedMonths > 0) {
-      calculateMonthlyLessonDetails(enrollmentId, suggestedMonths);
+      calculateMonthlyLessonDetails(enrollmentId, suggestedMonths, enrollmentsToUse);
     } else {
       // Clear lesson details for per-lesson courses
       setMonthlyLessonDetails(null);
       setShowLessonDetails(false);
     }
   };
-
-  // Auto-trigger enrollment change when enrollments are first loaded
-  useEffect(() => {
-    if (formData.enrollmentId && enrollments.length > 0) {
-      // Only trigger if we haven't populated the form yet
-      if (!formData.totalAmount && !formData.monthlyFee) {
-        handleEnrollmentChange(formData.enrollmentId);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enrollments]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
