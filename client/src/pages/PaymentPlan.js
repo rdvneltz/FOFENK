@@ -128,12 +128,24 @@ const PaymentPlan = () => {
   const calculateMonthlyLessonDetails = async (enrollmentId, durationMonths) => {
     if (!enrollmentId || !durationMonths || durationMonths <= 0) {
       setMonthlyLessonDetails(null);
+      setShowLessonDetails(false);
       return;
     }
 
     try {
       const enrollment = enrollments.find(e => e._id === enrollmentId);
-      if (!enrollment || !enrollment.course) return;
+      if (!enrollment || !enrollment.course) {
+        setMonthlyLessonDetails(null);
+        setShowLessonDetails(false);
+        return;
+      }
+
+      // Only calculate for monthly pricing courses
+      if (enrollment.course.pricingType !== 'monthly') {
+        setMonthlyLessonDetails(null);
+        setShowLessonDetails(false);
+        return;
+      }
 
       const response = await api.post('/courses/calculate-monthly-lessons', {
         courseId: enrollment.course._id,
@@ -146,54 +158,82 @@ const PaymentPlan = () => {
     } catch (error) {
       console.error('Error calculating monthly lessons:', error);
       setMonthlyLessonDetails(null);
+      setShowLessonDetails(false);
     }
   };
+
+  const handleEnrollmentChange = (enrollmentId) => {
+    const selectedEnrollment = enrollments.find(e => e._id === enrollmentId);
+    if (!selectedEnrollment || !selectedEnrollment.course) return;
+
+    const course = selectedEnrollment.course;
+    const isMonthly = course.pricingType === 'monthly';
+
+    // Auto-fill price based on course pricing type
+    let priceValue = '';
+    if (isMonthly && course.pricePerMonth) {
+      priceValue = course.pricePerMonth;
+    } else if (!isMonthly && course.pricePerLesson) {
+      priceValue = course.pricePerLesson;
+    }
+
+    // Calculate months until season end
+    let suggestedMonths = '';
+    if (season && season.endDate) {
+      const now = new Date();
+      const endDate = new Date(season.endDate);
+      const monthsDiff = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24 * 30));
+      if (monthsDiff > 0) {
+        suggestedMonths = monthsDiff;
+      }
+    }
+
+    // Calculate total amount
+    let calculatedTotal = '';
+    if (isMonthly) {
+      // For monthly pricing: monthlyFee × duration
+      calculatedTotal = priceValue && suggestedMonths ? priceValue * suggestedMonths : priceValue;
+    } else {
+      // For per-lesson pricing: just show the price per lesson
+      calculatedTotal = priceValue;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      enrollmentId: enrollmentId,
+      monthlyFee: isMonthly ? priceValue : '', // Only set monthlyFee for monthly courses
+      totalAmount: calculatedTotal,
+      durationMonths: suggestedMonths
+    }));
+
+    // Only calculate monthly lesson details for monthly pricing courses
+    if (isMonthly && suggestedMonths > 0) {
+      calculateMonthlyLessonDetails(enrollmentId, suggestedMonths);
+    } else {
+      // Clear lesson details for per-lesson courses
+      setMonthlyLessonDetails(null);
+      setShowLessonDetails(false);
+    }
+  };
+
+  // Auto-trigger enrollment change when enrollments are first loaded
+  useEffect(() => {
+    if (formData.enrollmentId && enrollments.length > 0) {
+      // Only trigger if we haven't populated the form yet
+      if (!formData.totalAmount && !formData.monthlyFee) {
+        handleEnrollmentChange(formData.enrollmentId);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enrollments]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // If enrollment is selected, auto-fill price and calculate months until season end
+    // If enrollment is selected, use dedicated function
     if (name === 'enrollmentId' && value) {
-      const selectedEnrollment = enrollments.find(e => e._id === value);
-      if (selectedEnrollment && selectedEnrollment.course) {
-        const course = selectedEnrollment.course;
-
-        // Auto-fill price based on course pricing type
-        let monthlyFee = '';
-        if (course.pricingType === 'monthly' && course.pricePerMonth) {
-          monthlyFee = course.pricePerMonth;
-        } else if (course.pricingType === 'perLesson' && course.pricePerLesson) {
-          monthlyFee = course.pricePerLesson;
-        }
-
-        // Calculate months until season end
-        let suggestedMonths = '';
-        if (season && season.endDate) {
-          const now = new Date();
-          const endDate = new Date(season.endDate);
-          const monthsDiff = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24 * 30));
-          if (monthsDiff > 0) {
-            suggestedMonths = monthsDiff;
-          }
-        }
-
-        // Calculate total amount: monthly fee × duration months
-        const calculatedTotal = monthlyFee && suggestedMonths ? monthlyFee * suggestedMonths : monthlyFee;
-
-        setFormData((prev) => ({
-          ...prev,
-          [name]: value,
-          monthlyFee: monthlyFee, // Store monthly fee for reference
-          totalAmount: calculatedTotal,
-          durationMonths: suggestedMonths
-        }));
-
-        // Calculate monthly lesson details
-        if (suggestedMonths) {
-          calculateMonthlyLessonDetails(value, suggestedMonths);
-        }
-        return;
-      }
+      handleEnrollmentChange(value);
+      return;
     }
 
     // If duration months changed, recalculate total amount and lesson details
@@ -205,9 +245,12 @@ const PaymentPlan = () => {
         totalAmount: newTotal
       }));
 
-      // Recalculate monthly lesson details
+      // Recalculate monthly lesson details only for monthly pricing courses
       if (formData.enrollmentId && value > 0) {
-        calculateMonthlyLessonDetails(formData.enrollmentId, value);
+        const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
+        if (selectedEnrollment?.course?.pricingType === 'monthly') {
+          calculateMonthlyLessonDetails(formData.enrollmentId, value);
+        }
       }
       return;
     }
