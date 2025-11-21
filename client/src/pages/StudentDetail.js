@@ -10,6 +10,7 @@ import {
   Tab,
   Card,
   CardContent,
+  CardActions,
   List,
   ListItem,
   ListItemText,
@@ -32,6 +33,7 @@ import {
   Undo,
   Add,
   Archive,
+  Delete,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -62,6 +64,10 @@ const StudentDetail = () => {
   const [archiveDialog, setArchiveDialog] = useState({
     open: false,
     reason: ''
+  });
+  const [unenrollDialog, setUnenrollDialog] = useState({
+    open: false,
+    enrollment: null
   });
 
   useEffect(() => {
@@ -151,6 +157,19 @@ const StudentDetail = () => {
       navigate('/students');
     } catch (error) {
       alert('Arşivleme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleUnenroll = async () => {
+    try {
+      await api.delete(`/enrollments/${unenrollDialog.enrollment._id}`, {
+        data: { deletedBy: user?.username }
+      });
+      alert('Öğrenci başarıyla kurstan çıkarıldı');
+      setUnenrollDialog({ open: false, enrollment: null });
+      loadStudent(); // Reload to update the list
+    } catch (error) {
+      alert('Kurstan çıkarma hatası: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -329,6 +348,16 @@ const StudentDetail = () => {
                                 )}
                               </Typography>
                             </CardContent>
+                            <CardActions>
+                              <Button
+                                size="small"
+                                color="error"
+                                startIcon={<Delete />}
+                                onClick={() => setUnenrollDialog({ open: true, enrollment: enrollment })}
+                              >
+                                Kurstan Çıkar
+                              </Button>
+                            </CardActions>
                           </Card>
                         </Grid>
                       ))}
@@ -496,6 +525,37 @@ const StudentDetail = () => {
             disabled={!enrollDialog.courseId}
           >
             Kaydet
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Unenroll Confirmation Dialog */}
+      <Dialog
+        open={unenrollDialog.open}
+        onClose={() => setUnenrollDialog({ open: false, enrollment: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Kurstan Çıkar</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mt: 1 }}>
+            <strong>{student?.firstName} {student?.lastName}</strong> isimli öğrenciyi{' '}
+            <strong>{unenrollDialog.enrollment?.course?.name}</strong> dersinden çıkarmak istediğinize emin misiniz?
+          </Typography>
+          <Typography color="warning.main" sx={{ mt: 2 }}>
+            ⚠️ Bu işlem geri alınamaz. Öğrenci tekrar kursa kaydedilmek istenirse yeniden kayıt yapılması gerekecektir.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setUnenrollDialog({ open: false, enrollment: null })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleUnenroll}
+            variant="contained"
+            color="error"
+          >
+            Kurstan Çıkar
           </Button>
         </DialogActions>
       </Dialog>
