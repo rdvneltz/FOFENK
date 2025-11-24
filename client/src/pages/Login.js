@@ -44,12 +44,23 @@ const Login = () => {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const response = await api.get('/auth/check-setup');
+        // Add timeout to prevent hanging forever
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
+        const response = await api.get('/auth/check-setup', {
+          signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
         if (response.data.needsSetup) {
           navigate('/setup');
         }
       } catch (error) {
         console.error('Setup check failed:', error);
+        // If backend is unreachable, still allow user to try login
+        // The actual login attempt will show the real error
       } finally {
         setCheckingSetup(false);
       }
