@@ -59,7 +59,11 @@ const Login = () => {
         }
       } catch (error) {
         console.error('Setup check failed:', error);
-        // If backend is unreachable, still allow user to try login
+        // If backend is unreachable or database is connecting, still allow user to try login
+        // Show a warning if server is waking up (503 status)
+        if (error.response?.status === 503) {
+          setError('Server is starting up. Please wait a moment and try again.');
+        }
         // The actual login attempt will show the real error
       } finally {
         setCheckingSetup(false);
