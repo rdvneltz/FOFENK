@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Institution = require('../models/Institution');
 const Season = require('../models/Season');
@@ -20,10 +21,19 @@ const generateToken = (userId) => {
 // Check if system needs setup
 router.get('/check-setup', async (req, res) => {
   try {
+    // Check if database is connected first
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        message: 'Database connection not ready. Please wait...',
+        dbStatus: mongoose.connection.readyState === 2 ? 'connecting' : 'disconnected'
+      });
+    }
+
     const userCount = await User.countDocuments();
     const needsSetup = userCount === 0;
     res.json({ needsSetup });
   } catch (error) {
+    console.error('Check-setup error:', error.message);
     res.status(500).json({ message: error.message });
   }
 });

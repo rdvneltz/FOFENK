@@ -99,16 +99,42 @@ app.use('/api/export', require('./routes/export'));
 app.use('/api/email', require('./routes/email'));
 app.use('/api/backup', require('./routes/backup'));
 
-// Health check
+// Health check - verifies both server and database connectivity
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Fofora Theatre Management API is running' });
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = {
+    0: 'disconnected',
+    1: 'connected',
+    2: 'connecting',
+    3: 'disconnecting'
+  };
+
+  const isDbConnected = dbState === 1;
+
+  res.json({
+    status: isDbConnected ? 'OK' : 'DEGRADED',
+    message: 'Fofora Theatre Management API is running',
+    database: {
+      status: dbStatus[dbState] || 'unknown',
+      connected: isDbConnected
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
 const PORT = process.env.PORT || 5000;
 
-// Global error handler
+// Global error handler - ensures CORS headers are always sent
 app.use((err, req, res, next) => {
   console.error('Global error handler:', err);
+
+  // Ensure CORS headers are present even on error responses
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+
   res.status(500).json({
     message: 'Internal server error',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
