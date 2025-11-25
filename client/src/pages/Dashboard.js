@@ -13,8 +13,18 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Alert
+  Alert,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+  IconButton,
 } from '@mui/material';
+import { Close, School, LocalOffer, Visibility } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import {
   People as PeopleIcon,
   AttachMoney as MoneyIcon,
@@ -55,6 +65,7 @@ ChartJS.register(
 
 const Dashboard = () => {
   const { institution, season, user } = useApp();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalStudents: 0,
@@ -88,6 +99,15 @@ const Dashboard = () => {
   });
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
+
+  // Detail dialogs state
+  const [studentsDialog, setStudentsDialog] = useState({ open: false, students: [] });
+  const [paymentsDetailDialog, setPaymentsDetailDialog] = useState({
+    open: false,
+    title: '',
+    payments: [],
+    type: '' // 'overdue', 'today', 'thisWeek', 'thisMonth', 'nextMonth'
+  });
 
   useEffect(() => {
     if (institution && season) {
@@ -183,6 +203,84 @@ const Dashboard = () => {
     } finally {
       setProcessing(false);
     }
+  };
+
+  // Load students with discount info for detail dialog
+  const handleStudentsClick = async () => {
+    try {
+      const response = await api.get('/students', {
+        params: {
+          institutionId: institution._id,
+          seasonId: season._id,
+          includeDiscountInfo: 'true',
+        },
+      });
+      setStudentsDialog({ open: true, students: response.data });
+    } catch (error) {
+      console.error('Error loading students:', error);
+    }
+  };
+
+  // Handle expected payments box click
+  const handlePaymentsBoxClick = (type, title, payments) => {
+    setPaymentsDetailDialog({
+      open: true,
+      title,
+      payments,
+      type
+    });
+  };
+
+  // Get discount badge for student
+  const getDiscountBadge = (student) => {
+    if (!student.primaryDiscount) return null;
+
+    const discount = student.primaryDiscount;
+
+    if (discount.type === 'fullScholarship') {
+      return <Chip icon={<School />} label="Burslu" color="success" size="small" />;
+    }
+
+    if (discount.type === 'percentage') {
+      return <Chip icon={<LocalOffer />} label={`%${discount.value}`} color="info" size="small" />;
+    }
+
+    if (discount.type === 'fixed') {
+      return <Chip icon={<LocalOffer />} label={`₺${discount.value}`} color="info" size="small" />;
+    }
+
+    return null;
+  };
+
+  // Calculate discount distribution
+  const getDiscountDistribution = (students) => {
+    const distribution = {
+      fullScholarship: 0,
+      percentage: {},
+      fixed: 0,
+      none: 0
+    };
+
+    students.forEach(student => {
+      if (!student.primaryDiscount) {
+        distribution.none++;
+        return;
+      }
+
+      const discount = student.primaryDiscount;
+      if (discount.type === 'fullScholarship') {
+        distribution.fullScholarship++;
+      } else if (discount.type === 'percentage') {
+        const key = `%${discount.value}`;
+        distribution.percentage[key] = (distribution.percentage[key] || 0) + 1;
+      } else if (discount.type === 'fixed') {
+        distribution.fixed++;
+      } else {
+        distribution.none++;
+      }
+    });
+
+    return distribution;
   };
 
   const loadExpectedPayments = async () => {
@@ -296,6 +394,7 @@ const Dashboard = () => {
             icon={<PeopleIcon />}
             color="primary"
             subtitle={`${stats.activeStudents} aktif`}
+            onClick={handleStudentsClick}
           />
         </Grid>
 
@@ -380,7 +479,17 @@ const Dashboard = () => {
             </Typography>
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid item xs={12} sm={6} md={2.4}>
-                <Box sx={{ p: 2, bgcolor: 'error.light', borderRadius: 1 }}>
+                <Box
+                  sx={{
+                    p: 2,
+                    bgcolor: 'error.light',
+                    borderRadius: 1,
+                    cursor: expectedPayments.overdue.length > 0 ? 'pointer' : 'default',
+                    transition: 'transform 0.2s',
+                    '&:hover': expectedPayments.overdue.length > 0 ? { transform: 'scale(1.02)' } : {}
+                  }}
+                  onClick={() => expectedPayments.overdue.length > 0 && handlePaymentsBoxClick('overdue', 'Gecikmiş Ödemeler', expectedPayments.overdue)}
+                >
                   <Typography variant="body2" color="error.dark" gutterBottom>
                     Gecikmiş
                   </Typography>
@@ -394,7 +503,17 @@ const Dashboard = () => {
               </Grid>
 
               <Grid item xs={12} sm={6} md={2.4}>
-                <Box sx={{ p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
+                <Box
+                  sx={{
+                    p: 2,
+                    bgcolor: 'warning.light',
+                    borderRadius: 1,
+                    cursor: expectedPayments.today.length > 0 ? 'pointer' : 'default',
+                    transition: 'transform 0.2s',
+                    '&:hover': expectedPayments.today.length > 0 ? { transform: 'scale(1.02)' } : {}
+                  }}
+                  onClick={() => expectedPayments.today.length > 0 && handlePaymentsBoxClick('today', 'Bugünkü Ödemeler', expectedPayments.today)}
+                >
                   <Typography variant="body2" color="warning.dark" gutterBottom>
                     Bugün
                   </Typography>
@@ -408,7 +527,17 @@ const Dashboard = () => {
               </Grid>
 
               <Grid item xs={12} sm={6} md={2.4}>
-                <Box sx={{ p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+                <Box
+                  sx={{
+                    p: 2,
+                    bgcolor: 'info.light',
+                    borderRadius: 1,
+                    cursor: expectedPayments.thisWeek.length > 0 ? 'pointer' : 'default',
+                    transition: 'transform 0.2s',
+                    '&:hover': expectedPayments.thisWeek.length > 0 ? { transform: 'scale(1.02)' } : {}
+                  }}
+                  onClick={() => expectedPayments.thisWeek.length > 0 && handlePaymentsBoxClick('thisWeek', 'Bu Haftaki Ödemeler', expectedPayments.thisWeek)}
+                >
                   <Typography variant="body2" color="info.dark" gutterBottom>
                     Bu Hafta
                   </Typography>
@@ -422,7 +551,17 @@ const Dashboard = () => {
               </Grid>
 
               <Grid item xs={12} sm={6} md={2.4}>
-                <Box sx={{ p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
+                <Box
+                  sx={{
+                    p: 2,
+                    bgcolor: 'success.light',
+                    borderRadius: 1,
+                    cursor: expectedPayments.thisMonth.length > 0 ? 'pointer' : 'default',
+                    transition: 'transform 0.2s',
+                    '&:hover': expectedPayments.thisMonth.length > 0 ? { transform: 'scale(1.02)' } : {}
+                  }}
+                  onClick={() => expectedPayments.thisMonth.length > 0 && handlePaymentsBoxClick('thisMonth', 'Bu Ayki Ödemeler', expectedPayments.thisMonth)}
+                >
                   <Typography variant="body2" color="success.dark" gutterBottom>
                     Bu Ay
                   </Typography>
@@ -436,7 +575,17 @@ const Dashboard = () => {
               </Grid>
 
               <Grid item xs={12} sm={6} md={2.4}>
-                <Box sx={{ p: 2, bgcolor: 'grey.300', borderRadius: 1 }}>
+                <Box
+                  sx={{
+                    p: 2,
+                    bgcolor: 'grey.300',
+                    borderRadius: 1,
+                    cursor: expectedPayments.nextMonth.length > 0 ? 'pointer' : 'default',
+                    transition: 'transform 0.2s',
+                    '&:hover': expectedPayments.nextMonth.length > 0 ? { transform: 'scale(1.02)' } : {}
+                  }}
+                  onClick={() => expectedPayments.nextMonth.length > 0 && handlePaymentsBoxClick('nextMonth', 'Gelecek Ay Ödemeler', expectedPayments.nextMonth)}
+                >
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     Gelecek Ay
                   </Typography>
@@ -736,6 +885,193 @@ const Dashboard = () => {
           </Button>
           <Button onClick={handleProcessPayment} variant="contained" color="success" disabled={processing}>
             {processing ? 'İşleniyor...' : 'Ödemeyi İşle'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Students Detail Dialog */}
+      <Dialog
+        open={studentsDialog.open}
+        onClose={() => setStudentsDialog({ open: false, students: [] })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">Öğrenci Listesi ({studentsDialog.students.length})</Typography>
+          <IconButton onClick={() => setStudentsDialog({ open: false, students: [] })}>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {/* Discount Distribution Summary */}
+          {studentsDialog.students.length > 0 && (
+            <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="subtitle2" gutterBottom>İndirim Dağılımı</Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {(() => {
+                  const dist = getDiscountDistribution(studentsDialog.students);
+                  return (
+                    <>
+                      {dist.fullScholarship > 0 && (
+                        <Chip icon={<School />} label={`Burslu: ${dist.fullScholarship}`} color="success" size="small" />
+                      )}
+                      {Object.entries(dist.percentage).map(([key, count]) => (
+                        <Chip key={key} icon={<LocalOffer />} label={`${key}: ${count}`} color="info" size="small" />
+                      ))}
+                      {dist.fixed > 0 && (
+                        <Chip icon={<LocalOffer />} label={`Sabit İndirim: ${dist.fixed}`} color="info" size="small" />
+                      )}
+                      <Chip label={`İndirimsiz: ${dist.none}`} size="small" />
+                    </>
+                  );
+                })()}
+              </Box>
+            </Box>
+          )}
+
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Öğrenci</TableCell>
+                  <TableCell>Durum</TableCell>
+                  <TableCell>İndirim/Burs</TableCell>
+                  <TableCell>Bakiye</TableCell>
+                  <TableCell align="right">İşlem</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {studentsDialog.students.map((student) => (
+                  <TableRow key={student._id} hover>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {student.firstName} {student.lastName}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {student.phone || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      {student.status === 'active' ? (
+                        <Chip label="Kayıtlı" color="success" size="small" />
+                      ) : student.status === 'passive' ? (
+                        <Chip label="Pasif" color="default" size="small" />
+                      ) : (
+                        <Chip label="Deneme" color="info" size="small" />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {getDiscountBadge(student) || <Typography variant="caption" color="text.secondary">-</Typography>}
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        color={student.balance > 0 ? 'error.main' : 'success.main'}
+                      >
+                        {student.balance > 0 ? '-' : ''}₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setStudentsDialog({ open: false, students: [] });
+                          navigate(`/students/${student._id}`);
+                        }}
+                        color="primary"
+                      >
+                        <Visibility />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStudentsDialog({ open: false, students: [] })}>Kapat</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setStudentsDialog({ open: false, students: [] });
+              navigate('/students');
+            }}
+          >
+            Tüm Öğrencileri Gör
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Expected Payments Detail Dialog */}
+      <Dialog
+        open={paymentsDetailDialog.open}
+        onClose={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">{paymentsDetailDialog.title} ({paymentsDetailDialog.payments.length})</Typography>
+          <IconButton onClick={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2, p: 2, bgcolor: paymentsDetailDialog.type === 'overdue' ? 'error.light' : 'info.light', borderRadius: 1 }}>
+            <Typography variant="h6">
+              Toplam: ₺{paymentsDetailDialog.payments.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
+            </Typography>
+          </Box>
+
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Öğrenci</TableCell>
+                  <TableCell>Ders</TableCell>
+                  <TableCell>Taksit No</TableCell>
+                  <TableCell>Vade Tarihi</TableCell>
+                  <TableCell align="right">Tutar</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {paymentsDetailDialog.payments.map((payment, index) => (
+                  <TableRow key={index} hover>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {payment.student?.firstName} {payment.student?.lastName}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">
+                        {payment.course?.name || '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={`${payment.installmentNumber}. Taksit`} size="small" />
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        color={paymentsDetailDialog.type === 'overdue' ? 'error.main' : 'text.primary'}
+                      >
+                        {payment.dueDate ? new Date(payment.dueDate).toLocaleDateString('tr-TR') : '-'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="body2" fontWeight="bold">
+                        ₺{payment.amount?.toLocaleString('tr-TR')}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}>
+            Kapat
           </Button>
         </DialogActions>
       </Dialog>

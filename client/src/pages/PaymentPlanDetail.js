@@ -26,7 +26,7 @@ import {
   Select,
   MenuItem,
 } from '@mui/material';
-import { ArrowBack, Edit, Delete, Payment } from '@mui/icons-material';
+import { ArrowBack, Edit, Delete, Payment, Undo } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -52,6 +52,11 @@ const PaymentPlanDetail = () => {
   });
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [editPlanDialog, setEditPlanDialog] = useState(false);
+  const [refundDialog, setRefundDialog] = useState({
+    open: false,
+    installment: null,
+    reason: ''
+  });
   const [editFormData, setEditFormData] = useState({
     totalAmount: '',
     discountType: 'none',
@@ -161,6 +166,23 @@ const PaymentPlanDetail = () => {
     });
   };
 
+  const handleRefundInstallment = async () => {
+    try {
+      const response = await api.post(`/payment-plans/${id}/refund-installment`, {
+        installmentNumber: refundDialog.installment.installmentNumber,
+        refundCashRegisterId: cashRegisters[0]?._id,
+        refundReason: refundDialog.reason,
+        createdBy: user?.username
+      });
+
+      setSuccess(response.data.message || `${refundDialog.installment.installmentNumber}. taksit iade edildi`);
+      setRefundDialog({ open: false, installment: null, reason: '' });
+      loadPaymentPlan();
+    } catch (error) {
+      setError(error.response?.data?.message || 'İade işlemi sırasında hata oluştu');
+    }
+  };
+
   const handleDelete = async () => {
     try {
       await api.delete(`/payment-plans/${id}`);
@@ -191,6 +213,8 @@ const PaymentPlanDetail = () => {
         discountAmount = (totalAmount * parseFloat(editFormData.discountValue)) / 100;
       } else if (editFormData.discountType === 'fixed') {
         discountAmount = parseFloat(editFormData.discountValue) || 0;
+      } else if (editFormData.discountType === 'fullScholarship') {
+        discountAmount = totalAmount; // %100 indirim - tam burs
       }
 
       let discountedAmount = totalAmount - discountAmount;
@@ -391,7 +415,7 @@ const PaymentPlanDetail = () => {
                       >
                         <Edit />
                       </IconButton>
-                      {!installment.isPaid && (
+                      {!installment.isPaid ? (
                         <IconButton
                           size="small"
                           color="primary"
@@ -399,6 +423,19 @@ const PaymentPlanDetail = () => {
                           title="Ödeme Al"
                         >
                           <Payment />
+                        </IconButton>
+                      ) : (
+                        <IconButton
+                          size="small"
+                          color="warning"
+                          onClick={() => setRefundDialog({
+                            open: true,
+                            installment: installment,
+                            reason: ''
+                          })}
+                          title="İade Et"
+                        >
+                          <Undo />
                         </IconButton>
                       )}
                     </TableCell>
@@ -451,16 +488,17 @@ const PaymentPlanDetail = () => {
                   <InputLabel>İndirim Tipi</InputLabel>
                   <Select
                     value={editFormData.discountType}
-                    onChange={(e) => setEditFormData({ ...editFormData, discountType: e.target.value })}
+                    onChange={(e) => setEditFormData({ ...editFormData, discountType: e.target.value, discountValue: e.target.value === 'fullScholarship' ? 100 : editFormData.discountValue })}
                     label="İndirim Tipi"
                   >
                     <MenuItem value="none">İndirimsiz</MenuItem>
                     <MenuItem value="percentage">Yüzde (%)</MenuItem>
                     <MenuItem value="fixed">Tutar (₺)</MenuItem>
+                    <MenuItem value="fullScholarship">%100 Burslu (Tam Burs)</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
-              {editFormData.discountType !== 'none' && (
+              {editFormData.discountType !== 'none' && editFormData.discountType !== 'fullScholarship' && (
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
@@ -469,6 +507,13 @@ const PaymentPlanDetail = () => {
                     value={editFormData.discountValue}
                     onChange={(e) => setEditFormData({ ...editFormData, discountValue: e.target.value })}
                   />
+                </Grid>
+              )}
+              {editFormData.discountType === 'fullScholarship' && (
+                <Grid item xs={12}>
+                  <Alert severity="info">
+                    Bu öğrenci %100 bursludur. Tüm ücretler sıfırlanacaktır.
+                  </Alert>
                 </Grid>
               )}
               <Grid item xs={12}>
@@ -524,6 +569,36 @@ const PaymentPlanDetail = () => {
         confirmText="Sil"
         confirmColor="error"
       />
+
+      {/* Refund Dialog */}
+      <Dialog open={refundDialog.open} onClose={() => setRefundDialog({ open: false, installment: null, reason: '' })} maxWidth="sm" fullWidth>
+        <DialogTitle>Taksit İadesi</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2, mt: 1 }}>
+            <Typography variant="body2">
+              {refundDialog.installment?.installmentNumber}. taksit için{' '}
+              <strong>₺{refundDialog.installment?.paidAmount?.toLocaleString('tr-TR')}</strong> tutarında iade yapılacak.
+            </Typography>
+            <Typography variant="caption">
+              Bu işlem ödemeyi geri alır ve taksiti "bekliyor" durumuna döndürür.
+            </Typography>
+          </Alert>
+          <TextField
+            fullWidth
+            label="İade Sebebi (Opsiyonel)"
+            value={refundDialog.reason}
+            onChange={(e) => setRefundDialog({ ...refundDialog, reason: e.target.value })}
+            placeholder="Örn: Yanlış kasa seçimi, müşteri talebi"
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRefundDialog({ open: false, installment: null, reason: '' })}>İptal</Button>
+          <Button onClick={handleRefundInstallment} variant="contained" color="warning">
+            İade Et
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
