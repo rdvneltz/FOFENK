@@ -40,6 +40,8 @@ import {
   Email,
   Add,
   Payment as PaymentIcon,
+  AccountBalance,
+  Delete,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -76,6 +78,12 @@ const InstructorDetail = () => {
     lesson: null,
     cashRegisterId: ''
   });
+  const [salaryAccruals, setSalaryAccruals] = useState([]);
+  const [accrualDialog, setAccrualDialog] = useState({
+    open: false,
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear()
+  });
 
   useEffect(() => {
     loadInstructor();
@@ -98,6 +106,7 @@ const InstructorDetail = () => {
 
       setInstructor(detailsRes.data.instructor);
       setPayments(detailsRes.data.payments || []);
+      setSalaryAccruals(detailsRes.data.salaryAccruals || []);
       setStatistics(detailsRes.data.statistics || {});
       setCashRegisters(cashRes.data);
 
@@ -218,6 +227,44 @@ const InstructorDetail = () => {
     }
   };
 
+  const handleCreateAccrual = async () => {
+    try {
+      const { month, year } = accrualDialog;
+
+      await api.post(`/instructors/${id}/accrue-salary`, {
+        month,
+        year,
+        createdBy: user?.username
+      });
+
+      const monthNames = ['', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+        'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+      alert(`${monthNames[month]} ${year} maaş tahakkuku başarıyla oluşturuldu!`);
+      setAccrualDialog({ ...accrualDialog, open: false });
+      loadInstructor(); // Reload to update balance
+    } catch (error) {
+      alert('Tahakkuk hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDeleteAccrual = async (accrualId) => {
+    if (!window.confirm('Bu maaş tahakkukunu silmek istediğinize emin misiniz? Bakiye geri alınacaktır.')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/instructors/${id}/accruals/${accrualId}`, {
+        data: { deletedBy: user?.username }
+      });
+
+      alert('Tahakkuk silindi');
+      loadInstructor();
+    } catch (error) {
+      alert('Silme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Eğitmen bilgileri yükleniyor..." />;
   }
@@ -248,6 +295,16 @@ const InstructorDetail = () => {
         >
           Düzenle
         </Button>
+        {instructor?.paymentType === 'monthly' && (
+          <Button
+            variant="outlined"
+            color="secondary"
+            startIcon={<AccountBalance />}
+            onClick={() => setAccrualDialog({ ...accrualDialog, open: true })}
+          >
+            Maaş Tahakkuk Et
+          </Button>
+        )}
         <Button
           variant="contained"
           startIcon={<PaymentIcon />}
@@ -384,6 +441,9 @@ const InstructorDetail = () => {
           <Paper>
             <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
               <Tab label="Ödeme Geçmişi" />
+              {instructor?.paymentType === 'monthly' && (
+                <Tab label={`Maaş Tahakkukları (${salaryAccruals.length})`} />
+              )}
               <Tab label={`Ödenmemiş Dersler (${unpaidLessons.length})`} />
               <Tab label="Tüm Dersler" />
             </Tabs>
@@ -429,8 +489,86 @@ const InstructorDetail = () => {
                 </Box>
               )}
 
+              {/* Salary Accruals Tab - Only for monthly instructors */}
+              {instructor?.paymentType === 'monthly' && tabValue === 1 && (
+                <Box>
+                  <Typography variant="h6" gutterBottom>
+                    Maaş Tahakkukları
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Aylık maaş tahakkuk kayıtları. Tahakkuk oluşturulduğunda bakiyeye eklenir.
+                  </Typography>
+
+                  {salaryAccruals.length === 0 ? (
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      Henüz maaş tahakkuku bulunmuyor. "Maaş Tahakkuk Et" butonunu kullanarak aylık maaş tahakkuku oluşturabilirsiniz.
+                    </Alert>
+                  ) : (
+                    <>
+                      <Alert severity="info" sx={{ mb: 2, mt: 2 }}>
+                        <Typography variant="subtitle2">
+                          Toplam Tahakkuk: <strong>₺{salaryAccruals.reduce((sum, a) => sum + a.amount, 0).toLocaleString('tr-TR')}</strong>
+                        </Typography>
+                        <Typography variant="caption">
+                          {salaryAccruals.length} adet maaş tahakkuku
+                        </Typography>
+                      </Alert>
+
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Dönem</TableCell>
+                              <TableCell>Tutar</TableCell>
+                              <TableCell>Açıklama</TableCell>
+                              <TableCell>Oluşturma Tarihi</TableCell>
+                              <TableCell>İşlem</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {salaryAccruals.map((accrual) => {
+                              const monthNames = ['', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                                'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+                              return (
+                                <TableRow key={accrual._id}>
+                                  <TableCell>
+                                    <Typography variant="body2" fontWeight="medium">
+                                      {monthNames[accrual.month]} {accrual.year}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Typography variant="body2" color="error" fontWeight="bold">
+                                      ₺{accrual.amount.toLocaleString('tr-TR')}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell>{accrual.description || '-'}</TableCell>
+                                  <TableCell>
+                                    {new Date(accrual.createdAt).toLocaleDateString('tr-TR')}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="outlined"
+                                      color="error"
+                                      size="small"
+                                      startIcon={<Delete />}
+                                      onClick={() => handleDeleteAccrual(accrual._id)}
+                                    >
+                                      Sil
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </>
+                  )}
+                </Box>
+              )}
+
               {/* Unpaid Lessons Tab */}
-              {tabValue === 1 && (
+              {tabValue === (instructor?.paymentType === 'monthly' ? 2 : 1) && (
                 <Box>
                   <Typography variant="h6" gutterBottom>
                     Ödenme Bekleyen Dersler
@@ -521,7 +659,7 @@ const InstructorDetail = () => {
               )}
 
               {/* All Lessons Tab */}
-              {tabValue === 2 && (
+              {tabValue === (instructor?.paymentType === 'monthly' ? 3 : 2) && (
                 <Box>
                   <Typography variant="h6" gutterBottom>
                     Ders Geçmişi
@@ -733,6 +871,87 @@ const InstructorDetail = () => {
             color="primary"
           >
             Ödeme Yap
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Salary Accrual Dialog */}
+      <Dialog
+        open={accrualDialog.open}
+        onClose={() => setAccrualDialog({ ...accrualDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Maaş Tahakkuk Et</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+            <Typography variant="body2">
+              Aylık maaş: <strong>₺{instructor?.paymentAmount?.toLocaleString('tr-TR')}</strong>
+            </Typography>
+            <Typography variant="caption">
+              Tahakkuk oluşturulduğunda bu tutar bakiyeye eklenecek ve kurum eğitmene borçlu görünecektir.
+            </Typography>
+          </Alert>
+
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <FormControl fullWidth required>
+                <InputLabel>Ay</InputLabel>
+                <Select
+                  value={accrualDialog.month}
+                  onChange={(e) => setAccrualDialog({ ...accrualDialog, month: e.target.value })}
+                  label="Ay"
+                >
+                  {[
+                    { value: 1, label: 'Ocak' },
+                    { value: 2, label: 'Şubat' },
+                    { value: 3, label: 'Mart' },
+                    { value: 4, label: 'Nisan' },
+                    { value: 5, label: 'Mayıs' },
+                    { value: 6, label: 'Haziran' },
+                    { value: 7, label: 'Temmuz' },
+                    { value: 8, label: 'Ağustos' },
+                    { value: 9, label: 'Eylül' },
+                    { value: 10, label: 'Ekim' },
+                    { value: 11, label: 'Kasım' },
+                    { value: 12, label: 'Aralık' },
+                  ].map((m) => (
+                    <MenuItem key={m.value} value={m.value}>
+                      {m.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <FormControl fullWidth required>
+                <InputLabel>Yıl</InputLabel>
+                <Select
+                  value={accrualDialog.year}
+                  onChange={(e) => setAccrualDialog({ ...accrualDialog, year: e.target.value })}
+                  label="Yıl"
+                >
+                  {[2023, 2024, 2025, 2026].map((y) => (
+                    <MenuItem key={y} value={y}>
+                      {y}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAccrualDialog({ ...accrualDialog, open: false })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleCreateAccrual}
+            variant="contained"
+            color="secondary"
+            startIcon={<AccountBalance />}
+          >
+            Tahakkuk Oluştur
           </Button>
         </DialogActions>
       </Dialog>
