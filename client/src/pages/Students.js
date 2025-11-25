@@ -26,6 +26,8 @@ import {
   Phone,
   FileDownload,
   Email,
+  School,
+  LocalOffer,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -71,6 +73,7 @@ const Students = () => {
         params: {
           institutionId: institution._id,
           seasonId: season._id,
+          includeDiscountInfo: 'true',
         },
       });
       setStudents(response.data);
@@ -79,6 +82,51 @@ const Students = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Helper to get discount badge
+  const getDiscountBadge = (student) => {
+    if (!student.primaryDiscount) return null;
+
+    const discount = student.primaryDiscount;
+
+    if (discount.type === 'fullScholarship') {
+      return (
+        <Chip
+          icon={<School />}
+          label="Burslu"
+          color="success"
+          size="small"
+          sx={{ ml: 1 }}
+        />
+      );
+    }
+
+    if (discount.type === 'percentage') {
+      return (
+        <Chip
+          icon={<LocalOffer />}
+          label={`%${discount.value}`}
+          color="info"
+          size="small"
+          sx={{ ml: 1 }}
+        />
+      );
+    }
+
+    if (discount.type === 'fixed') {
+      return (
+        <Chip
+          icon={<LocalOffer />}
+          label={`₺${discount.value}`}
+          color="info"
+          size="small"
+          sx={{ ml: 1 }}
+        />
+      );
+    }
+
+    return null;
   };
 
   const filteredStudents = students.filter((student) => {
@@ -260,9 +308,12 @@ const Students = () => {
                         {student.lastName.charAt(0)}
                       </Avatar>
                       <Box>
-                        <Typography variant="body1">
-                          {student.firstName} {student.lastName}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <Typography variant="body1">
+                            {student.firstName} {student.lastName}
+                          </Typography>
+                          {getDiscountBadge(student)}
+                        </Box>
                         <Typography variant="caption" color="text.secondary">
                           TC: {student.tcNumber || '-'}
                         </Typography>

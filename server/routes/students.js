@@ -6,7 +6,7 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all students with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, includeArchived } = req.query;
+    const { institutionId, seasonId, includeArchived, includeDiscountInfo } = req.query;
 
     // Season filter is required
     if (!seasonId) {
@@ -24,7 +24,70 @@ router.get('/', async (req, res) => {
     const students = await Student.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .sort({ lastName: 1, firstName: 1 });
+      .sort({ lastName: 1, firstName: 1 })
+      .lean();
+
+    // If discount info is requested, fetch enrollments with discount info
+    if (includeDiscountInfo === 'true') {
+      const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+      const studentIds = students.map(s => s._id);
+
+      const enrollments = await StudentCourseEnrollment.find({
+        student: { $in: studentIds },
+        season: seasonId,
+        isActive: true
+      })
+        .populate('course', 'name')
+        .lean();
+
+      // Group enrollments by student and find the best discount
+      const studentDiscounts = {};
+      enrollments.forEach(enrollment => {
+        const studentId = enrollment.student.toString();
+        if (!studentDiscounts[studentId]) {
+          studentDiscounts[studentId] = {
+            discounts: [],
+            courses: []
+          };
+        }
+
+        studentDiscounts[studentId].courses.push(enrollment.course?.name || 'Ders');
+
+        if (enrollment.discount && enrollment.discount.type !== 'none') {
+          studentDiscounts[studentId].discounts.push({
+            type: enrollment.discount.type,
+            value: enrollment.discount.value,
+            description: enrollment.discount.description,
+            courseName: enrollment.course?.name
+          });
+        }
+      });
+
+      // Add discount info to students
+      students.forEach(student => {
+        const discountInfo = studentDiscounts[student._id.toString()];
+        if (discountInfo) {
+          student.enrolledCourses = discountInfo.courses;
+          student.discounts = discountInfo.discounts;
+          // Set primary discount (fullScholarship takes priority, then highest percentage)
+          if (discountInfo.discounts.length > 0) {
+            const fullScholarship = discountInfo.discounts.find(d => d.type === 'fullScholarship');
+            if (fullScholarship) {
+              student.primaryDiscount = fullScholarship;
+            } else {
+              // Find the highest discount
+              const sortedDiscounts = discountInfo.discounts.sort((a, b) => {
+                if (a.type === 'percentage' && b.type === 'percentage') {
+                  return b.value - a.value;
+                }
+                return 0;
+              });
+              student.primaryDiscount = sortedDiscounts[0];
+            }
+          }
+        }
+      });
+    }
 
     res.json(students);
   } catch (error) {

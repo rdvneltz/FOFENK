@@ -10,9 +10,21 @@ const StatCard = ({
   trend,
   trendValue,
   subtitle,
+  onClick,
 }) => {
   return (
-    <Card elevation={2}>
+    <Card
+      elevation={2}
+      sx={{
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'transform 0.2s, box-shadow 0.2s',
+        '&:hover': onClick ? {
+          transform: 'translateY(-2px)',
+          boxShadow: 4,
+        } : {},
+      }}
+      onClick={onClick}
+    >
       <CardContent>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <Box sx={{ flexGrow: 1 }}>
