@@ -6,29 +6,24 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all attendance records with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, studentId, courseId, scheduledLessonId, startDate, endDate } = req.query;
+    const { scheduledLessonId, studentId } = req.query;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
     if (studentId) filter.student = studentId;
-    if (courseId) filter.course = courseId;
     if (scheduledLessonId) filter.scheduledLesson = scheduledLessonId;
 
-    if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-
     const attendances = await Attendance.find(filter)
-      .populate('institution', 'name')
-      .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('course', 'name')
-      .populate('scheduledLesson')
-      .sort({ date: -1 });
+      .populate({
+        path: 'scheduledLesson',
+        populate: [
+          { path: 'course', select: 'name' },
+          { path: 'institution', select: 'name' },
+          { path: 'season', select: 'name startDate endDate' },
+          { path: 'instructor', select: 'firstName lastName' }
+        ]
+      })
+      .sort({ createdAt: -1 });
 
     res.json(attendances);
   } catch (error) {
@@ -40,11 +35,16 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const attendance = await Attendance.findById(req.params.id)
-      .populate('institution', 'name')
-      .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId')
-      .populate('course', 'name')
-      .populate('scheduledLesson');
+      .populate({
+        path: 'scheduledLesson',
+        populate: [
+          { path: 'course', select: 'name' },
+          { path: 'institution', select: 'name' },
+          { path: 'season', select: 'name startDate endDate' },
+          { path: 'instructor', select: 'firstName lastName' }
+        ]
+      });
 
     if (!attendance) {
       return res.status(404).json({ message: 'Yoklama kaydı bulunamadı' });
@@ -61,23 +61,28 @@ router.post('/', async (req, res) => {
     const attendance = new Attendance(req.body);
     const newAttendance = await attendance.save();
 
+    const populatedAttendance = await Attendance.findById(newAttendance._id)
+      .populate('student', 'firstName lastName studentId')
+      .populate({
+        path: 'scheduledLesson',
+        populate: [
+          { path: 'course', select: 'name' },
+          { path: 'institution', select: 'name' },
+          { path: 'season', select: 'name startDate endDate' },
+          { path: 'instructor', select: 'firstName lastName' }
+        ]
+      });
+
     // Log activity
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
       action: 'create',
       entity: 'Attendance',
       entityId: newAttendance._id,
-      description: `Yoklama kaydı oluşturuldu: ${newAttendance.status}`,
-      institution: newAttendance.institution,
-      season: newAttendance.season
+      description: `Yoklama kaydı oluşturuldu`,
+      institution: populatedAttendance.scheduledLesson?.institution?._id,
+      season: populatedAttendance.scheduledLesson?.season?._id
     });
-
-    const populatedAttendance = await Attendance.findById(newAttendance._id)
-      .populate('institution', 'name')
-      .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName studentId')
-      .populate('course', 'name')
-      .populate('scheduledLesson');
 
     res.status(201).json(populatedAttendance);
   } catch (error) {
@@ -109,19 +114,27 @@ router.post('/bulk', async (req, res) => {
 // Update attendance
 router.put('/:id', async (req, res) => {
   try {
-    const attendance = await Attendance.findByIdAndUpdate(
+    const updatedAttendance = await Attendance.findByIdAndUpdate(
       req.params.id,
       { ...req.body, updatedBy: req.body.updatedBy },
       { new: true }
-    ).populate('institution', 'name')
-     .populate('season', 'name startDate endDate')
-     .populate('student', 'firstName lastName studentId')
-     .populate('course', 'name')
-     .populate('scheduledLesson');
+    );
 
-    if (!attendance) {
+    if (!updatedAttendance) {
       return res.status(404).json({ message: 'Yoklama kaydı bulunamadı' });
     }
+
+    const attendance = await Attendance.findById(updatedAttendance._id)
+      .populate('student', 'firstName lastName studentId')
+      .populate({
+        path: 'scheduledLesson',
+        populate: [
+          { path: 'course', select: 'name' },
+          { path: 'institution', select: 'name' },
+          { path: 'season', select: 'name startDate endDate' },
+          { path: 'instructor', select: 'firstName lastName' }
+        ]
+      });
 
     // Log activity
     await ActivityLog.create({
@@ -129,9 +142,9 @@ router.put('/:id', async (req, res) => {
       action: 'update',
       entity: 'Attendance',
       entityId: attendance._id,
-      description: `Yoklama kaydı güncellendi: ${attendance.status}`,
-      institution: attendance.institution._id,
-      season: attendance.season._id
+      description: `Yoklama kaydı güncellendi`,
+      institution: attendance.scheduledLesson?.institution?._id,
+      season: attendance.scheduledLesson?.season?._id
     });
 
     res.json(attendance);
@@ -143,7 +156,12 @@ router.put('/:id', async (req, res) => {
 // Delete attendance
 router.delete('/:id', async (req, res) => {
   try {
-    const attendance = await Attendance.findById(req.params.id);
+    const attendance = await Attendance.findById(req.params.id)
+      .populate({
+        path: 'scheduledLesson',
+        select: 'institution season'
+      });
+
     if (!attendance) {
       return res.status(404).json({ message: 'Yoklama kaydı bulunamadı' });
     }
@@ -157,8 +175,8 @@ router.delete('/:id', async (req, res) => {
       entity: 'Attendance',
       entityId: attendance._id,
       description: `Yoklama kaydı silindi`,
-      institution: attendance.institution,
-      season: attendance.season
+      institution: attendance.scheduledLesson?.institution,
+      season: attendance.scheduledLesson?.season
     });
 
     res.json({ message: 'Yoklama kaydı silindi' });
