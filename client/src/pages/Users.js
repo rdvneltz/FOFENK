@@ -69,18 +69,19 @@ const Users = () => {
   });
 
   useEffect(() => {
-    if (institution) {
-      loadUsers();
-      loadInstitutions();
-    }
-  }, [institution]);
+    loadUsers();
+    loadInstitutions();
+  }, [institution, currentUser]);
 
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/users', {
-        params: { institutionId: institution._id }
-      });
+      // Superadmin sees all users, others see only their institution's users
+      const params = {};
+      if (institution?._id && currentUser?.role !== 'superadmin') {
+        params.institutionId = institution._id;
+      }
+      const response = await api.get('/users', { params });
       setUsers(response.data);
     } catch (error) {
       showAlert('Kullanıcılar yüklenirken hata oluştu', 'error');
@@ -126,7 +127,7 @@ const Users = () => {
         phone: '',
         password: '',
         role: 'staff',
-        institutions: [institution._id],
+        institutions: institution?._id ? [institution._id] : [],
         permissions: {
           canManageStudents: true,
           canManageCourses: true,
@@ -160,7 +161,7 @@ const Users = () => {
         institutions: formData.role === 'superadmin' ? [] : formData.institutions,
         permissions: formData.permissions,
         avatarColor: formData.avatarColor,
-        institution: institution._id,
+        institution: institution?._id || null,
         [selectedUser ? 'updatedBy' : 'createdBy']: currentUser?.username
       };
 

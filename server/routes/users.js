@@ -22,8 +22,21 @@ router.get('/debug/list-all', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { institutionId } = req.query;
-    const query = institutionId ? { institution: institutionId } : {};
-    const users = await User.find(query).populate('institution').sort('-createdAt');
+    // If institutionId is provided, get users for that institution OR superadmins (who have access to all)
+    // Also include users who have this institution in their institutions array
+    const query = institutionId
+      ? {
+          $or: [
+            { institution: institutionId },
+            { institutions: institutionId },
+            { role: 'superadmin' }
+          ]
+        }
+      : {};
+    const users = await User.find(query)
+      .populate('institution')
+      .populate('institutions', 'name')
+      .sort('-createdAt');
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -34,8 +47,18 @@ router.get('/', async (req, res) => {
 router.get('/active', async (req, res) => {
   try {
     const { institutionId } = req.query;
-    const query = { isActive: true };
-    if (institutionId) query.institution = institutionId;
+    let query = { isActive: true };
+
+    if (institutionId) {
+      query = {
+        isActive: true,
+        $or: [
+          { institution: institutionId },
+          { institutions: institutionId },
+          { role: 'superadmin' }
+        ]
+      };
+    }
 
     const users = await User.find(query).select('_id username fullName role avatarColor').sort('fullName');
     res.json(users);
