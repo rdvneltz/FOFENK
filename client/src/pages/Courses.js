@@ -273,7 +273,21 @@ const Courses = () => {
                       }
                     />
                   </TableCell>
-                  <TableCell>₺{course.price?.toLocaleString('tr-TR') || 0}</TableCell>
+                  <TableCell>
+                    {course.isFree ? (
+                      <Chip label="Ücretsiz" color="success" size="small" />
+                    ) : (
+                      <>
+                        ₺{(course.pricingType === 'monthly'
+                          ? course.pricePerMonth
+                          : course.pricePerLesson
+                        )?.toLocaleString('tr-TR') || 0}
+                        <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                          /{course.pricingType === 'monthly' ? 'ay' : 'ders'}
+                        </Typography>
+                      </>
+                    )}
+                  </TableCell>
                   <TableCell>{course.duration || '-'} dk</TableCell>
                   <TableCell align="right">
                     <IconButton

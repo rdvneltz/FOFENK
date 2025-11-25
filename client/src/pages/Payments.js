@@ -188,7 +188,9 @@ const Payments = () => {
               filteredPayments.map((payment) => (
                 <TableRow key={payment._id}>
                   <TableCell>
-                    {new Date(payment.date).toLocaleDateString('tr-TR')}
+                    {payment.paymentDate
+                      ? new Date(payment.paymentDate).toLocaleDateString('tr-TR')
+                      : '-'}
                   </TableCell>
                   <TableCell>
                     {payment.student?.firstName} {payment.student?.lastName}
