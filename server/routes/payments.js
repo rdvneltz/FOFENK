@@ -674,9 +674,21 @@ router.post('/repair/full-recalculate', async (req, res) => {
       // Get all expenses for this cash register
       const expenses = await Expense.find({ cashRegister: cr._id });
       let totalExpenses = 0;
+      let manualIncome = 0;
+
       for (const e of expenses) {
-        totalExpenses += e.amount || 0;
+        // Check if this is a manual income entry
+        if (e.isManualIncome === true || e.category === 'Kasa Giriş (Manuel)') {
+          // Manual income entries add to balance, not subtract
+          manualIncome += e.amount || 0;
+        } else {
+          // Regular expenses subtract from balance
+          totalExpenses += e.amount || 0;
+        }
       }
+
+      // Total income includes payments + manual income entries
+      totalIncome += manualIncome;
 
       const calculatedBalance = (cr.initialBalance || 0) + totalIncome - totalExpenses;
       const difference = calculatedBalance - (cr.balance || 0);
@@ -688,6 +700,7 @@ router.post('/repair/full-recalculate', async (req, res) => {
         calculatedBalance: calculatedBalance,
         totalIncome: totalIncome,
         totalExpenses: totalExpenses,
+        manualIncome: manualIncome,
         difference: difference
       });
 
