@@ -5,6 +5,7 @@ const Payment = require('../models/Payment');
 const Expense = require('../models/Expense');
 const CashRegister = require('../models/CashRegister');
 const Student = require('../models/Student');
+const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 const ActivityLog = require('../models/ActivityLog');
 
 // Get all payment plans with filtering
@@ -79,6 +80,28 @@ router.post('/', async (req, res) => {
     await Student.findByIdAndUpdate(req.body.student, {
       $inc: { balance: req.body.discountedAmount }
     });
+
+    // Sync discount info to enrollment for proper reporting
+    if (req.body.enrollment && req.body.discountType && req.body.discountType !== 'none') {
+      const discountUpdate = {
+        'discount.type': req.body.discountType,
+        'discount.value': req.body.discountValue || 0
+      };
+
+      // Set description based on discount type
+      if (req.body.discountType === 'fullScholarship') {
+        discountUpdate['discount.description'] = 'Tam Burslu';
+      } else if (req.body.discountType === 'percentage') {
+        discountUpdate['discount.description'] = `%${req.body.discountValue} İndirim`;
+      } else if (req.body.discountType === 'fixed') {
+        discountUpdate['discount.description'] = `₺${req.body.discountValue} İndirim`;
+      }
+
+      await StudentCourseEnrollment.findByIdAndUpdate(
+        req.body.enrollment,
+        { $set: discountUpdate }
+      );
+    }
 
     // If credit card payment and payment date is today, auto-create payment and expenses
     if (req.body.autoCreatePayment && req.body.paymentType === 'creditCard') {

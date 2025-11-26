@@ -345,7 +345,9 @@ const PaymentPlan = () => {
 
       // Calculate discount
       let discountAmount = 0;
-      if (formData.discountType === 'percentage') {
+      if (formData.discountType === 'fullScholarship') {
+        discountAmount = totalAmount; // 100% discount
+      } else if (formData.discountType === 'percentage') {
         discountAmount = (totalAmount * parseFloat(formData.discountValue)) / 100;
       } else if (formData.discountType === 'fixed') {
         discountAmount = parseFloat(formData.discountValue) || 0;
@@ -453,6 +455,9 @@ const PaymentPlan = () => {
         paymentType: formData.paymentType,
         totalAmount: totalAmount,
         discountedAmount: chargeAmount,
+        // Send discount info for syncing to enrollment
+        discountType: formData.discountType,
+        discountValue: formData.discountType === 'fullScholarship' ? 100 : parseFloat(formData.discountValue) || 0,
         installments: installments,
         creditCardInstallments: formData.paymentType === 'creditCard' ? installmentCount : undefined,
         creditCardCommission: formData.paymentType === 'creditCard' ? creditCardCommission : undefined,
@@ -486,7 +491,9 @@ const PaymentPlan = () => {
 
   // Calculate discount
   let discountAmount = 0;
-  if (formData.discountType === 'percentage') {
+  if (formData.discountType === 'fullScholarship') {
+    discountAmount = totalAmount; // 100% discount
+  } else if (formData.discountType === 'percentage') {
     discountAmount = (totalAmount * parseFloat(formData.discountValue)) / 100;
   } else if (formData.discountType === 'fixed') {
     discountAmount = parseFloat(formData.discountValue) || 0;
@@ -793,13 +800,14 @@ const PaymentPlan = () => {
                   label="İndirim Tipi"
                 >
                   <MenuItem value="none">İndirimsiz</MenuItem>
+                  <MenuItem value="fullScholarship">Tam Burslu (%100)</MenuItem>
                   <MenuItem value="percentage">Yüzde (%)</MenuItem>
                   <MenuItem value="fixed">Tutar (₺)</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
 
-            {formData.discountType !== 'none' && (
+            {formData.discountType !== 'none' && formData.discountType !== 'fullScholarship' && (
               <Grid item xs={12} sm={8}>
                 <TextField
                   fullWidth
@@ -1072,7 +1080,7 @@ const PaymentPlan = () => {
                       </Typography>
                       {discountAmount > 0 && (
                         <Typography variant="body1" color="success.main">
-                          İndirim ({formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}): -₺{discountAmount.toLocaleString('tr-TR')}
+                          İndirim ({formData.discountType === 'fullScholarship' ? 'Tam Burslu %100' : formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}): -₺{discountAmount.toLocaleString('tr-TR')}
                         </Typography>
                       )}
                       <Typography variant="body1">
