@@ -210,8 +210,20 @@ const Payments = () => {
                   <TableCell>{payment.cashRegister?.name || '-'}</TableCell>
                   <TableCell>
                     <Chip
-                      label={payment.status === 'completed' ? 'Tamamlandı' : 'Bekliyor'}
-                      color={payment.status === 'completed' ? 'success' : 'warning'}
+                      label={
+                        payment.isRefunded ? 'İade Edildi' :
+                        payment.status === 'completed' ? 'Tamamlandı' :
+                        payment.status === 'refunded' ? 'İade Edildi' :
+                        payment.status === 'cancelled' ? 'İptal' :
+                        'Bekliyor'
+                      }
+                      color={
+                        payment.isRefunded ? 'error' :
+                        payment.status === 'completed' ? 'success' :
+                        payment.status === 'refunded' ? 'error' :
+                        payment.status === 'cancelled' ? 'default' :
+                        'warning'
+                      }
                       size="small"
                     />
                   </TableCell>

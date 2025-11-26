@@ -59,6 +59,12 @@ const paymentSchema = new mongoose.Schema({
   // Taksit numarası (eğer bir ödeme planının parçasıysa)
   installmentNumber: Number,
   notes: String,
+  // Ödeme durumu
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'refunded', 'cancelled'],
+    default: 'completed'
+  },
   // İade edildi mi
   isRefunded: {
     type: Boolean,
