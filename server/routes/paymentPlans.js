@@ -67,16 +67,41 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // Check if this is a full scholarship (100% discount)
+    const isFullScholarship = req.body.discountType === 'fullScholarship' || req.body.discountedAmount === 0;
+
+    // For full scholarship: no installments needed, plan is already complete
+    let installments = req.body.installments || [];
+    if (isFullScholarship) {
+      // Create a single "installment" marked as paid with 0 amount
+      installments = [{
+        installmentNumber: 1,
+        amount: 0,
+        dueDate: new Date(),
+        isPaid: true,
+        paidAmount: 0,
+        paidDate: new Date(),
+        isInvoiced: false
+      }];
+    }
+
     // Set pending status for future credit card payments
     const paymentPlanData = {
       ...req.body,
-      isPendingPayment: req.body.paymentType === 'creditCard' && !req.body.autoCreatePayment
+      installments: installments,
+      isPendingPayment: !isFullScholarship && req.body.paymentType === 'creditCard' && !req.body.autoCreatePayment,
+      // For full scholarship: mark as completed immediately
+      isCompleted: isFullScholarship,
+      paidAmount: isFullScholarship ? 0 : (req.body.paidAmount || 0),
+      remainingAmount: isFullScholarship ? 0 : (req.body.discountedAmount || 0),
+      status: isFullScholarship ? 'completed' : 'pending'
     };
 
     const paymentPlan = new PaymentPlan(paymentPlanData);
     const newPaymentPlan = await paymentPlan.save();
 
     // Update student balance - add debt when payment plan is created
+    // For full scholarship, discountedAmount is 0, so no debt is added
     await Student.findByIdAndUpdate(req.body.student, {
       $inc: { balance: req.body.discountedAmount }
     });
