@@ -170,7 +170,6 @@ const PaymentPlanDetail = () => {
     try {
       const response = await api.post(`/payment-plans/${id}/refund-installment`, {
         installmentNumber: refundDialog.installment.installmentNumber,
-        refundCashRegisterId: cashRegisters[0]?._id,
         refundReason: refundDialog.reason,
         createdBy: user?.username
       });
@@ -178,6 +177,15 @@ const PaymentPlanDetail = () => {
       setSuccess(response.data.message || `${refundDialog.installment.installmentNumber}. taksit iade edildi`);
       setRefundDialog({ open: false, installment: null, reason: '' });
       loadPaymentPlan();
+
+      // Show refund details if available
+      if (response.data.refundDetails) {
+        const details = response.data.refundDetails;
+        if (details.reversedExpenses && details.reversedExpenses.length > 0) {
+          const expenseList = details.reversedExpenses.map(e => `${e.category}: ₺${e.amount}`).join(', ');
+          setSuccess(`${refundDialog.installment.installmentNumber}. taksit iade edildi. İptal edilen giderler: ${expenseList}`);
+        }
+      }
     } catch (error) {
       setError(error.response?.data?.message || 'İade işlemi sırasında hata oluştu');
     }
