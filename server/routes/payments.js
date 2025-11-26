@@ -436,6 +436,332 @@ router.post('/repair/fix-payment-statuses', async (req, res) => {
   }
 });
 
+// ===========================================
+// DATABASE REPAIR ENDPOINTS
+// ===========================================
+
+// List all cash registers with their balances
+router.get('/repair/list-cash-registers', async (req, res) => {
+  try {
+    const { institutionId } = req.query;
+    const filter = institutionId ? { institution: institutionId } : {};
+
+    const cashRegisters = await CashRegister.find(filter)
+      .populate('institution', 'name')
+      .populate('season', 'name');
+
+    res.json({
+      count: cashRegisters.length,
+      cashRegisters: cashRegisters.map(cr => ({
+        id: cr._id,
+        name: cr.name,
+        balance: cr.balance,
+        initialBalance: cr.initialBalance || 0,
+        institution: cr.institution?.name,
+        season: cr.season?.name,
+        isActive: cr.isActive
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// List all students with their balances
+router.get('/repair/list-students', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.query;
+    const filter = {};
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    const students = await Student.find(filter)
+      .populate('institution', 'name')
+      .populate('season', 'name')
+      .sort({ lastName: 1, firstName: 1 });
+
+    res.json({
+      count: students.length,
+      students: students.map(s => ({
+        id: s._id,
+        studentId: s.studentId,
+        name: `${s.firstName} ${s.lastName}`,
+        balance: s.balance,
+        status: s.status,
+        institution: s.institution?.name,
+        season: s.season?.name
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Reset cash register balance to specific value
+router.post('/repair/reset-cash-register-balance', async (req, res) => {
+  try {
+    const { cashRegisterId, cashRegisterName, newBalance = 0 } = req.body;
+
+    let cashRegister;
+    if (cashRegisterId) {
+      cashRegister = await CashRegister.findById(cashRegisterId);
+    } else if (cashRegisterName) {
+      cashRegister = await CashRegister.findOne({ name: { $regex: cashRegisterName, $options: 'i' } });
+    }
+
+    if (!cashRegister) {
+      return res.status(404).json({ message: 'Kasa bulunamadı' });
+    }
+
+    const oldBalance = cashRegister.balance;
+    cashRegister.balance = newBalance;
+    await cashRegister.save();
+
+    res.json({
+      message: 'Kasa bakiyesi güncellendi',
+      cashRegister: {
+        id: cashRegister._id,
+        name: cashRegister.name,
+        oldBalance: oldBalance,
+        newBalance: newBalance
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Reset student balance to specific value
+router.post('/repair/reset-student-balance', async (req, res) => {
+  try {
+    const { studentId, studentName, newBalance = 0 } = req.body;
+
+    let student;
+    if (studentId) {
+      student = await Student.findById(studentId);
+    } else if (studentName) {
+      // Search by name (partial match)
+      const nameParts = studentName.split(' ');
+      if (nameParts.length >= 2) {
+        student = await Student.findOne({
+          firstName: { $regex: nameParts[0], $options: 'i' },
+          lastName: { $regex: nameParts.slice(1).join(' '), $options: 'i' }
+        });
+      } else {
+        student = await Student.findOne({
+          $or: [
+            { firstName: { $regex: studentName, $options: 'i' } },
+            { lastName: { $regex: studentName, $options: 'i' } }
+          ]
+        });
+      }
+    }
+
+    if (!student) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    const oldBalance = student.balance;
+    student.balance = newBalance;
+    await student.save();
+
+    res.json({
+      message: 'Öğrenci bakiyesi güncellendi',
+      student: {
+        id: student._id,
+        name: `${student.firstName} ${student.lastName}`,
+        oldBalance: oldBalance,
+        newBalance: newBalance
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete orphaned payments (payments with no student or deleted payment plan)
+router.post('/repair/cleanup-orphaned-records', async (req, res) => {
+  try {
+    const { institutionId, dryRun = true } = req.body;
+    const filter = institutionId ? { institution: institutionId } : {};
+
+    const results = {
+      orphanedPayments: [],
+      orphanedExpenses: [],
+      deletedPayments: 0,
+      deletedExpenses: 0
+    };
+
+    // Find payments with non-existent students
+    const payments = await Payment.find(filter);
+    for (const payment of payments) {
+      if (payment.student) {
+        const studentExists = await Student.exists({ _id: payment.student });
+        if (!studentExists) {
+          results.orphanedPayments.push({
+            id: payment._id,
+            amount: payment.amount,
+            reason: 'Student does not exist'
+          });
+        }
+      }
+    }
+
+    // Find expenses related to payments that don't exist
+    const expenses = await Expense.find({ ...filter, relatedPayment: { $exists: true, $ne: null } });
+    for (const expense of expenses) {
+      const paymentExists = await Payment.exists({ _id: expense.relatedPayment });
+      if (!paymentExists) {
+        results.orphanedExpenses.push({
+          id: expense._id,
+          category: expense.category,
+          amount: expense.amount,
+          reason: 'Related payment does not exist'
+        });
+      }
+    }
+
+    if (!dryRun) {
+      // Delete orphaned records
+      for (const orphan of results.orphanedPayments) {
+        await Payment.findByIdAndDelete(orphan.id);
+        results.deletedPayments++;
+      }
+      for (const orphan of results.orphanedExpenses) {
+        await Expense.findByIdAndDelete(orphan.id);
+        results.deletedExpenses++;
+      }
+    }
+
+    res.json({
+      message: dryRun ? 'Dry run completed - no changes made' : 'Cleanup completed',
+      dryRun: dryRun,
+      results: results
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Full data repair - recalculate all balances from scratch
+router.post('/repair/full-recalculate', async (req, res) => {
+  try {
+    const { institutionId, dryRun = true } = req.body;
+
+    if (!institutionId) {
+      return res.status(400).json({ message: 'institutionId gerekli' });
+    }
+
+    const results = {
+      cashRegisters: [],
+      students: []
+    };
+
+    // Recalculate all cash register balances
+    const cashRegisters = await CashRegister.find({ institution: institutionId });
+    for (const cr of cashRegisters) {
+      // Get all payments for this cash register
+      const payments = await Payment.find({
+        cashRegister: cr._id,
+        isRefunded: { $ne: true }
+      });
+
+      let totalIncome = 0;
+      for (const p of payments) {
+        totalIncome += p.amount || 0;
+      }
+
+      // Get all expenses for this cash register
+      const expenses = await Expense.find({ cashRegister: cr._id });
+      let totalExpenses = 0;
+      for (const e of expenses) {
+        totalExpenses += e.amount || 0;
+      }
+
+      const calculatedBalance = (cr.initialBalance || 0) + totalIncome - totalExpenses;
+      const difference = calculatedBalance - (cr.balance || 0);
+
+      results.cashRegisters.push({
+        id: cr._id,
+        name: cr.name,
+        currentBalance: cr.balance,
+        calculatedBalance: calculatedBalance,
+        totalIncome: totalIncome,
+        totalExpenses: totalExpenses,
+        difference: difference
+      });
+
+      if (!dryRun && difference !== 0) {
+        cr.balance = calculatedBalance;
+        await cr.save();
+      }
+    }
+
+    // Recalculate all student balances
+    const students = await Student.find({ institution: institutionId });
+    const PaymentPlan = require('../models/PaymentPlan');
+
+    for (const student of students) {
+      // Get all payment plans for this student
+      const paymentPlans = await PaymentPlan.find({ student: student._id });
+
+      let totalDebt = 0;
+      let totalPaid = 0;
+
+      for (const plan of paymentPlans) {
+        totalDebt += plan.totalAmount || 0;
+
+        // Sum up paid installments
+        if (plan.installments && plan.installments.length > 0) {
+          for (const inst of plan.installments) {
+            if (inst.status === 'paid') {
+              totalPaid += inst.paidAmount || inst.amount || 0;
+            }
+          }
+        }
+      }
+
+      // Also check for standalone payments not linked to payment plans
+      const standalonePayments = await Payment.find({
+        student: student._id,
+        paymentPlan: { $exists: false },
+        isRefunded: { $ne: true }
+      });
+
+      for (const p of standalonePayments) {
+        totalPaid += p.amount || 0;
+      }
+
+      const calculatedBalance = totalDebt - totalPaid;
+      const difference = calculatedBalance - (student.balance || 0);
+
+      results.students.push({
+        id: student._id,
+        name: `${student.firstName} ${student.lastName}`,
+        currentBalance: student.balance,
+        calculatedBalance: calculatedBalance,
+        totalDebt: totalDebt,
+        totalPaid: totalPaid,
+        difference: difference
+      });
+
+      if (!dryRun && difference !== 0) {
+        student.balance = calculatedBalance;
+        await student.save();
+      }
+    }
+
+    res.json({
+      message: dryRun ? 'Dry run completed - no changes made' : 'Full recalculation completed',
+      dryRun: dryRun,
+      results: results
+    });
+  } catch (error) {
+    console.error('Error in full recalculate:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Diagnostic endpoint - Check data consistency for a cash register
 router.get('/diagnostic/cash-register/:cashRegisterId', async (req, res) => {
   try {
