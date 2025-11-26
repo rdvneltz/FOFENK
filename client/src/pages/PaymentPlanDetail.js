@@ -354,6 +354,9 @@ const PaymentPlanDetail = () => {
               />
               {paymentPlan.isInvoiced && <Chip label="Faturalı" color="info" />}
               {paymentPlan.isCompleted && <Chip label="Tamamlandı" color="success" />}
+              {(paymentPlan.discountType === 'fullScholarship' || paymentPlan.discountedAmount === 0) && (
+                <Chip label="Tam Burslu (%100)" color="secondary" sx={{ fontWeight: 'bold' }} />
+              )}
             </Box>
           </Grid>
         </Grid>
@@ -363,96 +366,112 @@ const PaymentPlanDetail = () => {
         <Typography variant="h5" gutterBottom>
           Taksitler
         </Typography>
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Taksit No</TableCell>
-                <TableCell>Vade Tarihi</TableCell>
-                <TableCell align="right">Tutar</TableCell>
-                <TableCell align="right">Ödenen</TableCell>
-                <TableCell align="right">Kalan</TableCell>
-                <TableCell>Durum</TableCell>
-                <TableCell>Ödeme Tarihi</TableCell>
-                <TableCell align="right">İşlemler</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {paymentPlan.installments?.map((installment) => {
-                const remaining = installment.amount - (installment.paidAmount || 0);
-                return (
-                  <TableRow key={installment.installmentNumber}>
-                    <TableCell>{installment.installmentNumber}</TableCell>
-                    <TableCell>
-                      {new Date(installment.dueDate).toLocaleDateString('tr-TR')}
-                    </TableCell>
-                    <TableCell align="right">
-                      ₺{installment.amount?.toLocaleString('tr-TR')}
-                    </TableCell>
-                    <TableCell align="right">
-                      ₺{(installment.paidAmount || 0).toLocaleString('tr-TR')}
-                    </TableCell>
-                    <TableCell align="right">
-                      ₺{remaining.toLocaleString('tr-TR')}
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={installment.isPaid ? 'Ödendi' : 'Bekliyor'}
-                        color={installment.isPaid ? 'success' : 'warning'}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {installment.isPaid && installment.paidDate ?
-                        new Date(installment.paidDate).toLocaleDateString('tr-TR', {
-                          year: 'numeric',
-                          month: '2-digit',
-                          day: '2-digit'
-                        })
-                        : '-'}
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        onClick={() => setEditDateDialog({
-                          open: true,
-                          installment,
-                          newDate: new Date(installment.dueDate)
-                        })}
-                        title="Vade Tarihini Düzenle"
-                      >
-                        <Edit />
-                      </IconButton>
-                      {!installment.isPaid ? (
+
+        {/* Full Scholarship - Special Message */}
+        {(paymentPlan.discountType === 'fullScholarship' || paymentPlan.discountedAmount === 0) ? (
+          <Alert severity="success" sx={{ mt: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              🎓 Tam Burslu Öğrenci
+            </Typography>
+            <Typography variant="body1">
+              Bu öğrenci %100 bursludur. Herhangi bir ödeme alınmasına gerek yoktur.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Toplam Ders Ücreti: ₺{paymentPlan.totalAmount?.toLocaleString('tr-TR')} → Burs İndirimi: %100 → Ödenecek: ₺0
+            </Typography>
+          </Alert>
+        ) : (
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Taksit No</TableCell>
+                  <TableCell>Vade Tarihi</TableCell>
+                  <TableCell align="right">Tutar</TableCell>
+                  <TableCell align="right">Ödenen</TableCell>
+                  <TableCell align="right">Kalan</TableCell>
+                  <TableCell>Durum</TableCell>
+                  <TableCell>Ödeme Tarihi</TableCell>
+                  <TableCell align="right">İşlemler</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {paymentPlan.installments?.map((installment) => {
+                  const remaining = installment.amount - (installment.paidAmount || 0);
+                  return (
+                    <TableRow key={installment.installmentNumber}>
+                      <TableCell>{installment.installmentNumber}</TableCell>
+                      <TableCell>
+                        {new Date(installment.dueDate).toLocaleDateString('tr-TR')}
+                      </TableCell>
+                      <TableCell align="right">
+                        ₺{installment.amount?.toLocaleString('tr-TR')}
+                      </TableCell>
+                      <TableCell align="right">
+                        ₺{(installment.paidAmount || 0).toLocaleString('tr-TR')}
+                      </TableCell>
+                      <TableCell align="right">
+                        ₺{remaining.toLocaleString('tr-TR')}
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={installment.isPaid ? 'Ödendi' : 'Bekliyor'}
+                          color={installment.isPaid ? 'success' : 'warning'}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {installment.isPaid && installment.paidDate ?
+                          new Date(installment.paidDate).toLocaleDateString('tr-TR', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                          })
+                          : '-'}
+                      </TableCell>
+                      <TableCell align="right">
                         <IconButton
                           size="small"
-                          color="primary"
-                          onClick={() => handleOpenPaymentDialog(installment)}
-                          title="Ödeme Al"
-                        >
-                          <Payment />
-                        </IconButton>
-                      ) : (
-                        <IconButton
-                          size="small"
-                          color="warning"
-                          onClick={() => setRefundDialog({
+                          onClick={() => setEditDateDialog({
                             open: true,
-                            installment: installment,
-                            reason: ''
+                            installment,
+                            newDate: new Date(installment.dueDate)
                           })}
-                          title="İade Et"
+                          title="Vade Tarihini Düzenle"
                         >
-                          <Undo />
+                          <Edit />
                         </IconButton>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                        {!installment.isPaid ? (
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => handleOpenPaymentDialog(installment)}
+                            title="Ödeme Al"
+                          >
+                            <Payment />
+                          </IconButton>
+                        ) : (
+                          <IconButton
+                            size="small"
+                            color="warning"
+                            onClick={() => setRefundDialog({
+                              open: true,
+                              installment: installment,
+                              reason: ''
+                            })}
+                            title="İade Et"
+                          >
+                            <Undo />
+                          </IconButton>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Paper>
 
       {/* Edit Date Dialog */}
