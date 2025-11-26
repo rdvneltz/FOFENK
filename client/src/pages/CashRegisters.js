@@ -272,7 +272,7 @@ const CashRegisters = () => {
       await api.post(`/cash-registers/transactions/${deleteDialog.transaction.relatedId}/delete`, {
         password: deleteDialog.password,
         transactionType: deleteDialog.transaction.relatedTo,
-        createdBy: currentUser?.username
+        userId: currentUser?._id
       });
 
       setSuccess('Hareket başarıyla silindi');
