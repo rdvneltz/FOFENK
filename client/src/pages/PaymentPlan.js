@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -22,8 +22,18 @@ import {
   DialogActions,
   Radio,
   RadioGroup,
+  Card,
+  CardContent,
+  Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Collapse,
+  IconButton,
 } from '@mui/material';
-import { ArrowBack } from '@mui/icons-material';
+import { ArrowBack, ExpandMore, ExpandLess } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -42,37 +52,35 @@ const PaymentPlan = () => {
   const [enrollments, setEnrollments] = useState([]);
   const [formData, setFormData] = useState({
     enrollmentId: '',
-    courseType: '', // 'monthly' or 'perLesson' - to avoid state synchronization issues
-    enrollmentDate: new Date().toISOString().split('T')[0], // Student enrollment date
+    courseType: '',
+    enrollmentDate: new Date().toISOString().split('T')[0],
     totalAmount: '',
-    monthlyFee: '', // Store monthly fee for auto-calculation
-    durationMonths: '', // How many months registration
+    monthlyFee: '',
+    durationMonths: '',
     discountType: 'none',
     discountValue: 0,
     paymentType: 'cashFull',
     installmentCount: 1,
     firstInstallmentDate: new Date(),
-    paymentDate: new Date().toISOString().split('T')[0], // For credit card payment date
+    paymentDate: new Date().toISOString().split('T')[0],
     installmentFrequency: 'monthly',
     customFrequencyDays: 30,
     useCustomAmounts: false,
     customInstallments: [],
     isInvoiced: false,
     description: '',
-    partialPricingChoice: 'full', // 'full' or 'partial' - for first month partial pricing
+    partialPricingChoice: 'full',
+    // Mixed payment fields
+    cashAmount: '',
+    creditCardAmount: '',
+    creditCardInstallmentCount: 1,
   });
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [selectedCashRegister, setSelectedCashRegister] = useState('');
   const [monthlyLessonDetails, setMonthlyLessonDetails] = useState(null);
-  const [showLessonDetails, setShowLessonDetails] = useState(false);
+  const [showLessonDetails, setShowLessonDetails] = useState(true);
   const [showPartialPricingDialog, setShowPartialPricingDialog] = useState(false);
-  const [rateDialog, setRateDialog] = useState({
-    open: false,
-    type: '', // 'commission' or 'vat'
-    value: '',
-    installmentCount: null
-  });
 
   useEffect(() => {
     loadData();
@@ -83,40 +91,25 @@ const PaymentPlan = () => {
       setLoading(true);
       const [studentRes, enrollmentsRes, cashRes, settingsRes] = await Promise.all([
         api.get(`/students/${studentId}`),
-        api.get('/enrollments', {
-          params: { studentId, seasonId: season._id },
-        }),
-        api.get('/cash-registers', {
-          params: { institution: institution._id },
-        }),
-        api.get('/settings', {
-          params: { institutionId: institution._id },
-        }),
+        api.get('/enrollments', { params: { studentId, seasonId: season._id } }),
+        api.get('/cash-registers', { params: { institution: institution._id } }),
+        api.get('/settings', { params: { institutionId: institution._id } }),
       ]);
 
       setStudent(studentRes.data);
       setEnrollments(enrollmentsRes.data);
       setCashRegisters(cashRes.data);
 
-      // Set first cash register as default
       if (cashRes.data.length > 0) {
         setSelectedCashRegister(cashRes.data[0]._id);
       }
 
-      // Load settings
       if (settingsRes.data && settingsRes.data.length > 0) {
         setSettings(settingsRes.data[0]);
       }
 
-      // Set first enrollment as default and populate form data
       if (enrollmentsRes.data.length > 0) {
-        const firstEnrollmentId = enrollmentsRes.data[0]._id;
-        // Don't set enrollmentId separately - handleEnrollmentChange will set everything
-        // This prevents race condition between two setFormData calls
-
-        // Manually populate form with enrollment data (don't rely on useEffect)
-        // IMPORTANT: await to ensure API call completes for monthly courses
-        await handleEnrollmentChange(firstEnrollmentId, enrollmentsRes.data);
+        await handleEnrollmentChange(enrollmentsRes.data[0]._id, enrollmentsRes.data);
       }
     } catch (error) {
       setError('Veri yüklenirken bir hata oluştu');
@@ -132,33 +125,20 @@ const PaymentPlan = () => {
     return rateObj ? rateObj.rate : 0;
   };
 
-  const getVatRate = () => {
-    // Return settings VAT rate (settings should always exist from DB)
-    return settings?.vatRate || 10;
-  };
+  const getVatRate = () => settings?.vatRate || 10;
 
   const calculateMonthlyLessonDetails = async (enrollmentId, durationMonths, enrollmentsList = null) => {
     if (!enrollmentId || !durationMonths || durationMonths <= 0) {
       setMonthlyLessonDetails(null);
-      setShowLessonDetails(false);
       return;
     }
 
     try {
-      // Use provided enrollmentsList or fall back to state
       const enrollmentsToUse = enrollmentsList || enrollments;
       const enrollment = enrollmentsToUse.find(e => e._id === enrollmentId);
 
-      if (!enrollment || !enrollment.course) {
+      if (!enrollment || !enrollment.course || enrollment.course.pricingType !== 'monthly') {
         setMonthlyLessonDetails(null);
-        setShowLessonDetails(false);
-        return;
-      }
-
-      // Only calculate for monthly pricing courses
-      if (enrollment.course.pricingType !== 'monthly') {
-        setMonthlyLessonDetails(null);
-        setShowLessonDetails(false);
         return;
       }
 
@@ -166,45 +146,29 @@ const PaymentPlan = () => {
         courseId: enrollment.course._id,
         startDate: enrollment.enrollmentDate || new Date(),
         durationMonths: parseInt(durationMonths),
-        enrollmentDate: formData.enrollmentDate // Include enrollment date for partial pricing
+        enrollmentDate: formData.enrollmentDate
       });
 
       setMonthlyLessonDetails(response.data);
-      setShowLessonDetails(true);
 
-      // If there's a partial pricing option, show the dialog
       if (response.data.firstMonthPartial && response.data.pricing.hasPartialOption) {
         setShowPartialPricingDialog(true);
       }
     } catch (error) {
       console.error('Error calculating monthly lessons:', error);
       setMonthlyLessonDetails(null);
-      setShowLessonDetails(false);
     }
   };
 
   const handleEnrollmentChange = async (enrollmentId, enrollmentsList = null) => {
-    // Use provided enrollmentsList or fall back to state
     const enrollmentsToUse = enrollmentsList || enrollments;
     const selectedEnrollment = enrollmentsToUse.find(e => e._id === enrollmentId);
 
-    console.log('🔍 DEBUG - handleEnrollmentChange called');
-    console.log('📋 Selected Enrollment:', selectedEnrollment);
-    console.log('📚 Course:', selectedEnrollment?.course);
-    console.log('💰 Price Per Month:', selectedEnrollment?.course?.pricePerMonth);
-    console.log('📊 Pricing Type:', selectedEnrollment?.course?.pricingType);
-
-    if (!selectedEnrollment || !selectedEnrollment.course) {
-      console.log('❌ No enrollment or course found!');
-      return;
-    }
+    if (!selectedEnrollment || !selectedEnrollment.course) return;
 
     const course = selectedEnrollment.course;
     const isMonthly = course.pricingType === 'monthly';
 
-    console.log('✅ Is Monthly:', isMonthly);
-
-    // Auto-fill price based on course pricing type
     let priceValue = '';
     if (isMonthly && course.pricePerMonth) {
       priceValue = course.pricePerMonth;
@@ -212,75 +176,52 @@ const PaymentPlan = () => {
       priceValue = course.pricePerLesson;
     }
 
-    console.log('💵 Price Value:', priceValue);
-
-    // Calculate months until season end
     let suggestedMonths = '';
     if (season && season.endDate) {
       const now = new Date();
       const endDate = new Date(season.endDate);
       const monthsDiff = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24 * 30));
-      if (monthsDiff > 0) {
-        suggestedMonths = monthsDiff;
-      }
+      if (monthsDiff > 0) suggestedMonths = monthsDiff;
     }
 
-    // Calculate total amount
     let calculatedTotal = '';
     if (isMonthly) {
-      // For monthly pricing: monthlyFee × duration
       calculatedTotal = priceValue && suggestedMonths ? priceValue * suggestedMonths : priceValue;
     } else {
-      // For per-lesson pricing: just show the price per lesson
       calculatedTotal = priceValue;
     }
 
-    const newFormData = {
-      enrollmentId: enrollmentId,
-      courseType: isMonthly ? 'monthly' : 'perLesson', // Store course type for conditional rendering
-      enrollmentDate: selectedEnrollment.enrollmentDate ? new Date(selectedEnrollment.enrollmentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      monthlyFee: isMonthly ? priceValue : '', // Only set monthlyFee for monthly courses
-      totalAmount: calculatedTotal,
-      durationMonths: suggestedMonths
-    };
-
-    console.log('📝 Setting Form Data:', newFormData);
-
     setFormData((prev) => ({
       ...prev,
-      ...newFormData
+      enrollmentId,
+      courseType: isMonthly ? 'monthly' : 'perLesson',
+      enrollmentDate: selectedEnrollment.enrollmentDate
+        ? new Date(selectedEnrollment.enrollmentDate).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0],
+      monthlyFee: isMonthly ? priceValue : '',
+      totalAmount: calculatedTotal,
+      durationMonths: suggestedMonths
     }));
 
-    // Only calculate monthly lesson details for monthly pricing courses
     if (isMonthly && suggestedMonths > 0) {
-      // IMPORTANT: await this to ensure API call completes before continuing
       await calculateMonthlyLessonDetails(enrollmentId, suggestedMonths, enrollmentsToUse);
     } else {
-      // Clear lesson details for per-lesson courses
       setMonthlyLessonDetails(null);
-      setShowLessonDetails(false);
     }
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    // If enrollment is selected, use dedicated function
     if (name === 'enrollmentId' && value) {
       handleEnrollmentChange(value);
       return;
     }
 
-    // If duration months changed, recalculate total amount and lesson details
     if (name === 'durationMonths' && value && formData.monthlyFee) {
       const newTotal = formData.monthlyFee * parseFloat(value);
-      setFormData((prev) => ({
-        ...prev,
-        [name]: value,
-        totalAmount: newTotal
-      }));
+      setFormData((prev) => ({ ...prev, [name]: value, totalAmount: newTotal }));
 
-      // Recalculate monthly lesson details only for monthly pricing courses
       if (formData.enrollmentId && value > 0) {
         const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
         if (selectedEnrollment?.course?.pricingType === 'monthly') {
@@ -293,34 +234,77 @@ const PaymentPlan = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleRateDialogSubmit = () => {
-    const rateValue = parseFloat(rateDialog.value);
-    if (isNaN(rateValue) || rateValue < 0 || rateValue > 100) {
-      setError('Lütfen geçerli bir oran girin (0-100 arası)');
-      return;
+  // Calculations
+  const calculations = useMemo(() => {
+    const totalAmount = parseFloat(formData.totalAmount) || 0;
+
+    let discountAmount = 0;
+    if (formData.discountType === 'fullScholarship') {
+      discountAmount = totalAmount;
+    } else if (formData.discountType === 'percentage') {
+      discountAmount = (totalAmount * parseFloat(formData.discountValue)) / 100;
+    } else if (formData.discountType === 'fixed') {
+      discountAmount = parseFloat(formData.discountValue) || 0;
     }
 
-    // Update settings temporarily
-    if (rateDialog.type === 'commission') {
-      if (!settings.creditCardRates) {
-        settings.creditCardRates = [];
-      }
-      settings.creditCardRates.push({
-        installments: rateDialog.installmentCount,
-        rate: rateValue
-      });
-    } else if (rateDialog.type === 'vat') {
-      settings.vatRate = rateValue;
+    const subtotal = totalAmount - discountAmount;
+    const vatRate = getVatRate();
+
+    // For mixed payments
+    if (formData.paymentType === 'mixed') {
+      const cashAmount = parseFloat(formData.cashAmount) || 0;
+      const creditCardAmount = parseFloat(formData.creditCardAmount) || 0;
+      const commissionRate = getCreditCardCommissionRate(parseInt(formData.creditCardInstallmentCount));
+      const commissionAmount = (creditCardAmount * commissionRate) / 100;
+      const totalWithCommission = cashAmount + creditCardAmount + commissionAmount;
+      const vatAmount = formData.isInvoiced ? (totalWithCommission * vatRate) / 100 : 0;
+
+      return {
+        totalAmount,
+        discountAmount,
+        subtotal,
+        cashAmount,
+        creditCardAmount,
+        commissionRate,
+        commissionAmount,
+        chargeAmount: totalWithCommission,
+        vatRate,
+        vatAmount,
+        finalAmount: totalWithCommission,
+        installmentAmount: 0,
+        isMixed: true
+      };
     }
 
-    setSettings({ ...settings });
-    setRateDialog({ open: false, type: '', value: '', installmentCount: null });
+    // For credit card
+    let commissionRate = 0;
+    let commissionAmount = 0;
+    if (formData.paymentType === 'creditCard' && formData.installmentCount) {
+      commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
+      commissionAmount = (subtotal * commissionRate) / 100;
+    }
 
-    // Trigger form submit again
-    setTimeout(() => {
-      document.querySelector('form').requestSubmit();
-    }, 100);
-  };
+    const chargeAmount = subtotal + commissionAmount;
+    const vatAmount = formData.isInvoiced ? (chargeAmount * vatRate) / 100 : 0;
+    const finalAmount = chargeAmount;
+    const installmentAmount = formData.installmentCount
+      ? (finalAmount / parseInt(formData.installmentCount)).toFixed(2)
+      : 0;
+
+    return {
+      totalAmount,
+      discountAmount,
+      subtotal,
+      commissionRate,
+      commissionAmount,
+      chargeAmount,
+      vatRate,
+      vatAmount,
+      finalAmount,
+      installmentAmount,
+      isMixed: false
+    };
+  }, [formData, settings]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -328,7 +312,8 @@ const PaymentPlan = () => {
     setLoading(true);
 
     try {
-      if (!selectedCashRegister && formData.paymentType === 'creditCard') {
+      const needsCashRegister = formData.paymentType === 'creditCard' || formData.paymentType === 'mixed';
+      if (!selectedCashRegister && needsCashRegister) {
         setError('Lütfen bir kasa seçin');
         setLoading(false);
         return;
@@ -341,49 +326,11 @@ const PaymentPlan = () => {
         return;
       }
 
-      const totalAmount = parseFloat(formData.totalAmount);
-
-      // Calculate discount
-      let discountAmount = 0;
-      if (formData.discountType === 'fullScholarship') {
-        discountAmount = totalAmount; // 100% discount
-      } else if (formData.discountType === 'percentage') {
-        discountAmount = (totalAmount * parseFloat(formData.discountValue)) / 100;
-      } else if (formData.discountType === 'fixed') {
-        discountAmount = parseFloat(formData.discountValue) || 0;
-      }
-
-      let subtotal = totalAmount - discountAmount;
-
-      // Calculate credit card commission (will use default rates if settings not found)
-      let creditCardCommission = { rate: 0, amount: 0 };
-      if (formData.paymentType === 'creditCard') {
-        const commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
-        if (commissionRate !== null) {
-          creditCardCommission.rate = commissionRate;
-          creditCardCommission.amount = (subtotal * commissionRate) / 100;
-        }
-      }
-
-      // Amount to charge from student (includes commission for credit card)
-      let chargeAmount = subtotal + creditCardCommission.amount;
-
-      // Calculate VAT on the charge amount (use getVatRate which has default)
-      let vat = { rate: 0, amount: 0 };
-      if (formData.isInvoiced) {
-        vat.rate = getVatRate();
-        vat.amount = (chargeAmount * vat.rate) / 100;
-      }
-
+      const installments = [];
+      const chargeAmount = calculations.chargeAmount;
       const installmentCount = parseInt(formData.installmentCount);
 
-      // Create installment array
-      const installments = [];
-
-      // For credit card: create single installment (money comes in one payment)
-      // For cash: create multiple installments based on frequency
       if (formData.paymentType === 'creditCard') {
-        // Credit card: single installment with full amount and payment date
         installments.push({
           installmentNumber: 1,
           amount: chargeAmount,
@@ -392,85 +339,91 @@ const PaymentPlan = () => {
           paidAmount: 0,
           isInvoiced: formData.isInvoiced
         });
+      } else if (formData.paymentType === 'mixed') {
+        // Mixed: Create separate installments for cash and credit card
+        const cashAmount = parseFloat(formData.cashAmount) || 0;
+        const creditCardAmount = parseFloat(formData.creditCardAmount) || 0;
+        const commissionAmount = calculations.commissionAmount;
+
+        if (cashAmount > 0) {
+          installments.push({
+            installmentNumber: 1,
+            amount: cashAmount,
+            dueDate: new Date(formData.firstInstallmentDate),
+            isPaid: false,
+            paidAmount: 0,
+            isInvoiced: formData.isInvoiced,
+            paymentMethod: 'cash'
+          });
+        }
+
+        if (creditCardAmount > 0) {
+          installments.push({
+            installmentNumber: cashAmount > 0 ? 2 : 1,
+            amount: creditCardAmount + commissionAmount,
+            dueDate: new Date(formData.paymentDate),
+            isPaid: false,
+            paidAmount: 0,
+            isInvoiced: formData.isInvoiced,
+            paymentMethod: 'creditCard'
+          });
+        }
       } else {
-        // Cash payments: create installments based on frequency
+        // Cash payments
         const startDate = new Date(formData.firstInstallmentDate);
+        const installmentAmount = chargeAmount / installmentCount;
 
-        if (formData.useCustomAmounts && formData.customInstallments.length > 0) {
-          // Use custom installment amounts
-          for (let i = 0; i < formData.customInstallments.length; i++) {
-            const dueDate = new Date(startDate);
-
-            if (formData.installmentFrequency === 'weekly') {
-              dueDate.setDate(startDate.getDate() + (i * 7));
-            } else if (formData.installmentFrequency === 'custom') {
-              dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
-            } else {
-              dueDate.setMonth(startDate.getMonth() + i);
-            }
-
-            installments.push({
-              installmentNumber: i + 1,
-              amount: parseFloat(formData.customInstallments[i].amount),
-              dueDate: dueDate,
-              isPaid: false,
-              paidAmount: 0,
-              isInvoiced: formData.isInvoiced
-            });
+        for (let i = 0; i < installmentCount; i++) {
+          const dueDate = new Date(startDate);
+          if (formData.installmentFrequency === 'weekly') {
+            dueDate.setDate(startDate.getDate() + (i * 7));
+          } else if (formData.installmentFrequency === 'custom') {
+            dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
+          } else {
+            dueDate.setMonth(startDate.getMonth() + i);
           }
-        } else {
-          // Equal installments
-          const installmentAmount = chargeAmount / installmentCount;
-          for (let i = 0; i < installmentCount; i++) {
-            const dueDate = new Date(startDate);
 
-            if (formData.installmentFrequency === 'weekly') {
-              dueDate.setDate(startDate.getDate() + (i * 7));
-            } else if (formData.installmentFrequency === 'custom') {
-              dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
-            } else {
-              dueDate.setMonth(startDate.getMonth() + i);
-            }
-
-            installments.push({
-              installmentNumber: i + 1,
-              amount: installmentAmount,
-              dueDate: dueDate,
-              isPaid: false,
-              paidAmount: 0,
-              isInvoiced: formData.isInvoiced
-            });
-          }
+          installments.push({
+            installmentNumber: i + 1,
+            amount: installmentAmount,
+            dueDate,
+            isPaid: false,
+            paidAmount: 0,
+            isInvoiced: formData.isInvoiced
+          });
         }
       }
 
-      // Check if payment date is today for credit card
       const today = new Date().toISOString().split('T')[0];
-      const shouldProcessImmediately = formData.paymentType === 'creditCard' && formData.paymentDate === today;
+      const shouldProcessImmediately = (formData.paymentType === 'creditCard' || formData.paymentType === 'mixed') && formData.paymentDate === today;
 
       const paymentPlanData = {
         student: studentId,
         enrollment: formData.enrollmentId,
         course: selectedEnrollment.course._id,
         paymentType: formData.paymentType,
-        totalAmount: totalAmount,
+        totalAmount: calculations.totalAmount,
         discountedAmount: chargeAmount,
-        // Send discount info for syncing to enrollment
         discountType: formData.discountType,
         discountValue: formData.discountType === 'fullScholarship' ? 100 : parseFloat(formData.discountValue) || 0,
-        installments: installments,
-        creditCardInstallments: formData.paymentType === 'creditCard' ? installmentCount : undefined,
-        creditCardCommission: formData.paymentType === 'creditCard' ? creditCardCommission : undefined,
-        vat: formData.isInvoiced ? vat : undefined,
+        installments,
+        creditCardInstallments: formData.paymentType === 'creditCard'
+          ? installmentCount
+          : formData.paymentType === 'mixed'
+            ? parseInt(formData.creditCardInstallmentCount)
+            : undefined,
+        creditCardCommission: (formData.paymentType === 'creditCard' || formData.paymentType === 'mixed')
+          ? { rate: calculations.commissionRate, amount: calculations.commissionAmount }
+          : undefined,
+        vat: formData.isInvoiced ? { rate: calculations.vatRate, amount: calculations.vatAmount } : undefined,
         isInvoiced: formData.isInvoiced,
         institution: institution._id,
         season: season._id,
         notes: formData.description,
         createdBy: user?.username || 'System',
-        // For credit card payments, auto-create payment only if date is today
         autoCreatePayment: shouldProcessImmediately,
-        paymentDate: formData.paymentType === 'creditCard' ? formData.paymentDate : undefined,
-        cashRegister: formData.paymentType === 'creditCard' ? selectedCashRegister : undefined
+        paymentDate: (formData.paymentType === 'creditCard' || formData.paymentType === 'mixed') ? formData.paymentDate : undefined,
+        cashRegister: needsCashRegister ? selectedCashRegister : undefined
       };
 
       await api.post('/payment-plans', paymentPlanData);
@@ -487,831 +440,600 @@ const PaymentPlan = () => {
     return <LoadingSpinner message="Yükleniyor..." />;
   }
 
-  const totalAmount = parseFloat(formData.totalAmount) || 0;
-
-  // Calculate discount
-  let discountAmount = 0;
-  if (formData.discountType === 'fullScholarship') {
-    discountAmount = totalAmount; // 100% discount
-  } else if (formData.discountType === 'percentage') {
-    discountAmount = (totalAmount * parseFloat(formData.discountValue)) / 100;
-  } else if (formData.discountType === 'fixed') {
-    discountAmount = parseFloat(formData.discountValue) || 0;
-  }
-
-  let subtotal = totalAmount - discountAmount;
-
-  // Calculate credit card commission
-  let commissionRate = 0;
-  let commissionAmount = 0;
-  if (formData.paymentType === 'creditCard' && formData.installmentCount) {
-    commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
-    commissionAmount = (subtotal * commissionRate) / 100;
-  }
-
-  // Amount to charge from student
-  const chargeAmount = subtotal + commissionAmount;
-
-  // Calculate VAT on charge amount
-  let vatRate = settings?.vatRate || 10;
-  let vatAmount = 0;
-  if (formData.isInvoiced) {
-    vatAmount = (chargeAmount * vatRate) / 100;
-  }
-
-  const finalAmount = chargeAmount;
-  const installmentAmount = formData.installmentCount
-    ? (finalAmount / parseInt(formData.installmentCount)).toFixed(2)
-    : 0;
+  const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
+  const course = selectedEnrollment?.course;
+  const pricePerLesson = monthlyLessonDetails?.course?.pricePerLesson || course?.pricePerLesson || 0;
 
   return (
-    <Container maxWidth="md">
+    <Container maxWidth="lg">
       <Box sx={{ mb: 3 }}>
-        <Button
-          startIcon={<ArrowBack />}
-          onClick={() => navigate(`/students/${studentId}`)}
-        >
+        <Button startIcon={<ArrowBack />} onClick={() => navigate(`/students/${studentId}`)}>
           Geri
         </Button>
       </Box>
 
-      <Paper sx={{ p: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          Ödeme Planı Oluştur
-        </Typography>
-
-        {student && (
-          <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-            <Typography variant="h6">
-              {student.firstName} {student.lastName}
+      <Grid container spacing={3}>
+        {/* Sol Panel - Form */}
+        <Grid item xs={12} md={7}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h5" gutterBottom>
+              Ödeme Planı Oluştur
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Mevcut Bakiye:{' '}
-              <span style={{ fontWeight: 'bold' }}>
-                ₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
-              </span>
-            </Typography>
-          </Box>
-        )}
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        {enrollments.length === 0 && (
-          <Alert severity="warning" sx={{ mb: 3 }}>
-            Bu öğrenci henüz hiçbir derse kayıtlı değil. Ödeme planı oluşturmak için önce öğrenciyi bir derse kaydetmelisiniz.
-          </Alert>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              <FormControl fullWidth required>
-                <InputLabel>Ders</InputLabel>
-                <Select
-                  name="enrollmentId"
-                  value={formData.enrollmentId}
-                  onChange={handleChange}
-                  label="Ders"
-                  disabled={enrollments.length === 0}
-                >
-                  {enrollments.map((enrollment) => (
-                    <MenuItem key={enrollment._id} value={enrollment._id}>
-                      {enrollment.course?.name || 'İsimsiz Ders'}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {/* Show Monthly Fee field for monthly courses */}
-            {formData.enrollmentId && (() => {
-              // Use formData.courseType instead of looking up enrollment to avoid state sync issues
-              const isMonthlyPricing = formData.courseType === 'monthly';
-
-              return isMonthlyPricing ? (
-                <>
-                  <Grid item xs={12} sm={3}>
-                    <TextField
-                      fullWidth
-                      label="Öğrenci Kayıt Tarihi"
-                      name="enrollmentDate"
-                      type="date"
-                      value={formData.enrollmentDate}
-                      onChange={async (e) => {
-                        setFormData(prev => ({
-                          ...prev,
-                          enrollmentDate: e.target.value
-                        }));
-
-                        // Recalculate lesson details when enrollment date changes
-                        if (formData.enrollmentId && formData.durationMonths > 0) {
-                          await calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths);
-                        }
-                      }}
-                      InputLabelProps={{ shrink: true }}
-                      required
-                      helperText="Öğrencinin derse kayıt tarihi"
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} sm={3}>
-                    <TextField
-                      fullWidth
-                      label="Aylık Ders Ücreti (₺)"
-                      name="monthlyFee"
-                      type="number"
-                      value={formData.monthlyFee}
-                      onChange={async (e) => {
-                        const newMonthlyFee = parseFloat(e.target.value) || 0;
-                        const newTotal = formData.durationMonths ? newMonthlyFee * parseFloat(formData.durationMonths) : newMonthlyFee;
-                        setFormData(prev => ({
-                          ...prev,
-                          monthlyFee: e.target.value,
-                          totalAmount: newTotal
-                        }));
-
-                        // Recalculate lesson details when monthly fee changes
-                        if (formData.enrollmentId && formData.durationMonths > 0) {
-                          await calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths);
-                        }
-                      }}
-                      required
-                      helperText="Aylık ödenecek tutar"
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} sm={2}>
-                    <TextField
-                      fullWidth
-                      label="Kaç Aylık?"
-                      name="durationMonths"
-                      type="number"
-                      value={formData.durationMonths}
-                      onChange={handleChange}
-                      inputProps={{ min: 1 }}
-                      required
-                      helperText="Kayıt süresi (ay)"
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} sm={4}>
-                    <TextField
-                      fullWidth
-                      label="Toplam Tutar (₺)"
-                      value={formData.totalAmount || 0}
-                      InputProps={{
-                        readOnly: true,
-                      }}
-                      helperText={`${formData.monthlyFee || 0} × ${formData.durationMonths || 0} ay`}
-                      sx={{
-                        '& .MuiInputBase-input': {
-                          color: 'primary.main',
-                          fontWeight: 600
-                        }
-                      }}
-                    />
-                  </Grid>
-                </>
-              ) : (
-                <>
-                  <Grid item xs={12} sm={4}>
-                    <TextField
-                      fullWidth
-                      label="Toplam Tutar (₺)"
-                      name="totalAmount"
-                      type="number"
-                      value={formData.totalAmount}
-                      onChange={handleChange}
-                      required
-                    />
-                  </Grid>
-
-                  <Grid item xs={12} sm={2}>
-                    <TextField
-                      fullWidth
-                      label="Kaç Aylık?"
-                      name="durationMonths"
-                      type="number"
-                      value={formData.durationMonths}
-                      onChange={handleChange}
-                      inputProps={{ min: 1 }}
-                      helperText="Kayıt süresi"
-                    />
-                  </Grid>
-                </>
-              );
-            })()}
-
-            {/* Show "Re-open Details" link if details were closed */}
-            {!showLessonDetails && monthlyLessonDetails && formData.courseType === 'monthly' && (
-              <Grid item xs={12}>
-                <Button
-                  variant="text"
-                  size="small"
-                  onClick={() => setShowLessonDetails(true)}
-                  sx={{ textTransform: 'none' }}
-                >
-                  📊 Ders detaylarını tekrar göster
-                </Button>
-              </Grid>
+            {student && (
+              <Box sx={{ mb: 3, p: 2, bgcolor: 'primary.light', borderRadius: 1, color: 'primary.contrastText' }}>
+                <Typography variant="h6">{student.firstName} {student.lastName}</Typography>
+                <Typography variant="body2">
+                  Mevcut Bakiye: <strong>₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}</strong>
+                </Typography>
+              </Box>
             )}
 
-            {/* Monthly Lesson Details */}
-            {showLessonDetails && monthlyLessonDetails && (
-              <Grid item xs={12}>
-                <Alert
-                  severity={monthlyLessonDetails.hasSchedule ? "info" : "warning"}
-                  sx={{ mb: 2 }}
-                  onClose={() => setShowLessonDetails(false)}
-                >
-                  <Typography variant="subtitle1" gutterBottom>
-                    <strong>Ders Detayları - {monthlyLessonDetails.course.name}</strong>
-                  </Typography>
+            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-                  {!monthlyLessonDetails.hasSchedule && (
-                    <Typography variant="body2" color="warning.main" sx={{ mb: 2 }}>
-                      ⚠️ <strong>Bu dersin aylık programı henüz oluşturulmamış!</strong> Ders başı ücret hesaplaması için lütfen dersi aylık programa ekleyiniz.
-                    </Typography>
-                  )}
-
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="body2">
-                      • <strong>Aylık Ücret:</strong> ₺{monthlyLessonDetails.course.monthlyFee.toLocaleString('tr-TR')}
-                      {' '}(Ayda {monthlyLessonDetails.course.expectedLessonsPerMonth} ders varsayılarak hesaplanmıştır)
-                    </Typography>
-                    <Typography variant="body2">
-                      • <strong>Ders Başı Ücret:</strong> ₺{monthlyLessonDetails.course.pricePerLesson.toLocaleString('tr-TR')}
-                    </Typography>
-                  </Box>
-
-                  <Typography variant="subtitle2" gutterBottom>Aylık Ders Dağılımı:</Typography>
-                  <Box sx={{ ml: 2, mb: 2 }}>
-                    {monthlyLessonDetails.monthlyDetails.map((month) => (
-                      <Typography key={month.monthIndex} variant="body2">
-                        • <strong>{month.month}:</strong> {month.lessonCount > 0 ? `${month.lessonCount} ders` : 'Program oluşturulmamış'}
-                        {month.lessonCount !== monthlyLessonDetails.course.expectedLessonsPerMonth && month.lessonCount > 0 && (
-                          <span style={{ color: 'orange' }}>
-                            {' '}(Standart: {monthlyLessonDetails.course.expectedLessonsPerMonth} ders)
-                          </span>
-                        )}
-                      </Typography>
-                    ))}
-                  </Box>
-
-                  <Box sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid #e0e0e0' }}>
-                    <Typography variant="subtitle2" gutterBottom><strong>Fiyatlandırma Karşılaştırması:</strong></Typography>
-                    <Typography variant="body2">
-                      • <strong>Aylık ücret üzerinden kayıt:</strong> ₺{monthlyLessonDetails.pricing.totalByMonthly.toLocaleString('tr-TR')}
-                    </Typography>
-                    {monthlyLessonDetails.hasSchedule && (
-                      <>
-                        <Typography variant="body2">
-                          • <strong>Ders başı ücret üzerinden kayıt:</strong> ₺{monthlyLessonDetails.pricing.totalByPerLesson.toLocaleString('tr-TR')}
-                        </Typography>
-                        <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold', color: monthlyLessonDetails.pricing.recommendMonthly ? 'success.main' : 'error.main' }}>
-                          {monthlyLessonDetails.pricing.recommendMonthly
-                            ? '✓ Aylık ücret daha avantajlı'
-                            : `⚠️ Fazla ders ücreti: ₺${Math.abs(monthlyLessonDetails.pricing.difference).toLocaleString('tr-TR')}`
-                          }
-                        </Typography>
-                      </>
-                    )}
-                    {!monthlyLessonDetails.hasSchedule && (
-                      <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
-                        <em>Ders başı ücret hesaplaması yapılamıyor (aylık program eksik)</em>
-                      </Typography>
-                    )}
-                  </Box>
-                </Alert>
-              </Grid>
+            {enrollments.length === 0 && (
+              <Alert severity="warning" sx={{ mb: 3 }}>
+                Bu öğrenci henüz hiçbir derse kayıtlı değil.
+              </Alert>
             )}
 
-            <Grid item xs={12} sm={4}>
-              <FormControl fullWidth>
-                <InputLabel>İndirim Tipi</InputLabel>
-                <Select
-                  name="discountType"
-                  value={formData.discountType}
-                  onChange={handleChange}
-                  label="İndirim Tipi"
-                >
-                  <MenuItem value="none">İndirimsiz</MenuItem>
-                  <MenuItem value="fullScholarship">Tam Burslu (%100)</MenuItem>
-                  <MenuItem value="percentage">Yüzde (%)</MenuItem>
-                  <MenuItem value="fixed">Tutar (₺)</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {formData.discountType !== 'none' && formData.discountType !== 'fullScholarship' && (
-              <Grid item xs={12} sm={8}>
-                <TextField
-                  fullWidth
-                  label={formData.discountType === 'percentage' ? 'İndirim Yüzdesi (%)' : 'İndirim Tutarı (₺)'}
-                  name="discountValue"
-                  type="number"
-                  value={formData.discountValue}
-                  onChange={handleChange}
-                  inputProps={{ min: 0, max: formData.discountType === 'percentage' ? 100 : undefined }}
-                />
-              </Grid>
-            )}
-
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth required>
-                <InputLabel>Ödeme Tipi</InputLabel>
-                <Select
-                  name="paymentType"
-                  value={formData.paymentType}
-                  onChange={handleChange}
-                  label="Ödeme Tipi"
-                >
-                  <MenuItem value="cashFull">Nakit Peşin</MenuItem>
-                  <MenuItem value="cashInstallment">Nakit Taksitli</MenuItem>
-                  <MenuItem value="creditCard">Kredi Kartı</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} sm={6}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={formData.isInvoiced}
-                    onChange={(e) => setFormData({ ...formData, isInvoiced: e.target.checked })}
-                  />
-                }
-                label={`Faturalı (+%${vatRate} KDV)`}
-              />
-            </Grid>
-
-            {/* Credit Card Payment Fields */}
-            {formData.paymentType === 'creditCard' && (
-              <>
+            <form onSubmit={handleSubmit}>
+              <Grid container spacing={2}>
+                {/* Ders Seçimi */}
                 <Grid item xs={12}>
-                  <FormControl fullWidth required>
-                    <InputLabel>Kasa</InputLabel>
-                    <Select
-                      value={selectedCashRegister}
-                      onChange={(e) => setSelectedCashRegister(e.target.value)}
-                      label="Kasa"
-                    >
-                      {cashRegisters.map((register) => (
-                        <MenuItem key={register._id} value={register._id}>
-                          {register.name} - Bakiye: ₺{register.balance?.toLocaleString('tr-TR')}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth required>
-                    <InputLabel>Taksit Sayısı (Komisyon Hesabı)</InputLabel>
-                    <Select
-                      name="installmentCount"
-                      value={formData.installmentCount}
-                      onChange={handleChange}
-                      label="Taksit Sayısı (Komisyon Hesabı)"
-                    >
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
-                        <MenuItem key={num} value={num}>
-                          {num} Taksit
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    </FormControl>
-                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                      Banka öğrenciden kaç taksitte tahsil edecek? (Para kasaya tek seferde girecek)
-                    </Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label="Ödeme Tarihi"
-                    name="paymentDate"
-                    type="date"
-                    value={formData.paymentDate}
-                    onChange={handleChange}
-                    required
-                    InputLabelProps={{ shrink: true }}
-                    helperText="Bugün ise hemen kasaya işlenir, ileri tarih ise o gün işlenir"
-                  />
-                </Grid>
-              </>
-            )}
-
-            {/* Cash Installment Payment Fields */}
-            {formData.paymentType === 'cashInstallment' && (
-              <>
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth required>
-                    <InputLabel>Taksit Sayısı</InputLabel>
-                    <Select
-                      name="installmentCount"
-                      value={formData.installmentCount}
-                      onChange={(e) => {
-                        const count = parseInt(e.target.value);
-                        const installmentAmount = finalAmount / count;
-                        const customInst = Array.from({ length: count }, (_, i) => ({
-                          number: i + 1,
-                          amount: installmentAmount.toFixed(2)
-                        }));
-                        setFormData({
-                          ...formData,
-                          installmentCount: count,
-                          customInstallments: customInst
-                        });
-                      }}
-                      label="Taksit Sayısı"
-                    >
-                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
-                        <MenuItem key={num} value={num}>
-                          {num} Taksit
+                  <FormControl fullWidth required size="small">
+                    <InputLabel>Ders</InputLabel>
+                    <Select name="enrollmentId" value={formData.enrollmentId} onChange={handleChange} label="Ders">
+                      {enrollments.map((enrollment) => (
+                        <MenuItem key={enrollment._id} value={enrollment._id}>
+                          {enrollment.course?.name || 'İsimsiz Ders'}
                         </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
                 </Grid>
 
-                <Grid item xs={12} sm={6}>
-                  <FormControl fullWidth>
-                    <InputLabel>Ödeme Sıklığı</InputLabel>
-                    <Select
-                      name="installmentFrequency"
-                      value={formData.installmentFrequency}
-                      onChange={handleChange}
-                      label="Ödeme Sıklığı"
-                    >
-                      <MenuItem value="monthly">Aylık</MenuItem>
-                      <MenuItem value="weekly">Haftalık</MenuItem>
-                      <MenuItem value="custom">Özel</MenuItem>
+                {/* Aylık Kurs Alanları */}
+                {formData.courseType === 'monthly' && (
+                  <>
+                    <Grid item xs={6} sm={3}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Kayıt Tarihi"
+                        name="enrollmentDate"
+                        type="date"
+                        value={formData.enrollmentDate}
+                        onChange={(e) => {
+                          setFormData(prev => ({ ...prev, enrollmentDate: e.target.value }));
+                          if (formData.enrollmentId && formData.durationMonths > 0) {
+                            calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths);
+                          }
+                        }}
+                        InputLabelProps={{ shrink: true }}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Aylık Ücret (₺)"
+                        name="monthlyFee"
+                        type="number"
+                        value={formData.monthlyFee}
+                        onChange={(e) => {
+                          const newMonthlyFee = parseFloat(e.target.value) || 0;
+                          const newTotal = formData.durationMonths ? newMonthlyFee * parseFloat(formData.durationMonths) : newMonthlyFee;
+                          setFormData(prev => ({ ...prev, monthlyFee: e.target.value, totalAmount: newTotal }));
+                        }}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Süre (Ay)"
+                        name="durationMonths"
+                        type="number"
+                        value={formData.durationMonths}
+                        onChange={handleChange}
+                        inputProps={{ min: 1 }}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Toplam (₺)"
+                        value={formData.totalAmount || 0}
+                        InputProps={{ readOnly: true }}
+                        sx={{ '& .MuiInputBase-input': { fontWeight: 600, color: 'primary.main' } }}
+                      />
+                    </Grid>
+                  </>
+                )}
+
+                {/* Ders Başı Fiyatlama */}
+                {formData.courseType === 'perLesson' && (
+                  <>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Toplam Tutar (₺)"
+                        name="totalAmount"
+                        type="number"
+                        value={formData.totalAmount}
+                        onChange={handleChange}
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Süre (Ay)"
+                        name="durationMonths"
+                        type="number"
+                        value={formData.durationMonths}
+                        onChange={handleChange}
+                      />
+                    </Grid>
+                  </>
+                )}
+
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 1 }} />
+                </Grid>
+
+                {/* İndirim */}
+                <Grid item xs={6} sm={4}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>İndirim</InputLabel>
+                    <Select name="discountType" value={formData.discountType} onChange={handleChange} label="İndirim">
+                      <MenuItem value="none">İndirimsiz</MenuItem>
+                      <MenuItem value="fullScholarship">Tam Burslu (%100)</MenuItem>
+                      <MenuItem value="percentage">Yüzde (%)</MenuItem>
+                      <MenuItem value="fixed">Tutar (₺)</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
 
-                {formData.installmentFrequency === 'custom' && (
-                  <Grid item xs={12} sm={6}>
+                {formData.discountType !== 'none' && formData.discountType !== 'fullScholarship' && (
+                  <Grid item xs={6} sm={4}>
                     <TextField
-                      fullWidth
-                      label="Kaç günde bir?"
-                      name="customFrequencyDays"
+                      fullWidth size="small"
+                      label={formData.discountType === 'percentage' ? 'İndirim (%)' : 'İndirim (₺)'}
+                      name="discountValue"
                       type="number"
-                      value={formData.customFrequencyDays}
+                      value={formData.discountValue}
                       onChange={handleChange}
-                      inputProps={{ min: 1 }}
                     />
                   </Grid>
                 )}
 
-                <Grid item xs={12} sm={6}>
-                  <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
-                    <DatePicker
-                      label="İlk Taksit Tarihi"
-                      value={formData.firstInstallmentDate}
-                      onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
-                      renderInput={(params) => <TextField {...params} fullWidth />}
-                    />
-                  </LocalizationProvider>
+                {/* Ödeme Tipi */}
+                <Grid item xs={6} sm={4}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Ödeme Tipi</InputLabel>
+                    <Select name="paymentType" value={formData.paymentType} onChange={handleChange} label="Ödeme Tipi">
+                      <MenuItem value="cashFull">Nakit Peşin</MenuItem>
+                      <MenuItem value="cashInstallment">Nakit Taksitli</MenuItem>
+                      <MenuItem value="creditCard">Kredi Kartı</MenuItem>
+                      <MenuItem value="mixed">Karma (Nakit + K.Kartı)</MenuItem>
+                    </Select>
+                  </FormControl>
                 </Grid>
-              </>
-            )}
 
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Açıklama"
-                name="description"
-                value={formData.description}
-                onChange={handleChange}
-                multiline
-                rows={3}
-              />
-            </Grid>
+                <Grid item xs={6} sm={4}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={formData.isInvoiced}
+                        onChange={(e) => setFormData({ ...formData, isInvoiced: e.target.checked })}
+                        size="small"
+                      />
+                    }
+                    label={`Faturalı (+%${calculations.vatRate} KDV)`}
+                  />
+                </Grid>
 
-            {formData.totalAmount && (
-              <Grid item xs={12}>
-                <Divider sx={{ my: 2 }} />
-                {(() => {
-                  // Find selected enrollment and course
-                  const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
-                  const course = selectedEnrollment?.course;
+                {/* Karma Ödeme Alanları */}
+                {formData.paymentType === 'mixed' && (
+                  <>
+                    <Grid item xs={12}>
+                      <Alert severity="info" sx={{ py: 0.5 }}>
+                        Toplam: ₺{calculations.subtotal.toLocaleString('tr-TR')} - Nakit ve kredi kartı tutarlarını girin
+                      </Alert>
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Nakit Tutar (₺)"
+                        name="cashAmount"
+                        type="number"
+                        value={formData.cashAmount}
+                        onChange={handleChange}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Kredi Kartı (₺)"
+                        name="creditCardAmount"
+                        type="number"
+                        value={formData.creditCardAmount}
+                        onChange={handleChange}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>K.K. Taksit</InputLabel>
+                        <Select
+                          name="creditCardInstallmentCount"
+                          value={formData.creditCardInstallmentCount}
+                          onChange={handleChange}
+                          label="K.K. Taksit"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                            <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Kasa</InputLabel>
+                        <Select value={selectedCashRegister} onChange={(e) => setSelectedCashRegister(e.target.value)} label="Kasa">
+                          {cashRegisters.map((r) => (
+                            <MenuItem key={r._id} value={r._id}>{r.name}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                        <DatePicker
+                          label="Nakit Ödeme Tarihi"
+                          value={formData.firstInstallmentDate}
+                          onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
+                          slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth size="small"
+                        label="K.Kartı Ödeme Tarihi"
+                        name="paymentDate"
+                        type="date"
+                        value={formData.paymentDate}
+                        onChange={handleChange}
+                        InputLabelProps={{ shrink: true }}
+                      />
+                    </Grid>
+                  </>
+                )}
 
-                  // Calculate lesson details if we have all the info
-                  let lessonCalculation = null;
-                  if (course && formData.durationMonths && course.weeklyFrequency && course.pricingType === 'monthly') {
-                    const months = parseInt(formData.durationMonths);
-                    const weeksPerMonth = 4;
-                    const lessonsPerWeek = course.weeklyFrequency;
+                {/* Kredi Kartı Alanları */}
+                {formData.paymentType === 'creditCard' && (
+                  <>
+                    <Grid item xs={12} sm={4}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Kasa</InputLabel>
+                        <Select value={selectedCashRegister} onChange={(e) => setSelectedCashRegister(e.target.value)} label="Kasa">
+                          {cashRegisters.map((r) => (
+                            <MenuItem key={r._id} value={r._id}>{r.name}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6} sm={4}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Taksit Sayısı</InputLabel>
+                        <Select name="installmentCount" value={formData.installmentCount} onChange={handleChange} label="Taksit Sayısı">
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                            <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6} sm={4}>
+                      <TextField
+                        fullWidth size="small"
+                        label="Ödeme Tarihi"
+                        name="paymentDate"
+                        type="date"
+                        value={formData.paymentDate}
+                        onChange={handleChange}
+                        InputLabelProps={{ shrink: true }}
+                      />
+                    </Grid>
+                  </>
+                )}
 
-                    // Simple calculation: months × 4 weeks × lessons per week
-                    const estimatedLessons = months * weeksPerMonth * lessonsPerWeek;
+                {/* Nakit Taksitli Alanları */}
+                {formData.paymentType === 'cashInstallment' && (
+                  <>
+                    <Grid item xs={6} sm={4}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Taksit Sayısı</InputLabel>
+                        <Select
+                          name="installmentCount"
+                          value={formData.installmentCount}
+                          onChange={(e) => {
+                            const count = parseInt(e.target.value);
+                            setFormData({ ...formData, installmentCount: count });
+                          }}
+                          label="Taksit Sayısı"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                            <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={6} sm={4}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>Ödeme Sıklığı</InputLabel>
+                        <Select name="installmentFrequency" value={formData.installmentFrequency} onChange={handleChange} label="Ödeme Sıklığı">
+                          <MenuItem value="monthly">Aylık</MenuItem>
+                          <MenuItem value="weekly">Haftalık</MenuItem>
+                          <MenuItem value="custom">Özel</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                        <DatePicker
+                          label="İlk Taksit"
+                          value={formData.firstInstallmentDate}
+                          onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
+                          slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
+                    {formData.installmentFrequency === 'custom' && (
+                      <Grid item xs={12}>
+                        <TextField
+                          fullWidth size="small"
+                          label="Kaç günde bir?"
+                          name="customFrequencyDays"
+                          type="number"
+                          value={formData.customFrequencyDays}
+                          onChange={handleChange}
+                        />
+                      </Grid>
+                    )}
+                  </>
+                )}
 
-                    // Calculate total price both ways
-                    const monthlyTotal = course.pricePerMonth * months;
-                    const perLessonTotal = course.pricePerLesson * estimatedLessons;
-                    const difference = Math.abs(monthlyTotal - perLessonTotal);
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth size="small"
+                    label="Açıklama (Opsiyonel)"
+                    name="description"
+                    value={formData.description}
+                    onChange={handleChange}
+                    multiline
+                    rows={2}
+                  />
+                </Grid>
 
-                    // Check if course has schedule
-                    const hasSchedule = course.schedule && course.schedule.trim() !== '';
-
-                    lessonCalculation = {
-                      estimatedLessons,
-                      monthlyTotal,
-                      perLessonTotal,
-                      difference,
-                      hasSchedule,
-                      pricePerLesson: course.pricePerLesson,
-                      pricePerMonth: course.pricePerMonth,
-                      lessonsPerWeek
-                    };
-                  }
-
-                  return (
-                    <Box sx={{ p: 3, bgcolor: 'info.light', borderRadius: 1 }}>
-                      <Typography variant="h6" gutterBottom>
-                        💰 Ödeme Özeti
-                      </Typography>
-
-                      {lessonCalculation && (
-                        <>
-                          {!lessonCalculation.hasSchedule && (
-                            <Alert severity="warning" sx={{ mb: 2 }}>
-                              ⚠️ Bu dersin henüz aylık programı oluşturulmamış! Ücretlendirme tam hesaplanamıyor.
-                              Kesin ders başı ücret hesaplaması için önce dersin aylık programını oluşturun.
-                            </Alert>
-                          )}
-
-                          <Box sx={{ bgcolor: 'background.paper', p: 2, borderRadius: 1, mb: 2 }}>
-                            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                              📊 Ders Sayısı Hesaplaması
-                            </Typography>
-                            <Typography variant="body2">
-                              • {formData.durationMonths} ay × 4 hafta × {lessonCalculation.lessonsPerWeek} gün =
-                              <strong> {lessonCalculation.estimatedLessons} ders</strong>
-                            </Typography>
-                            <Typography variant="body2" sx={{ mt: 1 }}>
-                              • Ders başı ücret: ₺{lessonCalculation.pricePerLesson.toLocaleString('tr-TR')}
-                            </Typography>
-                            <Typography variant="body2">
-                              • Aylık ücret: ₺{lessonCalculation.pricePerMonth.toLocaleString('tr-TR')}
-                            </Typography>
-                          </Box>
-
-                          {lessonCalculation.difference > 10 && (
-                            <Alert severity="info" sx={{ mb: 2 }}>
-                              💡 <strong>Ücretlendirme Karşılaştırması:</strong><br/>
-                              • Aylık Ücret Üzerinden: ₺{lessonCalculation.monthlyTotal.toLocaleString('tr-TR')}<br/>
-                              • Ders Başı Ücret Üzerinden: ₺{lessonCalculation.perLessonTotal.toLocaleString('tr-TR')}<br/>
-                              <strong>Fark: ₺{lessonCalculation.difference.toLocaleString('tr-TR')}</strong>
-                              {lessonCalculation.perLessonTotal > lessonCalculation.monthlyTotal && (
-                                <span> - Bazı aylarda 5 hafta olabilir!</span>
-                              )}
-                            </Alert>
-                          )}
-                        </>
-                      )}
-
-                      <Typography variant="body1">
-                        Kurs Ücreti: ₺{totalAmount.toLocaleString('tr-TR')}
-                      </Typography>
-                      {discountAmount > 0 && (
-                        <Typography variant="body1" color="success.main">
-                          İndirim ({formData.discountType === 'fullScholarship' ? 'Tam Burslu %100' : formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}): -₺{discountAmount.toLocaleString('tr-TR')}
-                        </Typography>
-                      )}
-                      <Typography variant="body1">
-                        Ara Toplam: ₺{subtotal.toLocaleString('tr-TR')}
-                      </Typography>
-                      {formData.paymentType === 'creditCard' && commissionAmount > 0 && (
-                        <Typography variant="body1" color="warning.main">
-                          Banka Komisyonu ({formData.installmentCount} taksit - %{commissionRate.toFixed(2)}): +₺{commissionAmount.toLocaleString('tr-TR')}
-                        </Typography>
-                      )}
-                      <Divider sx={{ my: 1 }} />
-                      <Typography variant="h6" fontWeight="bold" color="primary">
-                        Öğrenciden Tahsil Edilecek: ₺{chargeAmount.toLocaleString('tr-TR')}
-                      </Typography>
-                      {formData.isInvoiced && vatAmount > 0 && (
-                        <>
-                          <Divider sx={{ my: 1 }} />
-                          <Typography variant="body1" color="error.main">
-                            📄 Faturalı (KDV %{vatRate}): +₺{vatAmount.toLocaleString('tr-TR')}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            (₺{chargeAmount.toLocaleString('tr-TR')} üzerinden)
-                          </Typography>
-                        </>
-                      )}
-                      {formData.paymentType !== 'cashFull' && formData.installmentCount > 1 && (
-                        <>
-                          <Divider sx={{ my: 1 }} />
-                          <Typography variant="body2">
-                            Her taksit: ₺{parseFloat(installmentAmount).toLocaleString('tr-TR')}
-                          </Typography>
-                          <Typography variant="body2">
-                            Toplam {formData.installmentCount} taksit
-                          </Typography>
-                        </>
-                      )}
-
-                      {/* Show total lessons and final payment info if monthly details available */}
-                      {monthlyLessonDetails && monthlyLessonDetails.hasSchedule && formData.courseType === 'monthly' && (
-                        <>
-                          <Divider sx={{ my: 2 }} />
-                          <Box sx={{ bgcolor: 'success.light', p: 2, borderRadius: 1 }}>
-                            <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                              📚 Öğrencinin Alacağı Dersler
-                            </Typography>
-                            {monthlyLessonDetails.monthlyDetails.map((month, index) => (
-                              <Typography key={index} variant="body2" sx={{ mb: 0.5 }}>
-                                • {month.month}: {index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial'
-                                  ? `${month.lessonsAfterEnrollment} ders (kayıt sonrası)`
-                                  : `${month.lessonCount} ders`
-                                }
-                              </Typography>
-                            ))}
-                            <Divider sx={{ my: 1 }} />
-                            <Typography variant="subtitle1" fontWeight="bold" color="success.dark">
-                              Toplam Ders Sayısı: {monthlyLessonDetails.monthlyDetails.reduce((sum, month, index) => {
-                                if (index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial') {
-                                  return sum + month.lessonsAfterEnrollment;
-                                }
-                                return sum + month.lessonCount;
-                              }, 0)} ders
-                            </Typography>
-                            <Typography variant="body2" color="success.dark" sx={{ mt: 1 }}>
-                              Ders Başı Ücret: ₺{monthlyLessonDetails.course.pricePerLesson.toLocaleString('tr-TR')}
-                            </Typography>
-                            <Typography variant="body2" color="success.dark" fontWeight="bold">
-                              Toplam Ödeme: ₺{(formData.isInvoiced ? chargeAmount + vatAmount : chargeAmount).toLocaleString('tr-TR')}
-                            </Typography>
-                          </Box>
-                        </>
-                      )}
-                    </Box>
-                  );
-                })()}
+                <Grid item xs={12}>
+                  <Button
+                    type="submit"
+                    variant="contained"
+                    fullWidth
+                    size="large"
+                    disabled={loading || enrollments.length === 0}
+                  >
+                    {loading ? 'Oluşturuluyor...' : 'Ödeme Planı Oluştur'}
+                  </Button>
+                </Grid>
               </Grid>
-            )}
+            </form>
+          </Paper>
+        </Grid>
 
-            <Grid item xs={12}>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  size="large"
-                  disabled={loading || enrollments.length === 0}
-                >
-                  {loading ? 'Oluşturuluyor...' : 'Ödeme Planı Oluştur'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  onClick={() => navigate(`/students/${studentId}`)}
-                >
-                  İptal
-                </Button>
+        {/* Sağ Panel - Özet */}
+        <Grid item xs={12} md={5}>
+          {/* Ödeme Özeti */}
+          <Card sx={{ mb: 2 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                💰 Ödeme Özeti
+                {formData.discountType === 'fullScholarship' && (
+                  <Chip label="Tam Burslu" color="secondary" size="small" />
+                )}
+              </Typography>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="body2" color="text.secondary">Kurs Ücreti:</Typography>
+                  <Typography variant="body2">₺{calculations.totalAmount.toLocaleString('tr-TR')}</Typography>
+                </Box>
+
+                {calculations.discountAmount > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" color="success.main">
+                      İndirim ({formData.discountType === 'fullScholarship' ? '%100' : formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}):
+                    </Typography>
+                    <Typography variant="body2" color="success.main">-₺{calculations.discountAmount.toLocaleString('tr-TR')}</Typography>
+                  </Box>
+                )}
+
+                {formData.paymentType === 'mixed' && (
+                  <>
+                    <Divider sx={{ my: 0.5 }} />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">Nakit:</Typography>
+                      <Typography variant="body2">₺{(parseFloat(formData.cashAmount) || 0).toLocaleString('tr-TR')}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">Kredi Kartı:</Typography>
+                      <Typography variant="body2">₺{(parseFloat(formData.creditCardAmount) || 0).toLocaleString('tr-TR')}</Typography>
+                    </Box>
+                    {calculations.commissionAmount > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2" color="warning.main">
+                          Komisyon (%{calculations.commissionRate}):
+                        </Typography>
+                        <Typography variant="body2" color="warning.main">+₺{calculations.commissionAmount.toLocaleString('tr-TR')}</Typography>
+                      </Box>
+                    )}
+                  </>
+                )}
+
+                {formData.paymentType === 'creditCard' && calculations.commissionAmount > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" color="warning.main">
+                      Komisyon ({formData.installmentCount} taksit - %{calculations.commissionRate}):
+                    </Typography>
+                    <Typography variant="body2" color="warning.main">+₺{calculations.commissionAmount.toLocaleString('tr-TR')}</Typography>
+                  </Box>
+                )}
+
+                <Divider sx={{ my: 0.5 }} />
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary">Ödenecek:</Typography>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                    ₺{calculations.chargeAmount.toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+
+                {formData.isInvoiced && calculations.vatAmount > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" color="error.main">KDV (%{calculations.vatRate}):</Typography>
+                    <Typography variant="body2" color="error.main">₺{calculations.vatAmount.toLocaleString('tr-TR')}</Typography>
+                  </Box>
+                )}
+
+                {formData.paymentType === 'cashInstallment' && formData.installmentCount > 1 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      {formData.installmentCount} × Taksit:
+                    </Typography>
+                    <Typography variant="body2">₺{parseFloat(calculations.installmentAmount).toLocaleString('tr-TR')}</Typography>
+                  </Box>
+                )}
               </Box>
-            </Grid>
-          </Grid>
-        </form>
-      </Paper>
+            </CardContent>
+          </Card>
+
+          {/* Ders Detayları */}
+          {monthlyLessonDetails && formData.courseType === 'monthly' && (
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    📚 Ders Detayları
+                  </Typography>
+                  <IconButton size="small" onClick={() => setShowLessonDetails(!showLessonDetails)}>
+                    {showLessonDetails ? <ExpandLess /> : <ExpandMore />}
+                  </IconButton>
+                </Box>
+
+                <Collapse in={showLessonDetails}>
+                  {!monthlyLessonDetails.hasSchedule && (
+                    <Alert severity="warning" sx={{ mb: 2, py: 0 }}>
+                      <Typography variant="caption">Aylık program oluşturulmamış</Typography>
+                    </Alert>
+                  )}
+
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Aylık: ₺{monthlyLessonDetails.course.monthlyFee.toLocaleString('tr-TR')} |
+                      Ders Başı: ₺{pricePerLesson.toLocaleString('tr-TR')}
+                    </Typography>
+                  </Box>
+
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ py: 0.5, fontWeight: 'bold' }}>Ay</TableCell>
+                        <TableCell align="center" sx={{ py: 0.5, fontWeight: 'bold' }}>Ders</TableCell>
+                        <TableCell align="right" sx={{ py: 0.5, fontWeight: 'bold' }}>Ücret</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {monthlyLessonDetails.monthlyDetails.map((month, index) => {
+                        const isPartialFirst = index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial';
+                        const lessonCount = isPartialFirst ? month.lessonsAfterEnrollment : month.lessonCount;
+                        const monthFee = isPartialFirst
+                          ? lessonCount * pricePerLesson
+                          : monthlyLessonDetails.course.monthlyFee;
+
+                        return (
+                          <TableRow key={month.monthIndex}>
+                            <TableCell sx={{ py: 0.5 }}>
+                              {month.month}
+                              {isPartialFirst && <Chip label="Kısmi" size="small" sx={{ ml: 0.5, height: 16, fontSize: 10 }} />}
+                            </TableCell>
+                            <TableCell align="center" sx={{ py: 0.5 }}>
+                              {lessonCount > 0 ? `${lessonCount} ders` : '-'}
+                            </TableCell>
+                            <TableCell align="right" sx={{ py: 0.5, fontWeight: 500 }}>
+                              ₺{monthFee.toLocaleString('tr-TR')}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+
+                  <Divider sx={{ my: 1 }} />
+
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle2" fontWeight="bold">
+                      Toplam: {monthlyLessonDetails.monthlyDetails.reduce((sum, month, index) => {
+                        if (index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial') {
+                          return sum + month.lessonsAfterEnrollment;
+                        }
+                        return sum + month.lessonCount;
+                      }, 0)} ders
+                    </Typography>
+                    <Typography variant="subtitle2" fontWeight="bold" color="primary">
+                      ₺{calculations.chargeAmount.toLocaleString('tr-TR')}
+                    </Typography>
+                  </Box>
+                </Collapse>
+              </CardContent>
+            </Card>
+          )}
+        </Grid>
+      </Grid>
 
       {/* Partial Pricing Dialog */}
-      <Dialog
-        open={showPartialPricingDialog}
-        onClose={() => setShowPartialPricingDialog(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          ⚠️ İlk Ay Ücretlendirme Seçenekleri
-        </DialogTitle>
+      <Dialog open={showPartialPricingDialog} onClose={() => setShowPartialPricingDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>İlk Ay Ücretlendirme</DialogTitle>
         <DialogContent>
           {monthlyLessonDetails && monthlyLessonDetails.firstMonthPartial && (
             <>
-              <Alert severity="info" sx={{ mb: 3 }}>
-                <Typography variant="body2" gutterBottom>
-                  <strong>{monthlyLessonDetails.monthlyDetails[0]?.month}</strong> ayında öğrenci kayıt tarihinden <strong>önce</strong> {' '}
-                  <strong>{monthlyLessonDetails.firstMonthPartial.lessonsBeforeEnrollment} ders</strong> yapılmış.
-                </Typography>
-                <Typography variant="body2">
-                  Öğrenci <strong>{monthlyLessonDetails.firstMonthPartial.enrollmentDate}</strong> tarihinde kayıt oldu.
-                  Kayıt tarihinden <strong>sonra</strong> {monthlyLessonDetails.firstMonthPartial.lessonsAfterEnrollment} ders var.
-                </Typography>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                {monthlyLessonDetails.monthlyDetails[0]?.month} ayında kayıt öncesi {monthlyLessonDetails.firstMonthPartial.lessonsBeforeEnrollment} ders yapılmış.
               </Alert>
 
               <RadioGroup
                 value={formData.partialPricingChoice}
                 onChange={(e) => {
                   const choice = e.target.value;
-                  setFormData(prev => ({ ...prev, partialPricingChoice: choice }));
-
-                  // Update total amount based on choice
                   const newTotal = choice === 'full'
                     ? monthlyLessonDetails.pricing.totalByMonthly
                     : monthlyLessonDetails.pricing.totalByPartialFirst;
-
-                  setFormData(prev => ({ ...prev, totalAmount: newTotal }));
+                  setFormData(prev => ({ ...prev, partialPricingChoice: choice, totalAmount: newTotal }));
                 }}
               >
-                <Box sx={{ border: '2px solid', borderColor: 'divider', borderRadius: 2, p: 2, mb: 2 }}>
-                  <FormControlLabel
-                    value="full"
-                    control={<Radio />}
-                    label={
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight="bold">
-                          ✅ Seçenek 1: Tam Aylık Ücret
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                          • İlk ay (tam aylık ücret): ₺{monthlyLessonDetails.course.monthlyFee.toLocaleString('tr-TR')}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          • Sonraki {formData.durationMonths - 1} ay: ₺{(monthlyLessonDetails.course.monthlyFee * (formData.durationMonths - 1)).toLocaleString('tr-TR')}
-                        </Typography>
-                        <Divider sx={{ my: 1 }} />
-                        <Typography variant="subtitle2" color="primary">
-                          <strong>TOPLAM: ₺{monthlyLessonDetails.pricing.totalByMonthly.toLocaleString('tr-TR')}</strong>
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </Box>
-
-                <Box sx={{ border: '2px solid', borderColor: 'success.main', borderRadius: 2, p: 2, bgcolor: 'success.50' }}>
-                  <FormControlLabel
-                    value="partial"
-                    control={<Radio />}
-                    label={
-                      <Box>
-                        <Typography variant="subtitle1" fontWeight="bold" color="success.main">
-                          💰 Seçenek 2: Kısmi Ücret (Sadece Katılacağı Dersler) - ÖNERİLEN
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                          • İlk ay ({monthlyLessonDetails.firstMonthPartial.lessonsAfterEnrollment} ders × ₺{monthlyLessonDetails.course.pricePerLesson.toLocaleString('tr-TR')}):
-                          ₺{monthlyLessonDetails.pricing.partialFirstMonthFee.toLocaleString('tr-TR')}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          • Sonraki {formData.durationMonths - 1} ay: ₺{(monthlyLessonDetails.course.monthlyFee * (formData.durationMonths - 1)).toLocaleString('tr-TR')}
-                        </Typography>
-                        <Divider sx={{ my: 1 }} />
-                        <Typography variant="subtitle2" color="success.main">
-                          <strong>TOPLAM: ₺{monthlyLessonDetails.pricing.totalByPartialFirst.toLocaleString('tr-TR')}</strong>
-                        </Typography>
-                        <Typography variant="body2" color="success.dark" sx={{ mt: 1 }}>
-                          ✨ TASARRUF: ₺{(monthlyLessonDetails.pricing.totalByMonthly - monthlyLessonDetails.pricing.totalByPartialFirst).toLocaleString('tr-TR')}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </Box>
+                <FormControlLabel
+                  value="full"
+                  control={<Radio />}
+                  label={`Tam Aylık Ücret - ₺${monthlyLessonDetails.pricing.totalByMonthly.toLocaleString('tr-TR')}`}
+                />
+                <FormControlLabel
+                  value="partial"
+                  control={<Radio />}
+                  label={`Kısmi Ücret (${monthlyLessonDetails.firstMonthPartial.lessonsAfterEnrollment} ders) - ₺${monthlyLessonDetails.pricing.totalByPartialFirst.toLocaleString('tr-TR')} (₺${(monthlyLessonDetails.pricing.totalByMonthly - monthlyLessonDetails.pricing.totalByPartialFirst).toLocaleString('tr-TR')} tasarruf)`}
+                />
               </RadioGroup>
             </>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowPartialPricingDialog(false)} variant="contained">
-            Seçimi Onayla
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Rate Dialog */}
-      <Dialog open={rateDialog.open} onClose={() => setRateDialog({ ...rateDialog, open: false })}>
-        <DialogTitle>
-          {rateDialog.type === 'commission'
-            ? `${rateDialog.installmentCount} Taksit Komisyon Oranı Tanımlı Değil`
-            : 'KDV Oranı Tanımlı Değil'}
-        </DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            {rateDialog.type === 'commission'
-              ? `${rateDialog.installmentCount} taksit için kredi kartı komisyon oranı ayarlarda tanımlanmamış. Lütfen bu ödeme için kullanılacak oranı girin.`
-              : 'KDV oranı ayarlarda tanımlanmamış. Lütfen bu ödeme için kullanılacak KDV oranını girin.'}
-          </Alert>
-          <TextField
-            autoFocus
-            fullWidth
-            label={rateDialog.type === 'commission' ? 'Komisyon Oranı (%)' : 'KDV Oranı (%)'}
-            type="number"
-            value={rateDialog.value}
-            onChange={(e) => setRateDialog({ ...rateDialog, value: e.target.value })}
-            inputProps={{ min: 0, max: 100, step: 0.1 }}
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRateDialog({ ...rateDialog, open: false })}>
-            İptal
-          </Button>
-          <Button onClick={handleRateDialogSubmit} variant="contained">
-            Devam Et
-          </Button>
+          <Button onClick={() => setShowPartialPricingDialog(false)} variant="contained">Onayla</Button>
         </DialogActions>
       </Dialog>
     </Container>
