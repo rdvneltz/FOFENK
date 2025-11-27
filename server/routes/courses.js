@@ -164,51 +164,62 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
       return res.status(404).json({ message: 'Ders bulunamadı' });
     }
 
-    const start = new Date(startDate);
-    const enrollment = enrollmentDate ? new Date(enrollmentDate) : new Date();
+    // Tarihleri doğru şekilde parse et - sadece yıl-ay-gün kullan
+    const parseDate = (dateStr) => {
+      if (!dateStr) return new Date();
+      // String ise (YYYY-MM-DD formatı)
+      if (typeof dateStr === 'string') {
+        const parts = dateStr.split('T')[0].split('-');
+        return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0);
+      }
+      // Date object ise
+      const d = new Date(dateStr);
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+    };
+
+    const start = parseDate(startDate);
+    const enrollment = parseDate(enrollmentDate);
     const monthlyDetails = [];
     let hasSchedule = false;
     let firstMonthPartial = null;
 
     // Calculate lesson counts for each month
     for (let i = 0; i < durationMonths; i++) {
-      const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1);
-      const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, 1);
+      const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1, 0, 0, 0, 0);
+      const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, 1, 0, 0, 0, 0);
 
-      // Count ALL scheduled lessons in this month
-      const lessonCount = await ScheduledLesson.countDocuments({
+      // Tüm dersleri al ve tarihleri karşılaştır (MongoDB timezone sorunlarını aşmak için)
+      const allLessons = await ScheduledLesson.find({
         course: courseId,
         date: {
           $gte: monthStart,
           $lt: monthEnd
         },
         status: { $ne: 'cancelled' }
-      });
+      }).select('date');
+
+      const lessonCount = allLessons.length;
 
       // For first month, also count lessons AFTER enrollment date
       let lessonsAfterEnrollment = lessonCount;
       let lessonsBeforeEnrollment = 0;
 
       if (i === 0 && enrollmentDate) {
-        // Count lessons before enrollment date (student won't attend)
-        lessonsBeforeEnrollment = await ScheduledLesson.countDocuments({
-          course: courseId,
-          date: {
-            $gte: monthStart,
-            $lt: enrollment
-          },
-          status: { $ne: 'cancelled' }
-        });
+        // Her dersi tek tek kontrol et
+        lessonsBeforeEnrollment = 0;
+        lessonsAfterEnrollment = 0;
 
-        // Count lessons after enrollment date (student will attend)
-        lessonsAfterEnrollment = await ScheduledLesson.countDocuments({
-          course: courseId,
-          date: {
-            $gte: enrollment,
-            $lt: monthEnd
-          },
-          status: { $ne: 'cancelled' }
-        });
+        for (const lesson of allLessons) {
+          const lessonDate = parseDate(lesson.date);
+
+          // Kayıt tarihinden önce mi? (kayıt günü dahil değil - o gün öğrenci katılabilir)
+          if (lessonDate < enrollment) {
+            lessonsBeforeEnrollment++;
+          } else {
+            // Kayıt günü ve sonrası - öğrenci katılabilir
+            lessonsAfterEnrollment++;
+          }
+        }
 
         // Store partial pricing info for first month
         if (lessonsBeforeEnrollment > 0 && lessonsAfterEnrollment > 0) {
