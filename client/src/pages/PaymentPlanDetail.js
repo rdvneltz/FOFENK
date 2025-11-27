@@ -161,10 +161,12 @@ const PaymentPlanDetail = () => {
       commission = (amount * commissionRate) / 100;
     }
 
-    const subtotal = amount + commission;
+    // Total that student pays = base amount + commission (VAT is NOT added to student's payment)
+    const total = amount + commission;
+
+    // VAT is calculated for expense tracking only, not added to student's payment
     const vatRate = getVatRate();
-    const vat = formData.isInvoiced ? (subtotal * vatRate) / 100 : 0;
-    const total = subtotal + vat;
+    const vat = formData.isInvoiced ? (total * vatRate) / 100 : 0;
 
     return { commission, commissionRate, vat, vatRate, total };
   };
@@ -455,8 +457,12 @@ const PaymentPlanDetail = () => {
                   <TableCell>Ödeme Şekli</TableCell>
                   <TableCell align="right">Tutar</TableCell>
                   <TableCell align="right">Komisyon</TableCell>
-                  <TableCell align="right">KDV</TableCell>
-                  <TableCell align="right">Toplam</TableCell>
+                  <TableCell align="right">
+                    <Tooltip title="KDV öğrenciye yansıtılmaz, ödeme alındığında şirket gideri olarak kasadan düşülür">
+                      <span>KDV (Gider)</span>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell align="right">Öğrenci Ödemesi</TableCell>
                   <TableCell>Durum</TableCell>
                   <TableCell align="right">İşlemler</TableCell>
                 </TableRow>
@@ -659,14 +665,14 @@ const PaymentPlanDetail = () => {
                       }))}
                     />
                   }
-                  label={`Faturalı (+%${getVatRate()} KDV)`}
+                  label="Faturalı"
                 />
               </Grid>
 
               {/* Hesaplama Özeti */}
               <Grid item xs={12}>
                 <Paper sx={{ p: 2, bgcolor: 'grey.100' }}>
-                  <Typography variant="subtitle2" gutterBottom>Hesaplama</Typography>
+                  <Typography variant="subtitle2" gutterBottom>Öğrenci Ödemesi</Typography>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                       <Typography variant="body2">Tutar:</Typography>
@@ -684,18 +690,8 @@ const PaymentPlanDetail = () => {
                         </Typography>
                       </Box>
                     )}
-                    {editInstallmentCalcs.vat > 0 && (
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="body2" color="error.main">
-                          KDV (%{getVatRate()}):
-                        </Typography>
-                        <Typography variant="body2" color="error.main">
-                          +₺{editInstallmentCalcs.vat.toLocaleString('tr-TR')}
-                        </Typography>
-                      </Box>
-                    )}
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-                      <Typography variant="subtitle2">Toplam:</Typography>
+                      <Typography variant="subtitle2">Öğrenciden Tahsil:</Typography>
                       <Typography variant="subtitle2" color="primary">
                         ₺{editInstallmentCalcs.total.toLocaleString('tr-TR')}
                       </Typography>
@@ -703,6 +699,26 @@ const PaymentPlanDetail = () => {
                   </Box>
                 </Paper>
               </Grid>
+
+              {/* KDV Bilgisi - Faturalı ise */}
+              {editInstallmentDialog.formData.isInvoiced && (
+                <Grid item xs={12}>
+                  <Paper sx={{ p: 2, bgcolor: 'error.light' }}>
+                    <Typography variant="subtitle2" gutterBottom>Şirket Gideri (KDV)</Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">
+                        KDV (%{getVatRate()}):
+                      </Typography>
+                      <Typography variant="body2" fontWeight="bold">
+                        ₺{editInstallmentCalcs.vat.toLocaleString('tr-TR')}
+                      </Typography>
+                    </Box>
+                    <Typography variant="caption" color="text.secondary">
+                      Bu tutar öğrenciye yansıtılmaz, ödeme alındığında kasadan düşülür.
+                    </Typography>
+                  </Paper>
+                </Grid>
+              )}
             </Grid>
           </Box>
         </DialogContent>
