@@ -193,20 +193,24 @@ const PaymentPlan = () => {
       calculatedTotal = priceValue;
     }
 
+    // Get the enrollment date BEFORE setting state (async issue fix)
+    const newEnrollmentDate = selectedEnrollment.enrollmentDate
+      ? new Date(selectedEnrollment.enrollmentDate).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0];
+
     setFormData((prev) => ({
       ...prev,
       enrollmentId,
       courseType: isMonthly ? 'monthly' : 'perLesson',
-      enrollmentDate: selectedEnrollment.enrollmentDate
-        ? new Date(selectedEnrollment.enrollmentDate).toISOString().split('T')[0]
-        : new Date().toISOString().split('T')[0],
+      enrollmentDate: newEnrollmentDate,
       monthlyFee: isMonthly ? priceValue : '',
       totalAmount: calculatedTotal,
       durationMonths: suggestedMonths
     }));
 
     if (isMonthly && suggestedMonths > 0) {
-      await calculateMonthlyLessonDetails(enrollmentId, suggestedMonths, enrollmentsToUse);
+      // Pass the enrollment date explicitly to avoid async state issue
+      await calculateMonthlyLessonDetails(enrollmentId, suggestedMonths, enrollmentsToUse, newEnrollmentDate);
     } else {
       setMonthlyLessonDetails(null);
     }
@@ -1115,35 +1119,81 @@ const PaymentPlan = () => {
       <Dialog open={showPartialPricingDialog} onClose={() => setShowPartialPricingDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>İlk Ay Ücretlendirme</DialogTitle>
         <DialogContent>
-          {monthlyLessonDetails && monthlyLessonDetails.firstMonthPartial && (
-            <>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                {monthlyLessonDetails.monthlyDetails[0]?.month} ayında kayıt öncesi {monthlyLessonDetails.firstMonthPartial.lessonsBeforeEnrollment} ders yapılmış.
-              </Alert>
+          {monthlyLessonDetails && monthlyLessonDetails.firstMonthPartial && (() => {
+            const monthlyFee = monthlyLessonDetails.course?.monthlyFee || 0;
+            const pricePerLesson = monthlyLessonDetails.course?.pricePerLesson || 0;
+            const durationMonths = parseInt(formData.durationMonths) || 0;
+            const lessonsAfterEnrollment = monthlyLessonDetails.firstMonthPartial.lessonsAfterEnrollment;
+            const lessonsBeforeEnrollment = monthlyLessonDetails.firstMonthPartial.lessonsBeforeEnrollment;
+            const partialFirstMonthFee = monthlyLessonDetails.pricing.partialFirstMonthFee || 0;
+            const remainingMonths = durationMonths - 1;
+            const remainingMonthsFee = remainingMonths * monthlyFee;
+            const savings = monthlyLessonDetails.pricing.totalByMonthly - monthlyLessonDetails.pricing.totalByPartialFirst;
 
-              <RadioGroup
-                value={formData.partialPricingChoice}
-                onChange={(e) => {
-                  const choice = e.target.value;
-                  const newTotal = choice === 'full'
-                    ? monthlyLessonDetails.pricing.totalByMonthly
-                    : monthlyLessonDetails.pricing.totalByPartialFirst;
-                  setFormData(prev => ({ ...prev, partialPricingChoice: choice, totalAmount: newTotal }));
-                }}
-              >
-                <FormControlLabel
-                  value="full"
-                  control={<Radio />}
-                  label={`Tam Aylık Ücret - ₺${monthlyLessonDetails.pricing.totalByMonthly.toLocaleString('tr-TR')}`}
-                />
-                <FormControlLabel
-                  value="partial"
-                  control={<Radio />}
-                  label={`Kısmi Ücret (${monthlyLessonDetails.firstMonthPartial.lessonsAfterEnrollment} ders) - ₺${monthlyLessonDetails.pricing.totalByPartialFirst.toLocaleString('tr-TR')} (₺${(monthlyLessonDetails.pricing.totalByMonthly - monthlyLessonDetails.pricing.totalByPartialFirst).toLocaleString('tr-TR')} tasarruf)`}
-                />
-              </RadioGroup>
-            </>
-          )}
+            return (
+              <>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  {monthlyLessonDetails.monthlyDetails[0]?.month} ayında kayıt öncesi <strong>{lessonsBeforeEnrollment}</strong> ders yapılmış.
+                  <br />
+                  <Typography variant="caption">
+                    Kayıt sonrası katılabilecek ders sayısı: <strong>{lessonsAfterEnrollment}</strong>
+                  </Typography>
+                </Alert>
+
+                <RadioGroup
+                  value={formData.partialPricingChoice}
+                  onChange={(e) => {
+                    const choice = e.target.value;
+                    const newTotal = choice === 'full'
+                      ? monthlyLessonDetails.pricing.totalByMonthly
+                      : monthlyLessonDetails.pricing.totalByPartialFirst;
+                    setFormData(prev => ({ ...prev, partialPricingChoice: choice, totalAmount: newTotal }));
+                  }}
+                >
+                  <FormControlLabel
+                    value="full"
+                    control={<Radio />}
+                    label={
+                      <Box>
+                        <Typography fontWeight="bold">Tam Aylık Ücret</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          ₺{monthlyFee.toLocaleString('tr-TR')} x {durationMonths} ay = <strong>₺{monthlyLessonDetails.pricing.totalByMonthly.toLocaleString('tr-TR')}</strong>
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                  <FormControlLabel
+                    value="partial"
+                    control={<Radio />}
+                    label={
+                      <Box>
+                        <Typography fontWeight="bold">
+                          Kısmi Ücret ({lessonsAfterEnrollment} ders)
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          İlk ay: {lessonsAfterEnrollment} ders x ₺{pricePerLesson.toLocaleString('tr-TR')} = ₺{partialFirstMonthFee.toLocaleString('tr-TR')}
+                        </Typography>
+                        {remainingMonths > 0 && (
+                          <Typography variant="body2" color="text.secondary">
+                            Kalan: ₺{monthlyFee.toLocaleString('tr-TR')} x {remainingMonths} ay = ₺{remainingMonthsFee.toLocaleString('tr-TR')}
+                          </Typography>
+                        )}
+                        <Typography variant="body2" color="primary" fontWeight="bold">
+                          Toplam: ₺{monthlyLessonDetails.pricing.totalByPartialFirst.toLocaleString('tr-TR')}
+                          <Chip
+                            label={`₺${savings.toLocaleString('tr-TR')} tasarruf`}
+                            size="small"
+                            color="success"
+                            sx={{ ml: 1 }}
+                          />
+                        </Typography>
+                      </Box>
+                    }
+                  />
+                </RadioGroup>
+              </>
+            );
+          })()}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShowPartialPricingDialog(false)} variant="contained">Onayla</Button>
