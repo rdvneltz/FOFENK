@@ -430,7 +430,16 @@ router.post('/:id/process-credit-card-payment', async (req, res) => {
 // Pay installment (for cash and credit card installment payments)
 router.post('/:id/pay-installment', async (req, res) => {
   try {
-    const { installmentNumber, amount, cashRegisterId, isInvoiced, paymentDate, vatRate } = req.body;
+    const {
+      installmentNumber,
+      amount,
+      cashRegisterId,
+      isInvoiced,
+      paymentDate,
+      vatRate,
+      overpaymentHandling, // 'next' or 'distribute'
+      excessAmount
+    } = req.body;
 
     const paymentPlan = await PaymentPlan.findById(req.params.id)
       .populate('student', 'firstName lastName');
@@ -450,6 +459,30 @@ router.post('/:id/pay-installment', async (req, res) => {
     // Determine if this is a credit card payment
     const isCreditCardPayment = paymentPlan.paymentType === 'creditCard';
 
+    // Handle overpayment distribution
+    let overpaymentNote = '';
+    if (excessAmount > 0 && overpaymentHandling) {
+      const remainingInstallments = paymentPlan.installments.filter(
+        inst => !inst.isPaid && inst.installmentNumber !== installmentNumber
+      );
+
+      if (remainingInstallments.length > 0) {
+        if (overpaymentHandling === 'next') {
+          // Apply excess to next installment only
+          const nextInstallment = remainingInstallments[0];
+          nextInstallment.amount = Math.max(0, (nextInstallment.amount || 0) - excessAmount);
+          overpaymentNote = ` (₺${excessAmount} fazla ödeme ${nextInstallment.installmentNumber}. taksite uygulandı)`;
+        } else if (overpaymentHandling === 'distribute') {
+          // Distribute excess across all remaining installments
+          const excessPerInstallment = excessAmount / remainingInstallments.length;
+          for (const inst of remainingInstallments) {
+            inst.amount = Math.max(0, (inst.amount || 0) - excessPerInstallment);
+          }
+          overpaymentNote = ` (₺${excessAmount} fazla ödeme ${remainingInstallments.length} taksite dağıtıldı)`;
+        }
+      }
+    }
+
     // Create payment
     const payment = new Payment({
       student: paymentPlan.student._id,
@@ -466,7 +499,7 @@ router.post('/:id/pay-installment', async (req, res) => {
       season: paymentPlan.season,
       institution: paymentPlan.institution,
       status: 'completed', // Mark as completed immediately
-      notes: `${installmentNumber}. taksit ödemesi`,
+      notes: `${installmentNumber}. taksit ödemesi${overpaymentNote}`,
       createdBy: req.body.createdBy
     });
 
@@ -548,10 +581,18 @@ router.post('/:id/pay-installment', async (req, res) => {
     paymentPlan.paidAmount = (paymentPlan.paidAmount || 0) + amount;
     paymentPlan.remainingAmount = paymentPlan.discountedAmount - paymentPlan.paidAmount;
 
-    // Check if all installments are paid
-    const allPaid = paymentPlan.installments.every(inst => inst.isPaid);
-    if (allPaid) {
+    // Check if all installments are paid or remaining amounts are 0
+    const allPaid = paymentPlan.installments.every(inst => inst.isPaid || inst.amount <= 0);
+    if (allPaid || paymentPlan.remainingAmount <= 0) {
       paymentPlan.isCompleted = true;
+      // Mark any zero-amount installments as paid
+      for (const inst of paymentPlan.installments) {
+        if (!inst.isPaid && inst.amount <= 0) {
+          inst.isPaid = true;
+          inst.paidAmount = 0;
+          inst.paidDate = new Date();
+        }
+      }
     }
 
     await paymentPlan.save();
@@ -562,7 +603,7 @@ router.post('/:id/pay-installment', async (req, res) => {
       action: 'update',
       entity: 'PaymentPlan',
       entityId: paymentPlan._id,
-      description: `${installmentNumber}. taksit ödendi (${amount} TL)`,
+      description: `${installmentNumber}. taksit ödendi (${amount} TL)${overpaymentNote}`,
       institution: paymentPlan.institution,
       season: paymentPlan.season
     });

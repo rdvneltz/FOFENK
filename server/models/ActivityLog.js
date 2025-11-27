@@ -22,7 +22,9 @@ const activityLogSchema = new mongoose.Schema({
       'setup',
       'login',
       'logout',
-      'reset'
+      'reset',
+      'refund',
+      'transfer'
     ]
   },
   entity: {
