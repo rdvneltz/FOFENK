@@ -387,7 +387,7 @@ const PaymentPlan = () => {
     setInstallmentDetails(updated);
   };
 
-  // Calculate totals including commission and VAT per installment
+  // Calculate totals including commission per installment (VAT is NOT added to student payment)
   const calculatedInstallments = useMemo(() => {
     return installmentDetails.map(inst => {
       let commission = 0;
@@ -397,10 +397,12 @@ const PaymentPlan = () => {
         commission = (inst.amount * commissionRate) / 100;
       }
 
-      const subtotal = inst.amount + commission;
+      // Total that student pays = base amount + commission (VAT is NOT added)
+      const total = inst.amount + commission;
+
+      // VAT is calculated for expense tracking only, not added to student's payment
       const vatRate = getVatRate();
-      const vat = inst.isInvoiced ? (subtotal * vatRate) / 100 : 0;
-      const total = subtotal + vat;
+      const vat = inst.isInvoiced ? (total * vatRate) / 100 : 0;
 
       return {
         ...inst,
@@ -837,21 +839,23 @@ const PaymentPlan = () => {
                   </Box>
                 )}
 
-                {grandTotals.vat > 0 && (
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2" color="error.main">KDV:</Typography>
-                    <Typography variant="body2" color="error.main">+₺{grandTotals.vat.toLocaleString('tr-TR')}</Typography>
-                  </Box>
-                )}
-
                 <Divider sx={{ my: 0.5 }} />
 
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="subtitle1" fontWeight="bold" color="primary">Toplam Ödenecek:</Typography>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary">Öğrenciden Tahsil:</Typography>
                   <Typography variant="subtitle1" fontWeight="bold" color="primary">
                     ₺{grandTotals.total.toLocaleString('tr-TR')}
                   </Typography>
                 </Box>
+
+                {grandTotals.vat > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1, pt: 1, borderTop: '1px dashed', borderColor: 'divider' }}>
+                    <Tooltip title="Faturalı ödemelerde KDV şirket gideri olarak kasadan düşülür">
+                      <Typography variant="body2" color="error.main">Şirket Gideri (KDV):</Typography>
+                    </Tooltip>
+                    <Typography variant="body2" color="error.main">₺{grandTotals.vat.toLocaleString('tr-TR')}</Typography>
+                  </Box>
+                )}
               </Box>
             </CardContent>
           </Card>
@@ -991,40 +995,41 @@ const PaymentPlan = () => {
                                 size="small"
                               />
                             }
-                            label={<Typography variant="body2">Faturalı (+%{getVatRate()} KDV)</Typography>}
+                            label={<Typography variant="body2">Faturalı</Typography>}
                           />
                         </Grid>
                       </Grid>
 
-                      {/* Komisyon ve KDV Detayları */}
-                      {(inst.commission > 0 || inst.vat > 0) && (
+                      {/* Komisyon Detayı */}
+                      {inst.commission > 0 && (
                         <Box sx={{ mt: 1, pt: 1, borderTop: '1px dashed', borderColor: 'divider' }}>
-                          <Grid container spacing={1}>
-                            {inst.commission > 0 && (
-                              <Grid item xs={6}>
-                                <Typography variant="caption" color="warning.main">
-                                  Komisyon (%{inst.commissionRate}): +₺{inst.commission.toLocaleString('tr-TR')}
-                                </Typography>
-                              </Grid>
-                            )}
-                            {inst.vat > 0 && (
-                              <Grid item xs={6}>
-                                <Typography variant="caption" color="error.main">
-                                  KDV (%{inst.vatRate}): +₺{inst.vat.toLocaleString('tr-TR')}
-                                </Typography>
-                              </Grid>
-                            )}
-                          </Grid>
+                          <Typography variant="caption" color="warning.main">
+                            Komisyon (%{inst.commissionRate}): +₺{inst.commission.toLocaleString('tr-TR')}
+                          </Typography>
                         </Box>
                       )}
 
                       {/* Toplam */}
                       <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="body2" fontWeight="bold">Toplam:</Typography>
+                        <Typography variant="body2" fontWeight="bold">Öğrenci Ödemesi:</Typography>
                         <Typography variant="body2" fontWeight="bold" color="primary">
                           ₺{inst.total.toLocaleString('tr-TR')}
                         </Typography>
                       </Box>
+
+                      {/* KDV Gideri (Faturalı ise) */}
+                      {inst.vat > 0 && (
+                        <Box sx={{ mt: 0.5, display: 'flex', justifyContent: 'space-between' }}>
+                          <Tooltip title="Öğrenciye yansıtılmaz, kasadan düşülür">
+                            <Typography variant="caption" color="error.main">
+                              Şirket Gideri (KDV %{inst.vatRate}):
+                            </Typography>
+                          </Tooltip>
+                          <Typography variant="caption" color="error.main">
+                            ₺{inst.vat.toLocaleString('tr-TR')}
+                          </Typography>
+                        </Box>
+                      )}
                     </Paper>
                   ))}
                 </Collapse>
