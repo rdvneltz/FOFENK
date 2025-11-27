@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -32,12 +32,14 @@ import {
   TableRow,
   Collapse,
   IconButton,
+  Tooltip,
 } from '@mui/material';
-import { ArrowBack, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { ArrowBack, ExpandMore, ExpandLess, Edit, CreditCard, Money, Receipt } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { tr } from 'date-fns/locale';
+import { format, addMonths, addDays, addWeeks } from 'date-fns';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -59,21 +61,14 @@ const PaymentPlan = () => {
     durationMonths: '',
     discountType: 'none',
     discountValue: 0,
-    paymentType: 'cashFull',
+    paymentType: 'cashInstallment',
     installmentCount: 1,
     firstInstallmentDate: new Date(),
     paymentDate: new Date().toISOString().split('T')[0],
     installmentFrequency: 'monthly',
     customFrequencyDays: 30,
-    useCustomAmounts: false,
-    customInstallments: [],
-    isInvoiced: false,
     description: '',
     partialPricingChoice: 'full',
-    // Mixed payment fields
-    cashAmount: '',
-    creditCardAmount: '',
-    creditCardInstallmentCount: 1,
   });
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
@@ -81,6 +76,10 @@ const PaymentPlan = () => {
   const [monthlyLessonDetails, setMonthlyLessonDetails] = useState(null);
   const [showLessonDetails, setShowLessonDetails] = useState(true);
   const [showPartialPricingDialog, setShowPartialPricingDialog] = useState(false);
+  const [showInstallmentDetails, setShowInstallmentDetails] = useState(true);
+
+  // Installment details state - each installment can have custom settings
+  const [installmentDetails, setInstallmentDetails] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -119,11 +118,11 @@ const PaymentPlan = () => {
     }
   };
 
-  const getCreditCardCommissionRate = (installmentCount) => {
+  const getCreditCardCommissionRate = useCallback((installmentCount) => {
     if (!settings || !settings.creditCardRates) return 0;
     const rateObj = settings.creditCardRates.find(r => r.installments === installmentCount);
     return rateObj ? rateObj.rate : 0;
-  };
+  }, [settings]);
 
   const getVatRate = () => settings?.vatRate || 10;
 
@@ -234,10 +233,9 @@ const PaymentPlan = () => {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Calculations
-  const calculations = useMemo(() => {
+  // Calculate base amount after discount
+  const baseAmount = useMemo(() => {
     const totalAmount = parseFloat(formData.totalAmount) || 0;
-
     let discountAmount = 0;
     if (formData.discountType === 'fullScholarship') {
       discountAmount = totalAmount;
@@ -246,65 +244,183 @@ const PaymentPlan = () => {
     } else if (formData.discountType === 'fixed') {
       discountAmount = parseFloat(formData.discountValue) || 0;
     }
+    return totalAmount - discountAmount;
+  }, [formData.totalAmount, formData.discountType, formData.discountValue]);
 
-    const subtotal = totalAmount - discountAmount;
-    const vatRate = getVatRate();
+  // Generate/update installment details when relevant fields change
+  useEffect(() => {
+    if (formData.paymentType === 'cashFull' || formData.paymentType === 'creditCard') {
+      // Single payment - one installment
+      const paymentMethod = formData.paymentType === 'creditCard' ? 'creditCard' : 'cash';
+      setInstallmentDetails([{
+        installmentNumber: 1,
+        amount: baseAmount,
+        dueDate: formData.paymentType === 'creditCard'
+          ? new Date(formData.paymentDate)
+          : new Date(formData.firstInstallmentDate),
+        paymentMethod: paymentMethod,
+        isInvoiced: false,
+        isCustomAmount: false,
+        creditCardInstallments: formData.paymentType === 'creditCard' ? parseInt(formData.installmentCount) || 1 : 1
+      }]);
+    } else if (formData.paymentType === 'cashInstallment') {
+      const count = parseInt(formData.installmentCount) || 1;
+      const startDate = new Date(formData.firstInstallmentDate);
 
-    // For mixed payments
-    if (formData.paymentType === 'mixed') {
-      const cashAmount = parseFloat(formData.cashAmount) || 0;
-      const creditCardAmount = parseFloat(formData.creditCardAmount) || 0;
-      const commissionRate = getCreditCardCommissionRate(parseInt(formData.creditCardInstallmentCount));
-      const commissionAmount = (creditCardAmount * commissionRate) / 100;
-      const totalWithCommission = cashAmount + creditCardAmount + commissionAmount;
-      const vatAmount = formData.isInvoiced ? (totalWithCommission * vatRate) / 100 : 0;
+      // Keep existing custom amounts if count matches
+      if (installmentDetails.length === count && installmentDetails.every(d => d.paymentMethod !== 'creditCard')) {
+        // Just update dates if needed
+        return;
+      }
+
+      const perInstallment = baseAmount / count;
+      const newDetails = [];
+
+      for (let i = 0; i < count; i++) {
+        let dueDate = new Date(startDate);
+        if (formData.installmentFrequency === 'weekly') {
+          dueDate = addWeeks(startDate, i);
+        } else if (formData.installmentFrequency === 'custom') {
+          dueDate = addDays(startDate, i * parseInt(formData.customFrequencyDays || 30));
+        } else {
+          dueDate = addMonths(startDate, i);
+        }
+
+        newDetails.push({
+          installmentNumber: i + 1,
+          amount: perInstallment,
+          dueDate,
+          paymentMethod: 'cash',
+          isInvoiced: false,
+          isCustomAmount: false,
+          creditCardInstallments: 1
+        });
+      }
+      setInstallmentDetails(newDetails);
+    }
+  }, [formData.paymentType, formData.installmentCount, formData.firstInstallmentDate,
+      formData.installmentFrequency, formData.customFrequencyDays, formData.paymentDate, baseAmount]);
+
+  // Handle installment amount change with auto-redistribution
+  const handleInstallmentAmountChange = (index, newAmount) => {
+    const amount = parseFloat(newAmount) || 0;
+    const updated = [...installmentDetails];
+    updated[index] = { ...updated[index], amount, isCustomAmount: true };
+
+    // Calculate remaining amount for non-custom installments
+    const customTotal = updated.reduce((sum, inst, i) =>
+      inst.isCustomAmount ? sum + inst.amount : sum, 0);
+    const remaining = baseAmount - customTotal;
+    const nonCustomCount = updated.filter(inst => !inst.isCustomAmount).length;
+
+    if (nonCustomCount > 0 && remaining >= 0) {
+      const perNonCustom = remaining / nonCustomCount;
+      updated.forEach((inst, i) => {
+        if (!inst.isCustomAmount) {
+          updated[i] = { ...inst, amount: perNonCustom };
+        }
+      });
+    }
+
+    setInstallmentDetails(updated);
+  };
+
+  // Handle installment payment method change
+  const handleInstallmentPaymentMethodChange = (index, method) => {
+    const updated = [...installmentDetails];
+    updated[index] = {
+      ...updated[index],
+      paymentMethod: method,
+      creditCardInstallments: method === 'creditCard' ? 1 : updated[index].creditCardInstallments
+    };
+    setInstallmentDetails(updated);
+  };
+
+  // Handle installment invoiced change
+  const handleInstallmentInvoicedChange = (index, isInvoiced) => {
+    const updated = [...installmentDetails];
+    updated[index] = { ...updated[index], isInvoiced };
+    setInstallmentDetails(updated);
+  };
+
+  // Handle installment date change
+  const handleInstallmentDateChange = (index, date) => {
+    const updated = [...installmentDetails];
+    updated[index] = { ...updated[index], dueDate: date };
+    setInstallmentDetails(updated);
+  };
+
+  // Handle credit card installments change for a specific installment
+  const handleInstallmentCCCountChange = (index, count) => {
+    const updated = [...installmentDetails];
+    updated[index] = { ...updated[index], creditCardInstallments: parseInt(count) || 1 };
+    setInstallmentDetails(updated);
+  };
+
+  // Reset custom amount for an installment
+  const resetInstallmentAmount = (index) => {
+    const updated = [...installmentDetails];
+    updated[index] = { ...updated[index], isCustomAmount: false };
+
+    // Recalculate all non-custom amounts
+    const customTotal = updated.reduce((sum, inst) =>
+      inst.isCustomAmount ? sum + inst.amount : sum, 0);
+    const remaining = baseAmount - customTotal;
+    const nonCustomCount = updated.filter(inst => !inst.isCustomAmount).length;
+
+    if (nonCustomCount > 0) {
+      const perNonCustom = remaining / nonCustomCount;
+      updated.forEach((inst, i) => {
+        if (!inst.isCustomAmount) {
+          updated[i] = { ...inst, amount: perNonCustom };
+        }
+      });
+    }
+
+    setInstallmentDetails(updated);
+  };
+
+  // Calculate totals including commission and VAT per installment
+  const calculatedInstallments = useMemo(() => {
+    return installmentDetails.map(inst => {
+      let commission = 0;
+      let commissionRate = 0;
+      if (inst.paymentMethod === 'creditCard') {
+        commissionRate = getCreditCardCommissionRate(inst.creditCardInstallments);
+        commission = (inst.amount * commissionRate) / 100;
+      }
+
+      const subtotal = inst.amount + commission;
+      const vatRate = getVatRate();
+      const vat = inst.isInvoiced ? (subtotal * vatRate) / 100 : 0;
+      const total = subtotal + vat;
 
       return {
-        totalAmount,
-        discountAmount,
-        subtotal,
-        cashAmount,
-        creditCardAmount,
+        ...inst,
+        commission,
         commissionRate,
-        commissionAmount,
-        chargeAmount: totalWithCommission,
-        vatRate,
-        vatAmount,
-        finalAmount: totalWithCommission,
-        installmentAmount: 0,
-        isMixed: true
+        vat,
+        vatRate: inst.isInvoiced ? vatRate : 0,
+        total
       };
-    }
+    });
+  }, [installmentDetails, getCreditCardCommissionRate, settings]);
 
-    // For credit card
-    let commissionRate = 0;
-    let commissionAmount = 0;
-    if (formData.paymentType === 'creditCard' && formData.installmentCount) {
-      commissionRate = getCreditCardCommissionRate(parseInt(formData.installmentCount));
-      commissionAmount = (subtotal * commissionRate) / 100;
-    }
-
-    const chargeAmount = subtotal + commissionAmount;
-    const vatAmount = formData.isInvoiced ? (chargeAmount * vatRate) / 100 : 0;
-    const finalAmount = chargeAmount;
-    const installmentAmount = formData.installmentCount
-      ? (finalAmount / parseInt(formData.installmentCount)).toFixed(2)
-      : 0;
+  // Grand totals
+  const grandTotals = useMemo(() => {
+    const totals = calculatedInstallments.reduce((acc, inst) => ({
+      baseAmount: acc.baseAmount + inst.amount,
+      commission: acc.commission + inst.commission,
+      vat: acc.vat + inst.vat,
+      total: acc.total + inst.total
+    }), { baseAmount: 0, commission: 0, vat: 0, total: 0 });
 
     return {
-      totalAmount,
-      discountAmount,
-      subtotal,
-      commissionRate,
-      commissionAmount,
-      chargeAmount,
-      vatRate,
-      vatAmount,
-      finalAmount,
-      installmentAmount,
-      isMixed: false
+      ...totals,
+      totalAmount: parseFloat(formData.totalAmount) || 0,
+      discountAmount: (parseFloat(formData.totalAmount) || 0) - baseAmount
     };
-  }, [formData, settings]);
+  }, [calculatedInstallments, formData.totalAmount, baseAmount]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -312,13 +428,6 @@ const PaymentPlan = () => {
     setLoading(true);
 
     try {
-      const needsCashRegister = formData.paymentType === 'creditCard' || formData.paymentType === 'mixed';
-      if (!selectedCashRegister && needsCashRegister) {
-        setError('Lütfen bir kasa seçin');
-        setLoading(false);
-        return;
-      }
-
       const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
       if (!selectedEnrollment) {
         setError('Lütfen bir ders seçin');
@@ -326,104 +435,46 @@ const PaymentPlan = () => {
         return;
       }
 
-      const installments = [];
-      const chargeAmount = calculations.chargeAmount;
-      const installmentCount = parseInt(formData.installmentCount);
-
-      if (formData.paymentType === 'creditCard') {
-        installments.push({
-          installmentNumber: 1,
-          amount: chargeAmount,
-          dueDate: new Date(formData.paymentDate),
-          isPaid: false,
-          paidAmount: 0,
-          isInvoiced: formData.isInvoiced
-        });
-      } else if (formData.paymentType === 'mixed') {
-        // Mixed: Create separate installments for cash and credit card
-        const cashAmount = parseFloat(formData.cashAmount) || 0;
-        const creditCardAmount = parseFloat(formData.creditCardAmount) || 0;
-        const commissionAmount = calculations.commissionAmount;
-
-        if (cashAmount > 0) {
-          installments.push({
-            installmentNumber: 1,
-            amount: cashAmount,
-            dueDate: new Date(formData.firstInstallmentDate),
-            isPaid: false,
-            paidAmount: 0,
-            isInvoiced: formData.isInvoiced,
-            paymentMethod: 'cash'
-          });
-        }
-
-        if (creditCardAmount > 0) {
-          installments.push({
-            installmentNumber: cashAmount > 0 ? 2 : 1,
-            amount: creditCardAmount + commissionAmount,
-            dueDate: new Date(formData.paymentDate),
-            isPaid: false,
-            paidAmount: 0,
-            isInvoiced: formData.isInvoiced,
-            paymentMethod: 'creditCard'
-          });
-        }
-      } else {
-        // Cash payments
-        const startDate = new Date(formData.firstInstallmentDate);
-        const installmentAmount = chargeAmount / installmentCount;
-
-        for (let i = 0; i < installmentCount; i++) {
-          const dueDate = new Date(startDate);
-          if (formData.installmentFrequency === 'weekly') {
-            dueDate.setDate(startDate.getDate() + (i * 7));
-          } else if (formData.installmentFrequency === 'custom') {
-            dueDate.setDate(startDate.getDate() + (i * parseInt(formData.customFrequencyDays)));
-          } else {
-            dueDate.setMonth(startDate.getMonth() + i);
-          }
-
-          installments.push({
-            installmentNumber: i + 1,
-            amount: installmentAmount,
-            dueDate,
-            isPaid: false,
-            paidAmount: 0,
-            isInvoiced: formData.isInvoiced
-          });
-        }
+      // Check if any installment needs cash register
+      const hasCreditCard = calculatedInstallments.some(inst => inst.paymentMethod === 'creditCard');
+      if (hasCreditCard && !selectedCashRegister) {
+        setError('Kredi kartı ödemesi için lütfen bir kasa seçin');
+        setLoading(false);
+        return;
       }
 
-      const today = new Date().toISOString().split('T')[0];
-      const shouldProcessImmediately = (formData.paymentType === 'creditCard' || formData.paymentType === 'mixed') && formData.paymentDate === today;
+      // Build installments for backend
+      const installments = calculatedInstallments.map((inst, index) => ({
+        installmentNumber: index + 1,
+        amount: inst.total, // Total including commission and VAT
+        baseAmount: inst.amount,
+        commission: inst.commission,
+        commissionRate: inst.commissionRate,
+        vat: inst.vat,
+        vatRate: inst.vatRate,
+        dueDate: inst.dueDate,
+        isPaid: false,
+        paidAmount: 0,
+        isInvoiced: inst.isInvoiced,
+        paymentMethod: inst.paymentMethod,
+        creditCardInstallments: inst.paymentMethod === 'creditCard' ? inst.creditCardInstallments : undefined
+      }));
 
       const paymentPlanData = {
         student: studentId,
         enrollment: formData.enrollmentId,
         course: selectedEnrollment.course._id,
         paymentType: formData.paymentType,
-        totalAmount: calculations.totalAmount,
-        discountedAmount: chargeAmount,
+        totalAmount: grandTotals.totalAmount,
+        discountedAmount: grandTotals.total,
         discountType: formData.discountType,
         discountValue: formData.discountType === 'fullScholarship' ? 100 : parseFloat(formData.discountValue) || 0,
         installments,
-        creditCardInstallments: formData.paymentType === 'creditCard'
-          ? installmentCount
-          : formData.paymentType === 'mixed'
-            ? parseInt(formData.creditCardInstallmentCount)
-            : undefined,
-        creditCardCommission: (formData.paymentType === 'creditCard' || formData.paymentType === 'mixed')
-          ? { rate: calculations.commissionRate, amount: calculations.commissionAmount }
-          : undefined,
-        vat: formData.isInvoiced ? { rate: calculations.vatRate, amount: calculations.vatAmount } : undefined,
-        isInvoiced: formData.isInvoiced,
         institution: institution._id,
         season: season._id,
         notes: formData.description,
         createdBy: user?.username || 'System',
-        autoCreatePayment: shouldProcessImmediately,
-        paymentDate: (formData.paymentType === 'creditCard' || formData.paymentType === 'mixed') ? formData.paymentDate : undefined,
-        cashRegister: needsCashRegister ? selectedCashRegister : undefined
+        cashRegister: hasCreditCard ? selectedCashRegister : undefined
       };
 
       await api.post('/payment-plans', paymentPlanData);
@@ -442,7 +493,14 @@ const PaymentPlan = () => {
 
   const selectedEnrollment = enrollments.find(e => e._id === formData.enrollmentId);
   const course = selectedEnrollment?.course;
+
+  // Use formData.monthlyFee for calculations (real-time update)
+  const currentMonthlyFee = parseFloat(formData.monthlyFee) || 0;
   const pricePerLesson = monthlyLessonDetails?.course?.pricePerLesson || course?.pricePerLesson || 0;
+  // Calculate price per lesson based on current monthly fee
+  const calculatedPricePerLesson = monthlyLessonDetails?.course?.lessonsPerMonth
+    ? currentMonthlyFee / monthlyLessonDetails.course.lessonsPerMonth
+    : pricePerLesson;
 
   return (
     <Container maxWidth="lg">
@@ -608,144 +666,15 @@ const PaymentPlan = () => {
                 {/* Ödeme Tipi */}
                 <Grid item xs={6} sm={4}>
                   <FormControl fullWidth size="small">
-                    <InputLabel>Ödeme Tipi</InputLabel>
-                    <Select name="paymentType" value={formData.paymentType} onChange={handleChange} label="Ödeme Tipi">
-                      <MenuItem value="cashFull">Nakit Peşin</MenuItem>
-                      <MenuItem value="cashInstallment">Nakit Taksitli</MenuItem>
-                      <MenuItem value="creditCard">Kredi Kartı</MenuItem>
-                      <MenuItem value="mixed">Karma (Nakit + K.Kartı)</MenuItem>
+                    <InputLabel>Ödeme Şekli</InputLabel>
+                    <Select name="paymentType" value={formData.paymentType} onChange={handleChange} label="Ödeme Şekli">
+                      <MenuItem value="cashFull">Tek Seferde</MenuItem>
+                      <MenuItem value="cashInstallment">Taksitli</MenuItem>
                     </Select>
                   </FormControl>
                 </Grid>
 
-                <Grid item xs={6} sm={4}>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={formData.isInvoiced}
-                        onChange={(e) => setFormData({ ...formData, isInvoiced: e.target.checked })}
-                        size="small"
-                      />
-                    }
-                    label={`Faturalı (+%${calculations.vatRate} KDV)`}
-                  />
-                </Grid>
-
-                {/* Karma Ödeme Alanları */}
-                {formData.paymentType === 'mixed' && (
-                  <>
-                    <Grid item xs={12}>
-                      <Alert severity="info" sx={{ py: 0.5 }}>
-                        Toplam: ₺{calculations.subtotal.toLocaleString('tr-TR')} - Nakit ve kredi kartı tutarlarını girin
-                      </Alert>
-                    </Grid>
-                    <Grid item xs={6} sm={3}>
-                      <TextField
-                        fullWidth size="small"
-                        label="Nakit Tutar (₺)"
-                        name="cashAmount"
-                        type="number"
-                        value={formData.cashAmount}
-                        onChange={handleChange}
-                      />
-                    </Grid>
-                    <Grid item xs={6} sm={3}>
-                      <TextField
-                        fullWidth size="small"
-                        label="Kredi Kartı (₺)"
-                        name="creditCardAmount"
-                        type="number"
-                        value={formData.creditCardAmount}
-                        onChange={handleChange}
-                      />
-                    </Grid>
-                    <Grid item xs={6} sm={3}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>K.K. Taksit</InputLabel>
-                        <Select
-                          name="creditCardInstallmentCount"
-                          value={formData.creditCardInstallmentCount}
-                          onChange={handleChange}
-                          label="K.K. Taksit"
-                        >
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
-                            <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={6} sm={3}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Kasa</InputLabel>
-                        <Select value={selectedCashRegister} onChange={(e) => setSelectedCashRegister(e.target.value)} label="Kasa">
-                          {cashRegisters.map((r) => (
-                            <MenuItem key={r._id} value={r._id}>{r.name}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
-                        <DatePicker
-                          label="Nakit Ödeme Tarihi"
-                          value={formData.firstInstallmentDate}
-                          onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
-                          slotProps={{ textField: { size: 'small', fullWidth: true } }}
-                        />
-                      </LocalizationProvider>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField
-                        fullWidth size="small"
-                        label="K.Kartı Ödeme Tarihi"
-                        name="paymentDate"
-                        type="date"
-                        value={formData.paymentDate}
-                        onChange={handleChange}
-                        InputLabelProps={{ shrink: true }}
-                      />
-                    </Grid>
-                  </>
-                )}
-
-                {/* Kredi Kartı Alanları */}
-                {formData.paymentType === 'creditCard' && (
-                  <>
-                    <Grid item xs={12} sm={4}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Kasa</InputLabel>
-                        <Select value={selectedCashRegister} onChange={(e) => setSelectedCashRegister(e.target.value)} label="Kasa">
-                          {cashRegisters.map((r) => (
-                            <MenuItem key={r._id} value={r._id}>{r.name}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={6} sm={4}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Taksit Sayısı</InputLabel>
-                        <Select name="installmentCount" value={formData.installmentCount} onChange={handleChange} label="Taksit Sayısı">
-                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
-                            <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </Grid>
-                    <Grid item xs={6} sm={4}>
-                      <TextField
-                        fullWidth size="small"
-                        label="Ödeme Tarihi"
-                        name="paymentDate"
-                        type="date"
-                        value={formData.paymentDate}
-                        onChange={handleChange}
-                        InputLabelProps={{ shrink: true }}
-                      />
-                    </Grid>
-                  </>
-                )}
-
-                {/* Nakit Taksitli Alanları */}
+                {/* Taksitli Ödeme Alanları */}
                 {formData.paymentType === 'cashInstallment' && (
                   <>
                     <Grid item xs={6} sm={4}>
@@ -754,10 +683,7 @@ const PaymentPlan = () => {
                         <Select
                           name="installmentCount"
                           value={formData.installmentCount}
-                          onChange={(e) => {
-                            const count = parseInt(e.target.value);
-                            setFormData({ ...formData, installmentCount: count });
-                          }}
+                          onChange={handleChange}
                           label="Taksit Sayısı"
                         >
                           {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
@@ -779,7 +705,7 @@ const PaymentPlan = () => {
                     <Grid item xs={12} sm={4}>
                       <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
                         <DatePicker
-                          label="İlk Taksit"
+                          label="İlk Taksit Tarihi"
                           value={formData.firstInstallmentDate}
                           onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
                           slotProps={{ textField: { size: 'small', fullWidth: true } }}
@@ -799,6 +725,38 @@ const PaymentPlan = () => {
                       </Grid>
                     )}
                   </>
+                )}
+
+                {/* Tek Seferde Ödeme için tarih */}
+                {formData.paymentType === 'cashFull' && (
+                  <Grid item xs={12} sm={6}>
+                    <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                      <DatePicker
+                        label="Ödeme Tarihi"
+                        value={formData.firstInstallmentDate}
+                        onChange={(date) => setFormData({ ...formData, firstInstallmentDate: date })}
+                        slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                      />
+                    </LocalizationProvider>
+                  </Grid>
+                )}
+
+                {/* Kasa Seçimi - Kredi kartı taksiti varsa göster */}
+                {calculatedInstallments.some(inst => inst.paymentMethod === 'creditCard') && (
+                  <Grid item xs={12} sm={6}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Kasa (Kredi Kartı için)</InputLabel>
+                      <Select
+                        value={selectedCashRegister}
+                        onChange={(e) => setSelectedCashRegister(e.target.value)}
+                        label="Kasa (Kredi Kartı için)"
+                      >
+                        {cashRegisters.map((r) => (
+                          <MenuItem key={r._id} value={r._id}>{r.name}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
                 )}
 
                 <Grid item xs={12}>
@@ -844,76 +802,226 @@ const PaymentPlan = () => {
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Kurs Ücreti:</Typography>
-                  <Typography variant="body2">₺{calculations.totalAmount.toLocaleString('tr-TR')}</Typography>
+                  <Typography variant="body2">₺{grandTotals.totalAmount.toLocaleString('tr-TR')}</Typography>
                 </Box>
 
-                {calculations.discountAmount > 0 && (
+                {grandTotals.discountAmount > 0 && (
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="success.main">
                       İndirim ({formData.discountType === 'fullScholarship' ? '%100' : formData.discountType === 'percentage' ? `%${formData.discountValue}` : `₺${formData.discountValue}`}):
                     </Typography>
-                    <Typography variant="body2" color="success.main">-₺{calculations.discountAmount.toLocaleString('tr-TR')}</Typography>
-                  </Box>
-                )}
-
-                {formData.paymentType === 'mixed' && (
-                  <>
-                    <Divider sx={{ my: 0.5 }} />
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body2">Nakit:</Typography>
-                      <Typography variant="body2">₺{(parseFloat(formData.cashAmount) || 0).toLocaleString('tr-TR')}</Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="body2">Kredi Kartı:</Typography>
-                      <Typography variant="body2">₺{(parseFloat(formData.creditCardAmount) || 0).toLocaleString('tr-TR')}</Typography>
-                    </Box>
-                    {calculations.commissionAmount > 0 && (
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="body2" color="warning.main">
-                          Komisyon (%{calculations.commissionRate}):
-                        </Typography>
-                        <Typography variant="body2" color="warning.main">+₺{calculations.commissionAmount.toLocaleString('tr-TR')}</Typography>
-                      </Box>
-                    )}
-                  </>
-                )}
-
-                {formData.paymentType === 'creditCard' && calculations.commissionAmount > 0 && (
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2" color="warning.main">
-                      Komisyon ({formData.installmentCount} taksit - %{calculations.commissionRate}):
-                    </Typography>
-                    <Typography variant="body2" color="warning.main">+₺{calculations.commissionAmount.toLocaleString('tr-TR')}</Typography>
+                    <Typography variant="body2" color="success.main">-₺{grandTotals.discountAmount.toLocaleString('tr-TR')}</Typography>
                   </Box>
                 )}
 
                 <Divider sx={{ my: 0.5 }} />
 
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="subtitle1" fontWeight="bold" color="primary">Ödenecek:</Typography>
-                  <Typography variant="subtitle1" fontWeight="bold" color="primary">
-                    ₺{calculations.chargeAmount.toLocaleString('tr-TR')}
-                  </Typography>
+                  <Typography variant="body2">Ara Toplam:</Typography>
+                  <Typography variant="body2">₺{baseAmount.toLocaleString('tr-TR')}</Typography>
                 </Box>
 
-                {formData.isInvoiced && calculations.vatAmount > 0 && (
+                {grandTotals.commission > 0 && (
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2" color="error.main">KDV (%{calculations.vatRate}):</Typography>
-                    <Typography variant="body2" color="error.main">₺{calculations.vatAmount.toLocaleString('tr-TR')}</Typography>
+                    <Typography variant="body2" color="warning.main">Komisyon:</Typography>
+                    <Typography variant="body2" color="warning.main">+₺{grandTotals.commission.toLocaleString('tr-TR')}</Typography>
                   </Box>
                 )}
 
-                {formData.paymentType === 'cashInstallment' && formData.installmentCount > 1 && (
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {formData.installmentCount} × Taksit:
-                    </Typography>
-                    <Typography variant="body2">₺{parseFloat(calculations.installmentAmount).toLocaleString('tr-TR')}</Typography>
+                {grandTotals.vat > 0 && (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" color="error.main">KDV:</Typography>
+                    <Typography variant="body2" color="error.main">+₺{grandTotals.vat.toLocaleString('tr-TR')}</Typography>
                   </Box>
                 )}
+
+                <Divider sx={{ my: 0.5 }} />
+
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary">Toplam Ödenecek:</Typography>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                    ₺{grandTotals.total.toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
               </Box>
             </CardContent>
           </Card>
+
+          {/* Taksit Detayları */}
+          {calculatedInstallments.length > 0 && (
+            <Card sx={{ mb: 2 }}>
+              <CardContent sx={{ pb: 1 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    📋 Taksit Detayları
+                  </Typography>
+                  <IconButton size="small" onClick={() => setShowInstallmentDetails(!showInstallmentDetails)}>
+                    {showInstallmentDetails ? <ExpandLess /> : <ExpandMore />}
+                  </IconButton>
+                </Box>
+
+                <Collapse in={showInstallmentDetails}>
+                  <Alert severity="info" sx={{ mb: 2, py: 0.5 }}>
+                    <Typography variant="caption">
+                      Her taksit için ödeme şekli, fatura durumu ve tutarı ayrı ayrı ayarlayabilirsiniz.
+                      Tutar değiştirirseniz kalan taksitler otomatik hesaplanır.
+                    </Typography>
+                  </Alert>
+
+                  {calculatedInstallments.map((inst, index) => (
+                    <Paper
+                      key={index}
+                      sx={{
+                        p: 1.5,
+                        mb: 1,
+                        bgcolor: inst.isCustomAmount ? 'action.selected' : 'background.default',
+                        border: '1px solid',
+                        borderColor: 'divider'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          {index + 1}. Taksit
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          {inst.paymentMethod === 'creditCard' && (
+                            <Chip icon={<CreditCard sx={{ fontSize: 14 }} />} label="K.Kartı" size="small" color="primary" />
+                          )}
+                          {inst.paymentMethod === 'cash' && (
+                            <Chip icon={<Money sx={{ fontSize: 14 }} />} label="Nakit" size="small" color="success" />
+                          )}
+                          {inst.isInvoiced && (
+                            <Chip icon={<Receipt sx={{ fontSize: 14 }} />} label="Faturalı" size="small" color="warning" />
+                          )}
+                        </Box>
+                      </Box>
+
+                      <Grid container spacing={1} alignItems="center">
+                        {/* Vade Tarihi */}
+                        <Grid item xs={6}>
+                          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                            <DatePicker
+                              label="Vade"
+                              value={inst.dueDate}
+                              onChange={(date) => handleInstallmentDateChange(index, date)}
+                              slotProps={{
+                                textField: {
+                                  size: 'small',
+                                  fullWidth: true,
+                                  sx: { '& input': { fontSize: '0.85rem' } }
+                                }
+                              }}
+                            />
+                          </LocalizationProvider>
+                        </Grid>
+
+                        {/* Tutar */}
+                        <Grid item xs={6}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="Tutar (₺)"
+                            type="number"
+                            value={inst.amount.toFixed(2)}
+                            onChange={(e) => handleInstallmentAmountChange(index, e.target.value)}
+                            InputProps={{
+                              endAdornment: inst.isCustomAmount && (
+                                <Tooltip title="Otomatik hesaplamaya dön">
+                                  <IconButton size="small" onClick={() => resetInstallmentAmount(index)}>
+                                    <Edit sx={{ fontSize: 14 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              ),
+                              sx: { fontSize: '0.85rem' }
+                            }}
+                          />
+                        </Grid>
+
+                        {/* Ödeme Şekli */}
+                        <Grid item xs={6}>
+                          <FormControl fullWidth size="small">
+                            <InputLabel>Ödeme Şekli</InputLabel>
+                            <Select
+                              value={inst.paymentMethod}
+                              onChange={(e) => handleInstallmentPaymentMethodChange(index, e.target.value)}
+                              label="Ödeme Şekli"
+                              sx={{ fontSize: '0.85rem' }}
+                            >
+                              <MenuItem value="cash">Nakit</MenuItem>
+                              <MenuItem value="creditCard">Kredi Kartı</MenuItem>
+                            </Select>
+                          </FormControl>
+                        </Grid>
+
+                        {/* Kredi Kartı Taksit */}
+                        {inst.paymentMethod === 'creditCard' && (
+                          <Grid item xs={6}>
+                            <FormControl fullWidth size="small">
+                              <InputLabel>K.K. Taksit</InputLabel>
+                              <Select
+                                value={inst.creditCardInstallments}
+                                onChange={(e) => handleInstallmentCCCountChange(index, e.target.value)}
+                                label="K.K. Taksit"
+                                sx={{ fontSize: '0.85rem' }}
+                              >
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                                  <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                          </Grid>
+                        )}
+
+                        {/* Faturalı Checkbox */}
+                        <Grid item xs={inst.paymentMethod === 'creditCard' ? 12 : 6}>
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={inst.isInvoiced}
+                                onChange={(e) => handleInstallmentInvoicedChange(index, e.target.checked)}
+                                size="small"
+                              />
+                            }
+                            label={<Typography variant="body2">Faturalı (+%{getVatRate()} KDV)</Typography>}
+                          />
+                        </Grid>
+                      </Grid>
+
+                      {/* Komisyon ve KDV Detayları */}
+                      {(inst.commission > 0 || inst.vat > 0) && (
+                        <Box sx={{ mt: 1, pt: 1, borderTop: '1px dashed', borderColor: 'divider' }}>
+                          <Grid container spacing={1}>
+                            {inst.commission > 0 && (
+                              <Grid item xs={6}>
+                                <Typography variant="caption" color="warning.main">
+                                  Komisyon (%{inst.commissionRate}): +₺{inst.commission.toLocaleString('tr-TR')}
+                                </Typography>
+                              </Grid>
+                            )}
+                            {inst.vat > 0 && (
+                              <Grid item xs={6}>
+                                <Typography variant="caption" color="error.main">
+                                  KDV (%{inst.vatRate}): +₺{inst.vat.toLocaleString('tr-TR')}
+                                </Typography>
+                              </Grid>
+                            )}
+                          </Grid>
+                        </Box>
+                      )}
+
+                      {/* Toplam */}
+                      <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2" fontWeight="bold">Toplam:</Typography>
+                        <Typography variant="body2" fontWeight="bold" color="primary">
+                          ₺{inst.total.toLocaleString('tr-TR')}
+                        </Typography>
+                      </Box>
+                    </Paper>
+                  ))}
+                </Collapse>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Ders Detayları */}
           {monthlyLessonDetails && formData.courseType === 'monthly' && (
@@ -937,8 +1045,8 @@ const PaymentPlan = () => {
 
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="body2" color="text.secondary">
-                      Aylık: ₺{monthlyLessonDetails.course.monthlyFee.toLocaleString('tr-TR')} |
-                      Ders Başı: ₺{pricePerLesson.toLocaleString('tr-TR')}
+                      Aylık: ₺{currentMonthlyFee.toLocaleString('tr-TR')} |
+                      Ders Başı: ₺{calculatedPricePerLesson.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
                     </Typography>
                   </Box>
 
@@ -955,8 +1063,8 @@ const PaymentPlan = () => {
                         const isPartialFirst = index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial';
                         const lessonCount = isPartialFirst ? month.lessonsAfterEnrollment : month.lessonCount;
                         const monthFee = isPartialFirst
-                          ? lessonCount * pricePerLesson
-                          : monthlyLessonDetails.course.monthlyFee;
+                          ? lessonCount * calculatedPricePerLesson
+                          : currentMonthlyFee;
 
                         return (
                           <TableRow key={month.monthIndex}>
@@ -968,7 +1076,7 @@ const PaymentPlan = () => {
                               {lessonCount > 0 ? `${lessonCount} ders` : '-'}
                             </TableCell>
                             <TableCell align="right" sx={{ py: 0.5, fontWeight: 500 }}>
-                              ₺{monthFee.toLocaleString('tr-TR')}
+                              ₺{monthFee.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
                             </TableCell>
                           </TableRow>
                         );
@@ -988,7 +1096,7 @@ const PaymentPlan = () => {
                       }, 0)} ders
                     </Typography>
                     <Typography variant="subtitle2" fontWeight="bold" color="primary">
-                      ₺{calculations.chargeAmount.toLocaleString('tr-TR')}
+                      ₺{(parseFloat(formData.totalAmount) || 0).toLocaleString('tr-TR')}
                     </Typography>
                   </Box>
                 </Collapse>

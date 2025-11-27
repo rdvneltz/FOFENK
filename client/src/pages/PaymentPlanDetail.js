@@ -25,8 +25,11 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Checkbox,
+  FormControlLabel,
+  Tooltip,
 } from '@mui/material';
-import { ArrowBack, Edit, Delete, Payment, Undo } from '@mui/icons-material';
+import { ArrowBack, Edit, Delete, Payment, Undo, CreditCard, Money, Receipt } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -45,7 +48,11 @@ const PaymentPlanDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [editDateDialog, setEditDateDialog] = useState({ open: false, installment: null });
+  const [editInstallmentDialog, setEditInstallmentDialog] = useState({
+    open: false,
+    installment: null,
+    formData: {}
+  });
   const [paymentDialog, setPaymentDialog] = useState({
     open: false,
     installment: null
@@ -71,7 +78,6 @@ const PaymentPlanDetail = () => {
     loadPaymentPlan();
   }, [id]);
 
-  // Load settings and cash registers after payment plan is loaded
   useEffect(() => {
     if (paymentPlan) {
       loadSettings();
@@ -123,24 +129,84 @@ const PaymentPlanDetail = () => {
     }
   };
 
-  const handleEditDate = async () => {
+  const getCreditCardCommissionRate = (installmentCount) => {
+    if (!settings || !settings.creditCardRates) return 0;
+    const rateObj = settings.creditCardRates.find(r => r.installments === installmentCount);
+    return rateObj ? rateObj.rate : 0;
+  };
+
+  const getVatRate = () => settings?.vatRate || 10;
+
+  const openEditInstallmentDialog = (installment) => {
+    setEditInstallmentDialog({
+      open: true,
+      installment,
+      formData: {
+        amount: installment.baseAmount || installment.amount || 0,
+        dueDate: new Date(installment.dueDate),
+        paymentMethod: installment.paymentMethod || 'cash',
+        isInvoiced: installment.isInvoiced || false,
+        creditCardInstallments: installment.creditCardInstallments || 1
+      }
+    });
+  };
+
+  const calculateInstallmentTotal = (formData) => {
+    const amount = parseFloat(formData.amount) || 0;
+    let commission = 0;
+    let commissionRate = 0;
+
+    if (formData.paymentMethod === 'creditCard') {
+      commissionRate = getCreditCardCommissionRate(formData.creditCardInstallments);
+      commission = (amount * commissionRate) / 100;
+    }
+
+    const subtotal = amount + commission;
+    const vatRate = getVatRate();
+    const vat = formData.isInvoiced ? (subtotal * vatRate) / 100 : 0;
+    const total = subtotal + vat;
+
+    return { commission, commissionRate, vat, vatRate, total };
+  };
+
+  const handleEditInstallment = async () => {
     try {
-      const updatedInstallments = paymentPlan.installments.map(inst =>
-        inst.installmentNumber === editDateDialog.installment.installmentNumber
-          ? { ...inst, dueDate: editDateDialog.newDate }
-          : inst
-      );
+      const { formData, installment } = editInstallmentDialog;
+      const calcs = calculateInstallmentTotal(formData);
+
+      const updatedInstallments = paymentPlan.installments.map(inst => {
+        if (inst.installmentNumber === installment.installmentNumber) {
+          return {
+            ...inst,
+            baseAmount: parseFloat(formData.amount) || 0,
+            amount: calcs.total,
+            dueDate: formData.dueDate,
+            paymentMethod: formData.paymentMethod,
+            isInvoiced: formData.isInvoiced,
+            creditCardInstallments: formData.paymentMethod === 'creditCard' ? formData.creditCardInstallments : undefined,
+            commission: calcs.commission,
+            commissionRate: calcs.commissionRate,
+            vat: calcs.vat,
+            vatRate: formData.isInvoiced ? calcs.vatRate : 0
+          };
+        }
+        return inst;
+      });
+
+      // Recalculate discountedAmount
+      const newDiscountedAmount = updatedInstallments.reduce((sum, inst) => sum + inst.amount, 0);
 
       await api.put(`/payment-plans/${id}`, {
         installments: updatedInstallments,
+        discountedAmount: newDiscountedAmount,
         updatedBy: user?.username
       });
 
-      setSuccess('Vade tarihi güncellendi');
-      setEditDateDialog({ open: false, installment: null });
+      setSuccess('Taksit güncellendi');
+      setEditInstallmentDialog({ open: false, installment: null, formData: {} });
       loadPaymentPlan();
     } catch (error) {
-      setError('Vade tarihi güncellenirken hata oluştu');
+      setError('Taksit güncellenirken hata oluştu');
     }
   };
 
@@ -178,7 +244,6 @@ const PaymentPlanDetail = () => {
       setRefundDialog({ open: false, installment: null, reason: '' });
       loadPaymentPlan();
 
-      // Show refund details if available
       if (response.data.refundDetails) {
         const details = response.data.refundDetails;
         if (details.reversedExpenses && details.reversedExpenses.length > 0) {
@@ -215,25 +280,24 @@ const PaymentPlanDetail = () => {
     try {
       const totalAmount = parseFloat(editFormData.totalAmount);
 
-      // Calculate discount
       let discountAmount = 0;
       if (editFormData.discountType === 'percentage') {
         discountAmount = (totalAmount * parseFloat(editFormData.discountValue)) / 100;
       } else if (editFormData.discountType === 'fixed') {
         discountAmount = parseFloat(editFormData.discountValue) || 0;
       } else if (editFormData.discountType === 'fullScholarship') {
-        discountAmount = totalAmount; // %100 indirim - tam burs
+        discountAmount = totalAmount;
       }
 
       let discountedAmount = totalAmount - discountAmount;
 
-      // Recalculate installment amounts based on new total
       const installmentCount = paymentPlan.installments.length;
       const installmentAmount = discountedAmount / installmentCount;
 
       const updatedInstallments = paymentPlan.installments.map((inst) => ({
         ...inst,
-        amount: installmentAmount
+        amount: installmentAmount,
+        baseAmount: installmentAmount
       }));
 
       await api.put(`/payment-plans/${id}`, {
@@ -264,6 +328,10 @@ const PaymentPlanDetail = () => {
       </Container>
     );
   }
+
+  const editInstallmentCalcs = editInstallmentDialog.formData.amount
+    ? calculateInstallmentTotal(editInstallmentDialog.formData)
+    : { commission: 0, vat: 0, total: 0 };
 
   return (
     <Container maxWidth="lg">
@@ -347,8 +415,9 @@ const PaymentPlanDetail = () => {
             <Box sx={{ display: 'flex', gap: 1 }}>
               <Chip
                 label={
-                  paymentPlan.paymentType === 'cashFull' ? 'Nakit Peşin' :
-                  paymentPlan.paymentType === 'cashInstallment' ? 'Nakit Taksitli' :
+                  paymentPlan.paymentType === 'cashFull' ? 'Tek Seferde' :
+                  paymentPlan.paymentType === 'cashInstallment' ? 'Taksitli' :
+                  paymentPlan.paymentType === 'mixed' ? 'Karma' :
                   'Kredi Kartı'
                 }
               />
@@ -367,7 +436,6 @@ const PaymentPlanDetail = () => {
           Taksitler
         </Typography>
 
-        {/* Full Scholarship - Special Message */}
         {(paymentPlan.discountType === 'fullScholarship' || paymentPlan.discountedAmount === 0) ? (
           <Alert severity="success" sx={{ mt: 2 }}>
             <Typography variant="h6" gutterBottom>
@@ -376,42 +444,83 @@ const PaymentPlanDetail = () => {
             <Typography variant="body1">
               Bu öğrenci %100 bursludur. Herhangi bir ödeme alınmasına gerek yoktur.
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Toplam Ders Ücreti: ₺{paymentPlan.totalAmount?.toLocaleString('tr-TR')} → Burs İndirimi: %100 → Ödenecek: ₺0
-            </Typography>
           </Alert>
         ) : (
           <TableContainer>
-            <Table>
+            <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Taksit No</TableCell>
-                  <TableCell>Vade Tarihi</TableCell>
+                  <TableCell>No</TableCell>
+                  <TableCell>Vade</TableCell>
+                  <TableCell>Ödeme Şekli</TableCell>
                   <TableCell align="right">Tutar</TableCell>
-                  <TableCell align="right">Ödenen</TableCell>
-                  <TableCell align="right">Kalan</TableCell>
+                  <TableCell align="right">Komisyon</TableCell>
+                  <TableCell align="right">KDV</TableCell>
+                  <TableCell align="right">Toplam</TableCell>
                   <TableCell>Durum</TableCell>
-                  <TableCell>Ödeme Tarihi</TableCell>
                   <TableCell align="right">İşlemler</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {paymentPlan.installments?.map((installment) => {
-                  const remaining = installment.amount - (installment.paidAmount || 0);
+                  const baseAmount = installment.baseAmount || installment.amount || 0;
+                  const commission = installment.commission || 0;
+                  const vat = installment.vat || 0;
+                  const total = installment.amount || 0;
+
                   return (
                     <TableRow key={installment.installmentNumber}>
                       <TableCell>{installment.installmentNumber}</TableCell>
                       <TableCell>
                         {new Date(installment.dueDate).toLocaleDateString('tr-TR')}
                       </TableCell>
-                      <TableCell align="right">
-                        ₺{installment.amount?.toLocaleString('tr-TR')}
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                          {installment.paymentMethod === 'creditCard' ? (
+                            <Tooltip title={`Kredi Kartı ${installment.creditCardInstallments || 1} taksit`}>
+                              <Chip
+                                icon={<CreditCard sx={{ fontSize: 14 }} />}
+                                label={`K.K. ${installment.creditCardInstallments || 1}T`}
+                                size="small"
+                                color="primary"
+                              />
+                            </Tooltip>
+                          ) : (
+                            <Chip
+                              icon={<Money sx={{ fontSize: 14 }} />}
+                              label="Nakit"
+                              size="small"
+                              color="success"
+                            />
+                          )}
+                          {installment.isInvoiced && (
+                            <Tooltip title="Faturalı">
+                              <Receipt sx={{ fontSize: 16, color: 'warning.main' }} />
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell align="right">
-                        ₺{(installment.paidAmount || 0).toLocaleString('tr-TR')}
+                        ₺{baseAmount.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
                       </TableCell>
                       <TableCell align="right">
-                        ₺{remaining.toLocaleString('tr-TR')}
+                        {commission > 0 ? (
+                          <Typography variant="body2" color="warning.main">
+                            +₺{commission.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                          </Typography>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell align="right">
+                        {vat > 0 ? (
+                          <Typography variant="body2" color="error.main">
+                            +₺{vat.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                          </Typography>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Typography fontWeight="bold">
+                          ₺{total.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                        </Typography>
                       </TableCell>
                       <TableCell>
                         <Chip
@@ -420,49 +529,41 @@ const PaymentPlanDetail = () => {
                           size="small"
                         />
                       </TableCell>
-                      <TableCell>
-                        {installment.isPaid && installment.paidDate ?
-                          new Date(installment.paidDate).toLocaleDateString('tr-TR', {
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit'
-                          })
-                          : '-'}
-                      </TableCell>
                       <TableCell align="right">
-                        <IconButton
-                          size="small"
-                          onClick={() => setEditDateDialog({
-                            open: true,
-                            installment,
-                            newDate: new Date(installment.dueDate)
-                          })}
-                          title="Vade Tarihini Düzenle"
-                        >
-                          <Edit />
-                        </IconButton>
+                        {!installment.isPaid && (
+                          <Tooltip title="Taksiti Düzenle">
+                            <IconButton
+                              size="small"
+                              onClick={() => openEditInstallmentDialog(installment)}
+                            >
+                              <Edit fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                         {!installment.isPaid ? (
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => handleOpenPaymentDialog(installment)}
-                            title="Ödeme Al"
-                          >
-                            <Payment />
-                          </IconButton>
+                          <Tooltip title="Ödeme Al">
+                            <IconButton
+                              size="small"
+                              color="primary"
+                              onClick={() => handleOpenPaymentDialog(installment)}
+                            >
+                              <Payment fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         ) : (
-                          <IconButton
-                            size="small"
-                            color="warning"
-                            onClick={() => setRefundDialog({
-                              open: true,
-                              installment: installment,
-                              reason: ''
-                            })}
-                            title="İade Et"
-                          >
-                            <Undo />
-                          </IconButton>
+                          <Tooltip title="İade Et">
+                            <IconButton
+                              size="small"
+                              color="warning"
+                              onClick={() => setRefundDialog({
+                                open: true,
+                                installment: installment,
+                                reason: ''
+                              })}
+                            >
+                              <Undo fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         )}
                       </TableCell>
                     </TableRow>
@@ -474,24 +575,144 @@ const PaymentPlanDetail = () => {
         )}
       </Paper>
 
-      {/* Edit Date Dialog */}
-      <Dialog open={editDateDialog.open} onClose={() => setEditDateDialog({ open: false, installment: null })}>
-        <DialogTitle>Vade Tarihini Düzenle</DialogTitle>
+      {/* Edit Installment Dialog */}
+      <Dialog
+        open={editInstallmentDialog.open}
+        onClose={() => setEditInstallmentDialog({ open: false, installment: null, formData: {} })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {editInstallmentDialog.installment?.installmentNumber}. Taksiti Düzenle
+        </DialogTitle>
         <DialogContent>
           <Box sx={{ mt: 2 }}>
-            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
-              <DatePicker
-                label="Yeni Vade Tarihi"
-                value={editDateDialog.newDate}
-                onChange={(date) => setEditDateDialog({ ...editDateDialog, newDate: date })}
-                renderInput={(params) => <TextField {...params} fullWidth />}
-              />
-            </LocalizationProvider>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                  <DatePicker
+                    label="Vade Tarihi"
+                    value={editInstallmentDialog.formData.dueDate}
+                    onChange={(date) => setEditInstallmentDialog(prev => ({
+                      ...prev,
+                      formData: { ...prev.formData, dueDate: date }
+                    }))}
+                    slotProps={{ textField: { fullWidth: true } }}
+                  />
+                </LocalizationProvider>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Tutar (₺)"
+                  type="number"
+                  value={editInstallmentDialog.formData.amount || ''}
+                  onChange={(e) => setEditInstallmentDialog(prev => ({
+                    ...prev,
+                    formData: { ...prev.formData, amount: e.target.value }
+                  }))}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Ödeme Şekli</InputLabel>
+                  <Select
+                    value={editInstallmentDialog.formData.paymentMethod || 'cash'}
+                    onChange={(e) => setEditInstallmentDialog(prev => ({
+                      ...prev,
+                      formData: { ...prev.formData, paymentMethod: e.target.value }
+                    }))}
+                    label="Ödeme Şekli"
+                  >
+                    <MenuItem value="cash">Nakit</MenuItem>
+                    <MenuItem value="creditCard">Kredi Kartı</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              {editInstallmentDialog.formData.paymentMethod === 'creditCard' && (
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>K.K. Taksit</InputLabel>
+                    <Select
+                      value={editInstallmentDialog.formData.creditCardInstallments || 1}
+                      onChange={(e) => setEditInstallmentDialog(prev => ({
+                        ...prev,
+                        formData: { ...prev.formData, creditCardInstallments: e.target.value }
+                      }))}
+                      label="K.K. Taksit"
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                        <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+              )}
+              <Grid item xs={12}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={editInstallmentDialog.formData.isInvoiced || false}
+                      onChange={(e) => setEditInstallmentDialog(prev => ({
+                        ...prev,
+                        formData: { ...prev.formData, isInvoiced: e.target.checked }
+                      }))}
+                    />
+                  }
+                  label={`Faturalı (+%${getVatRate()} KDV)`}
+                />
+              </Grid>
+
+              {/* Hesaplama Özeti */}
+              <Grid item xs={12}>
+                <Paper sx={{ p: 2, bgcolor: 'grey.100' }}>
+                  <Typography variant="subtitle2" gutterBottom>Hesaplama</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2">Tutar:</Typography>
+                      <Typography variant="body2">
+                        ₺{(parseFloat(editInstallmentDialog.formData.amount) || 0).toLocaleString('tr-TR')}
+                      </Typography>
+                    </Box>
+                    {editInstallmentCalcs.commission > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2" color="warning.main">
+                          Komisyon (%{editInstallmentCalcs.commissionRate}):
+                        </Typography>
+                        <Typography variant="body2" color="warning.main">
+                          +₺{editInstallmentCalcs.commission.toLocaleString('tr-TR')}
+                        </Typography>
+                      </Box>
+                    )}
+                    {editInstallmentCalcs.vat > 0 && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2" color="error.main">
+                          KDV (%{getVatRate()}):
+                        </Typography>
+                        <Typography variant="body2" color="error.main">
+                          +₺{editInstallmentCalcs.vat.toLocaleString('tr-TR')}
+                        </Typography>
+                      </Box>
+                    )}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="subtitle2">Toplam:</Typography>
+                      <Typography variant="subtitle2" color="primary">
+                        ₺{editInstallmentCalcs.total.toLocaleString('tr-TR')}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Paper>
+              </Grid>
+            </Grid>
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditDateDialog({ open: false, installment: null })}>İptal</Button>
-          <Button onClick={handleEditDate} variant="contained">Kaydet</Button>
+          <Button onClick={() => setEditInstallmentDialog({ open: false, installment: null, formData: {} })}>
+            İptal
+          </Button>
+          <Button onClick={handleEditInstallment} variant="contained">
+            Kaydet
+          </Button>
         </DialogActions>
       </Dialog>
 
@@ -515,13 +736,17 @@ const PaymentPlanDetail = () => {
                   <InputLabel>İndirim Tipi</InputLabel>
                   <Select
                     value={editFormData.discountType}
-                    onChange={(e) => setEditFormData({ ...editFormData, discountType: e.target.value, discountValue: e.target.value === 'fullScholarship' ? 100 : editFormData.discountValue })}
+                    onChange={(e) => setEditFormData({
+                      ...editFormData,
+                      discountType: e.target.value,
+                      discountValue: e.target.value === 'fullScholarship' ? 100 : editFormData.discountValue
+                    })}
                     label="İndirim Tipi"
                   >
                     <MenuItem value="none">İndirimsiz</MenuItem>
                     <MenuItem value="percentage">Yüzde (%)</MenuItem>
                     <MenuItem value="fixed">Tutar (₺)</MenuItem>
-                    <MenuItem value="fullScholarship">%100 Burslu (Tam Burs)</MenuItem>
+                    <MenuItem value="fullScholarship">%100 Burslu</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
@@ -529,33 +754,13 @@ const PaymentPlanDetail = () => {
                 <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
-                    label={editFormData.discountType === 'percentage' ? 'İndirim Yüzdesi (%)' : 'İndirim Tutarı (₺)'}
+                    label={editFormData.discountType === 'percentage' ? 'İndirim (%)' : 'İndirim (₺)'}
                     type="number"
                     value={editFormData.discountValue}
                     onChange={(e) => setEditFormData({ ...editFormData, discountValue: e.target.value })}
                   />
                 </Grid>
               )}
-              {editFormData.discountType === 'fullScholarship' && (
-                <Grid item xs={12}>
-                  <Alert severity="info">
-                    Bu öğrenci %100 bursludur. Tüm ücretler sıfırlanacaktır.
-                  </Alert>
-                </Grid>
-              )}
-              <Grid item xs={12}>
-                <FormControl fullWidth>
-                  <InputLabel>Fatura</InputLabel>
-                  <Select
-                    value={editFormData.isInvoiced}
-                    onChange={(e) => setEditFormData({ ...editFormData, isInvoiced: e.target.value === 'true' })}
-                    label="Fatura"
-                  >
-                    <MenuItem value={false}>Faturasız</MenuItem>
-                    <MenuItem value={true}>Faturalı</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
               <Grid item xs={12}>
                 <TextField
                   fullWidth
@@ -598,7 +803,12 @@ const PaymentPlanDetail = () => {
       />
 
       {/* Refund Dialog */}
-      <Dialog open={refundDialog.open} onClose={() => setRefundDialog({ open: false, installment: null, reason: '' })} maxWidth="sm" fullWidth>
+      <Dialog
+        open={refundDialog.open}
+        onClose={() => setRefundDialog({ open: false, installment: null, reason: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Taksit İadesi</DialogTitle>
         <DialogContent>
           <Alert severity="warning" sx={{ mb: 2, mt: 1 }}>
@@ -606,21 +816,20 @@ const PaymentPlanDetail = () => {
               {refundDialog.installment?.installmentNumber}. taksit için{' '}
               <strong>₺{refundDialog.installment?.paidAmount?.toLocaleString('tr-TR')}</strong> tutarında iade yapılacak.
             </Typography>
-            <Typography variant="caption">
-              Bu işlem ödemeyi geri alır ve taksiti "bekliyor" durumuna döndürür.
-            </Typography>
           </Alert>
           <TextField
             fullWidth
             label="İade Sebebi (Opsiyonel)"
             value={refundDialog.reason}
             onChange={(e) => setRefundDialog({ ...refundDialog, reason: e.target.value })}
-            placeholder="Örn: Yanlış kasa seçimi, müşteri talebi"
+            placeholder="Örn: Yanlış kasa seçimi"
             sx={{ mt: 2 }}
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRefundDialog({ open: false, installment: null, reason: '' })}>İptal</Button>
+          <Button onClick={() => setRefundDialog({ open: false, installment: null, reason: '' })}>
+            İptal
+          </Button>
           <Button onClick={handleRefundInstallment} variant="contained" color="warning">
             İade Et
           </Button>
