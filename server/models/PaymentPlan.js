@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const installmentSchema = new mongoose.Schema({
   installmentNumber: Number,
-  amount: Number,
+  amount: Number, // Toplam tutar (komisyon + KDV dahil)
+  baseAmount: Number, // Ana tutar (komisyon/KDV hariç)
   dueDate: Date,
   paidAmount: {
     type: Number,
@@ -13,8 +14,35 @@ const installmentSchema = new mongoose.Schema({
     default: false
   },
   paidDate: Date,
-  paymentMethod: String, // 'cash', 'creditCard'
-  isInvoiced: Boolean,
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'creditCard'],
+    default: 'cash'
+  },
+  // Kredi kartı taksit sayısı (sadece creditCard için)
+  creditCardInstallments: Number,
+  // Komisyon bilgisi
+  commission: {
+    type: Number,
+    default: 0
+  },
+  commissionRate: {
+    type: Number,
+    default: 0
+  },
+  // KDV bilgisi
+  vat: {
+    type: Number,
+    default: 0
+  },
+  vatRate: {
+    type: Number,
+    default: 0
+  },
+  isInvoiced: {
+    type: Boolean,
+    default: false
+  },
   invoiceNumber: String
 }, { _id: false });
 
@@ -34,10 +62,10 @@ const paymentPlanSchema = new mongoose.Schema({
     ref: 'Course',
     required: true
   },
-  // Ödeme tipi: 'cashFull' (nakit peşin), 'cashInstallment' (nakit taksitli), 'creditCard' (kredi kartı)
+  // Ödeme tipi: 'cashFull' (tek seferde), 'cashInstallment' (taksitli), 'creditCard' (kredi kartı), 'mixed' (karma)
   paymentType: {
     type: String,
-    enum: ['cashFull', 'cashInstallment', 'creditCard'],
+    enum: ['cashFull', 'cashInstallment', 'creditCard', 'mixed'],
     required: true
   },
   // Toplam tutar (indirim uygulanmadan önce)
