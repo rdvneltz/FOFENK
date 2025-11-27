@@ -126,7 +126,7 @@ const PaymentPlan = () => {
 
   const getVatRate = () => settings?.vatRate || 10;
 
-  const calculateMonthlyLessonDetails = async (enrollmentId, durationMonths, enrollmentsList = null) => {
+  const calculateMonthlyLessonDetails = async (enrollmentId, durationMonths, enrollmentsList = null, customEnrollmentDate = null) => {
     if (!enrollmentId || !durationMonths || durationMonths <= 0) {
       setMonthlyLessonDetails(null);
       return;
@@ -141,11 +141,14 @@ const PaymentPlan = () => {
         return;
       }
 
+      // customEnrollmentDate varsa onu kullan (async state güncelleme sorunu için)
+      const enrollmentDateToUse = customEnrollmentDate || formData.enrollmentDate;
+
       const response = await api.post('/courses/calculate-monthly-lessons', {
         courseId: enrollment.course._id,
-        startDate: enrollment.enrollmentDate || new Date(),
+        startDate: enrollmentDateToUse,
         durationMonths: parseInt(durationMonths),
-        enrollmentDate: formData.enrollmentDate
+        enrollmentDate: enrollmentDateToUse
       });
 
       setMonthlyLessonDetails(response.data);
@@ -562,9 +565,11 @@ const PaymentPlan = () => {
                         type="date"
                         value={formData.enrollmentDate}
                         onChange={(e) => {
-                          setFormData(prev => ({ ...prev, enrollmentDate: e.target.value }));
+                          const newEnrollmentDate = e.target.value;
+                          setFormData(prev => ({ ...prev, enrollmentDate: newEnrollmentDate }));
                           if (formData.enrollmentId && formData.durationMonths > 0) {
-                            calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths);
+                            // Yeni tarihi parametre olarak geç (async state sorunu için)
+                            calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths, null, newEnrollmentDate);
                           }
                         }}
                         InputLabelProps={{ shrink: true }}
