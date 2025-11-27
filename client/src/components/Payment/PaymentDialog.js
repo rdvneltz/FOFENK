@@ -43,6 +43,10 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
   const [error, setError] = useState('');
   const [overpaymentOption, setOverpaymentOption] = useState('next'); // 'next' or 'distribute'
 
+  // Check if installment already has VAT and commission configured
+  const hasPreConfiguredVat = installment?.isInvoiced && installment?.vat > 0;
+  const hasPreConfiguredCommission = installment?.paymentMethod === 'creditCard' && installment?.commission > 0;
+
   useEffect(() => {
     if (installment) {
       setFormData({
@@ -113,8 +117,8 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
       return;
     }
 
-    // Check for VAT rate if invoiced
-    if (formData.isInvoiced) {
+    // Check for VAT rate if invoiced and NOT pre-configured
+    if (formData.isInvoiced && !hasPreConfiguredVat) {
       const rate = settings?.vatRate;
       if (rate === undefined || rate === null) {
         setRateDialog(true);
@@ -130,7 +134,14 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
       cashRegisterId: formData.cashRegisterId,
       isInvoiced: formData.isInvoiced,
       paymentDate: formData.paymentDate,
-      vatRate: formData.isInvoiced ? finalVatRate : undefined,
+      // If VAT is pre-configured, pass the existing VAT amount instead of rate for recalculation
+      vatRate: hasPreConfiguredVat ? undefined : (formData.isInvoiced ? finalVatRate : undefined),
+      preConfiguredVat: hasPreConfiguredVat ? installment.vat : undefined,
+      // Pass commission info for pre-configured credit card payments
+      preConfiguredCommission: hasPreConfiguredCommission ? installment.commission : undefined,
+      preConfiguredCommissionRate: hasPreConfiguredCommission ? installment.commissionRate : undefined,
+      installmentPaymentMethod: installment.paymentMethod,
+      installmentCreditCardInstallments: installment.creditCardInstallments,
       // Overpayment handling
       overpaymentHandling: overpaymentInfo?.hasRemainingInstallments ? overpaymentOption : null,
       excessAmount: overpaymentInfo?.excess || 0
@@ -151,7 +162,10 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
   };
 
   const amount = parseFloat(formData.amount) || 0;
-  const calculatedVat = formData.isInvoiced ? (amount * (vatRate !== null ? vatRate : (settings?.vatRate || 10))) / 100 : 0;
+  // Only calculate new VAT if not pre-configured
+  const calculatedVat = (formData.isInvoiced && !hasPreConfiguredVat)
+    ? (amount * (vatRate !== null ? vatRate : (settings?.vatRate || 10))) / 100
+    : 0;
 
   return (
     <>
@@ -213,13 +227,50 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
                   <Checkbox
                     checked={formData.isInvoiced}
                     onChange={(e) => setFormData({ ...formData, isInvoiced: e.target.checked })}
+                    disabled={hasPreConfiguredVat}
                   />
                 }
-                label={`Faturalı (KDV %${vatRate !== null ? vatRate : (settings?.vatRate || 10)})`}
+                label={hasPreConfiguredVat
+                  ? `Faturalı (KDV dahil: ₺${installment?.vat?.toLocaleString('tr-TR')})`
+                  : `Faturalı (KDV %${vatRate !== null ? vatRate : (settings?.vatRate || 10)})`
+                }
               />
             </Grid>
 
-            {formData.isInvoiced && (
+            {/* Show pre-configured payment info if exists */}
+            {(hasPreConfiguredVat || hasPreConfiguredCommission) && (
+              <Grid item xs={12}>
+                <Box sx={{ p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+                  <Typography variant="body2" fontWeight="bold">
+                    ℹ️ Bu taksit için önceden yapılandırılmış ödeme bilgisi:
+                  </Typography>
+                  <Typography variant="body2">
+                    Ana tutar: ₺{(installment?.baseAmount || 0).toLocaleString('tr-TR')}
+                  </Typography>
+                  {hasPreConfiguredCommission && (
+                    <Typography variant="body2" color="warning.main">
+                      Komisyon (%{installment?.commissionRate}): +₺{installment?.commission?.toLocaleString('tr-TR')}
+                    </Typography>
+                  )}
+                  {hasPreConfiguredVat && (
+                    <Typography variant="body2" color="error.main">
+                      KDV (%{installment?.vatRate}): +₺{installment?.vat?.toLocaleString('tr-TR')}
+                    </Typography>
+                  )}
+                  <Typography variant="body2" fontWeight="bold" sx={{ mt: 1 }}>
+                    Toplam: ₺{amount.toLocaleString('tr-TR')}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                    {hasPreConfiguredVat && '(KDV gider olarak kaydedilecek ve kasadan düşülecektir)'}
+                    {hasPreConfiguredVat && hasPreConfiguredCommission && ' '}
+                    {hasPreConfiguredCommission && '(Komisyon gider olarak kaydedilecek ve kasadan düşülecektir)'}
+                  </Typography>
+                </Box>
+              </Grid>
+            )}
+
+            {/* Only show VAT calculation for non-preconfigured invoiced payments */}
+            {formData.isInvoiced && !hasPreConfiguredVat && (
               <Grid item xs={12}>
                 <Box sx={{ p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
                   <Typography variant="body2" fontWeight="bold">
