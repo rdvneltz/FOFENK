@@ -74,7 +74,7 @@ const StudentDetail = () => {
     open: false,
     adjustment: '',
     reason: '',
-    adminPassword: '',
+    password: '',
     error: ''
   });
 
@@ -194,21 +194,21 @@ const StudentDetail = () => {
         return;
       }
 
-      if (!balanceDialog.adminPassword) {
-        setBalanceDialog(prev => ({ ...prev, error: 'Admin şifresi gereklidir' }));
+      if (!balanceDialog.password) {
+        setBalanceDialog(prev => ({ ...prev, error: 'Şifre gereklidir' }));
         return;
       }
 
       const response = await api.post(`/students/${id}/adjust-balance`, {
         adjustment,
         reason: balanceDialog.reason,
-        adminPassword: balanceDialog.adminPassword,
-        institutionId: institution._id,
+        password: balanceDialog.password,
+        username: user?.username,
         updatedBy: user?.username
       });
 
       alert(`Bakiye başarıyla güncellendi: ${response.data.adjustmentDetails.oldBalance} → ${response.data.adjustmentDetails.newBalance}`);
-      setBalanceDialog({ open: false, adjustment: '', reason: '', adminPassword: '', error: '' });
+      setBalanceDialog({ open: false, adjustment: '', reason: '', password: '', error: '' });
       loadStudent();
     } catch (error) {
       setBalanceDialog(prev => ({
@@ -626,7 +626,7 @@ const StudentDetail = () => {
       {/* Balance Adjustment Dialog */}
       <Dialog
         open={balanceDialog.open}
-        onClose={() => setBalanceDialog({ open: false, adjustment: '', reason: '', adminPassword: '', error: '' })}
+        onClose={() => setBalanceDialog({ open: false, adjustment: '', reason: '', password: '', error: '' })}
         maxWidth="sm"
         fullWidth
       >
@@ -671,11 +671,11 @@ const StudentDetail = () => {
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label="Admin Şifresi"
+                  label="Şifreniz"
                   type="password"
-                  value={balanceDialog.adminPassword}
-                  onChange={(e) => setBalanceDialog({ ...balanceDialog, adminPassword: e.target.value, error: '' })}
-                  helperText="Bu işlem için admin şifresi gereklidir"
+                  value={balanceDialog.password}
+                  onChange={(e) => setBalanceDialog({ ...balanceDialog, password: e.target.value, error: '' })}
+                  helperText={`Kullanıcı: ${user?.username} (Sadece admin/superadmin yetkisi gerekir)`}
                   required
                 />
               </Grid>
@@ -702,13 +702,13 @@ const StudentDetail = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBalanceDialog({ open: false, adjustment: '', reason: '', adminPassword: '', error: '' })}>
+          <Button onClick={() => setBalanceDialog({ open: false, adjustment: '', reason: '', password: '', error: '' })}>
             İptal
           </Button>
           <Button
             onClick={handleBalanceAdjustment}
             variant="contained"
-            disabled={!balanceDialog.adjustment || !balanceDialog.reason || !balanceDialog.adminPassword}
+            disabled={!balanceDialog.adjustment || !balanceDialog.reason || !balanceDialog.password}
           >
             Bakiyeyi Güncelle
           </Button>

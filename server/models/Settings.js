@@ -46,11 +46,6 @@ const settingsSchema = new mongoose.Schema({
     type: [Date],
     default: []
   },
-  // Admin şifresi (bakiye düzenleme gibi kritik işlemler için)
-  adminPassword: {
-    type: String,
-    default: '1234' // Varsayılan şifre
-  },
   createdAt: {
     type: Date,
     default: Date.now

@@ -406,11 +406,11 @@ router.get('/archived/list', async (req, res) => {
   }
 });
 
-// Manual balance adjustment with admin password verification
+// Manual balance adjustment with user password verification (admin/superadmin only)
 router.post('/:id/adjust-balance', async (req, res) => {
   try {
-    const { adjustment, reason, adminPassword, institutionId, updatedBy } = req.body;
-    const Settings = require('../models/Settings');
+    const { adjustment, reason, password, username, updatedBy } = req.body;
+    const User = require('../models/User');
 
     // Validate inputs
     if (typeof adjustment !== 'number' || adjustment === 0) {
@@ -421,16 +421,24 @@ router.post('/:id/adjust-balance', async (req, res) => {
       return res.status(400).json({ message: 'Düzenleme sebebi zorunludur' });
     }
 
-    if (!adminPassword) {
-      return res.status(400).json({ message: 'Admin şifresi gereklidir' });
+    if (!password || !username) {
+      return res.status(400).json({ message: 'Kullanıcı adı ve şifre gereklidir' });
     }
 
-    // Get settings and verify admin password
-    const settings = await Settings.findOne({ institution: institutionId });
-    const storedPassword = settings?.adminPassword || '1234'; // Default password
+    // Verify user credentials and check role
+    const user = await User.findOne({ username }).select('+password');
+    if (!user) {
+      return res.status(403).json({ message: 'Kullanıcı bulunamadı' });
+    }
 
-    if (adminPassword !== storedPassword) {
-      return res.status(403).json({ message: 'Admin şifresi yanlış' });
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(403).json({ message: 'Şifre yanlış' });
+    }
+
+    // Only superadmin and admin can adjust balance
+    if (!['superadmin', 'admin'].includes(user.role)) {
+      return res.status(403).json({ message: 'Bu işlem için yetkiniz yok. Sadece admin kullanıcılar bakiye düzenleyebilir.' });
     }
 
     // Find student
@@ -448,7 +456,7 @@ router.post('/:id/adjust-balance', async (req, res) => {
 
     // Log the activity
     await ActivityLog.create({
-      user: updatedBy || 'System',
+      user: updatedBy || user.username,
       action: 'update',
       entity: 'Student',
       entityId: student._id,
