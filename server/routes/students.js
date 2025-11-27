@@ -406,4 +406,76 @@ router.get('/archived/list', async (req, res) => {
   }
 });
 
+// Manual balance adjustment with admin password verification
+router.post('/:id/adjust-balance', async (req, res) => {
+  try {
+    const { adjustment, reason, adminPassword, institutionId, updatedBy } = req.body;
+    const Settings = require('../models/Settings');
+
+    // Validate inputs
+    if (typeof adjustment !== 'number' || adjustment === 0) {
+      return res.status(400).json({ message: 'Geçerli bir düzenleme tutarı girin' });
+    }
+
+    if (!reason || reason.trim() === '') {
+      return res.status(400).json({ message: 'Düzenleme sebebi zorunludur' });
+    }
+
+    if (!adminPassword) {
+      return res.status(400).json({ message: 'Admin şifresi gereklidir' });
+    }
+
+    // Get settings and verify admin password
+    const settings = await Settings.findOne({ institution: institutionId });
+    const storedPassword = settings?.adminPassword || '1234'; // Default password
+
+    if (adminPassword !== storedPassword) {
+      return res.status(403).json({ message: 'Admin şifresi yanlış' });
+    }
+
+    // Find student
+    const student = await Student.findById(req.params.id);
+    if (!student) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    const oldBalance = student.balance || 0;
+    const newBalance = oldBalance + adjustment;
+
+    // Update student balance
+    student.balance = newBalance;
+    await student.save();
+
+    // Log the activity
+    await ActivityLog.create({
+      user: updatedBy || 'System',
+      action: 'update',
+      entity: 'Student',
+      entityId: student._id,
+      description: `Manuel bakiye düzenleme: ${adjustment > 0 ? '+' : ''}₺${adjustment.toLocaleString('tr-TR')} (${oldBalance} → ${newBalance}) - Sebep: ${reason}`,
+      institution: student.institution,
+      season: student.season
+    });
+
+    // Populate and return updated student
+    const updatedStudent = await Student.findById(student._id)
+      .populate('institution', 'name')
+      .populate('season', 'name startDate endDate');
+
+    res.json({
+      message: 'Bakiye başarıyla güncellendi',
+      student: updatedStudent,
+      adjustmentDetails: {
+        oldBalance,
+        adjustment,
+        newBalance,
+        reason
+      }
+    });
+  } catch (error) {
+    console.error('Error adjusting balance:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

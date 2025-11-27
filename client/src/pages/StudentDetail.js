@@ -34,6 +34,7 @@ import {
   Add,
   Archive,
   Delete,
+  AccountBalance,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -68,6 +69,13 @@ const StudentDetail = () => {
   const [unenrollDialog, setUnenrollDialog] = useState({
     open: false,
     enrollment: null
+  });
+  const [balanceDialog, setBalanceDialog] = useState({
+    open: false,
+    adjustment: '',
+    reason: '',
+    adminPassword: '',
+    error: ''
   });
 
   useEffect(() => {
@@ -170,6 +178,43 @@ const StudentDetail = () => {
       loadStudent(); // Reload to update the list
     } catch (error) {
       alert('Kurstan çıkarma hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleBalanceAdjustment = async () => {
+    try {
+      const adjustment = parseFloat(balanceDialog.adjustment);
+      if (isNaN(adjustment) || adjustment === 0) {
+        setBalanceDialog(prev => ({ ...prev, error: 'Geçerli bir tutar girin' }));
+        return;
+      }
+
+      if (!balanceDialog.reason.trim()) {
+        setBalanceDialog(prev => ({ ...prev, error: 'Düzenleme sebebi zorunludur' }));
+        return;
+      }
+
+      if (!balanceDialog.adminPassword) {
+        setBalanceDialog(prev => ({ ...prev, error: 'Admin şifresi gereklidir' }));
+        return;
+      }
+
+      const response = await api.post(`/students/${id}/adjust-balance`, {
+        adjustment,
+        reason: balanceDialog.reason,
+        adminPassword: balanceDialog.adminPassword,
+        institutionId: institution._id,
+        updatedBy: user?.username
+      });
+
+      alert(`Bakiye başarıyla güncellendi: ${response.data.adjustmentDetails.oldBalance} → ${response.data.adjustmentDetails.newBalance}`);
+      setBalanceDialog({ open: false, adjustment: '', reason: '', adminPassword: '', error: '' });
+      loadStudent();
+    } catch (error) {
+      setBalanceDialog(prev => ({
+        ...prev,
+        error: error.response?.data?.message || 'Bakiye güncellenirken hata oluştu'
+      }));
     }
   };
 
@@ -287,9 +332,18 @@ const StudentDetail = () => {
 
           {/* Balance Card */}
           <Paper sx={{ p: 3, mt: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Bakiye Durumu
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+              <Typography variant="h6">
+                Bakiye Durumu
+              </Typography>
+              <Button
+                size="small"
+                startIcon={<AccountBalance />}
+                onClick={() => setBalanceDialog({ ...balanceDialog, open: true })}
+              >
+                Düzenle
+              </Button>
+            </Box>
             <Typography
               variant="h3"
               color={student.balance > 0 ? 'error.main' : 'success.main'}
@@ -568,6 +622,98 @@ const StudentDetail = () => {
         cashRegisters={cashRegisters}
         onSubmit={handleRefund}
       />
+
+      {/* Balance Adjustment Dialog */}
+      <Dialog
+        open={balanceDialog.open}
+        onClose={() => setBalanceDialog({ open: false, adjustment: '', reason: '', adminPassword: '', error: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Manuel Bakiye Düzenleme</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Mevcut Bakiye: <strong>{student?.balance > 0 ? '-' : ''}₺{Math.abs(student?.balance || 0).toLocaleString('tr-TR')}</strong>
+              {' '}({student?.balance > 0 ? 'Borç' : 'Alacak'})
+            </Typography>
+
+            {balanceDialog.error && (
+              <Typography color="error" sx={{ mb: 2 }}>
+                {balanceDialog.error}
+              </Typography>
+            )}
+
+            <Grid container spacing={2}>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Düzenleme Tutarı (₺)"
+                  type="number"
+                  value={balanceDialog.adjustment}
+                  onChange={(e) => setBalanceDialog({ ...balanceDialog, adjustment: e.target.value, error: '' })}
+                  helperText="Pozitif değer: Borç ekler, Negatif değer: Borç azaltır"
+                  required
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Düzenleme Sebebi"
+                  multiline
+                  rows={2}
+                  value={balanceDialog.reason}
+                  onChange={(e) => setBalanceDialog({ ...balanceDialog, reason: e.target.value, error: '' })}
+                  placeholder="Örn: Sistem hatası düzeltmesi, Ödeme planı silindi"
+                  required
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Admin Şifresi"
+                  type="password"
+                  value={balanceDialog.adminPassword}
+                  onChange={(e) => setBalanceDialog({ ...balanceDialog, adminPassword: e.target.value, error: '' })}
+                  helperText="Bu işlem için admin şifresi gereklidir"
+                  required
+                />
+              </Grid>
+            </Grid>
+
+            {balanceDialog.adjustment && !isNaN(parseFloat(balanceDialog.adjustment)) && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                <Typography variant="body2">
+                  <strong>Önizleme:</strong>
+                </Typography>
+                <Typography variant="body2">
+                  Mevcut: {student?.balance > 0 ? '-' : ''}₺{Math.abs(student?.balance || 0).toLocaleString('tr-TR')}
+                </Typography>
+                <Typography variant="body2">
+                  Düzenleme: {parseFloat(balanceDialog.adjustment) > 0 ? '+' : ''}₺{parseFloat(balanceDialog.adjustment).toLocaleString('tr-TR')}
+                </Typography>
+                <Typography variant="body2" fontWeight="bold" color="primary">
+                  Yeni Bakiye: {((student?.balance || 0) + parseFloat(balanceDialog.adjustment)) > 0 ? '-' : ''}₺
+                  {Math.abs((student?.balance || 0) + parseFloat(balanceDialog.adjustment)).toLocaleString('tr-TR')}
+                  {' '}({((student?.balance || 0) + parseFloat(balanceDialog.adjustment)) > 0 ? 'Borç' : 'Alacak'})
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBalanceDialog({ open: false, adjustment: '', reason: '', adminPassword: '', error: '' })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleBalanceAdjustment}
+            variant="contained"
+            disabled={!balanceDialog.adjustment || !balanceDialog.reason || !balanceDialog.adminPassword}
+          >
+            Bakiyeyi Güncelle
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
