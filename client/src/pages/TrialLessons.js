@@ -37,12 +37,14 @@ import {
   Delete,
   Phone,
   CalendarMonth,
+  WhatsApp,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import TrialLessonDetailDialog from '../components/Calendar/TrialLessonDetailDialog';
 import ConvertToStudentDialog from '../components/Calendar/ConvertToStudentDialog';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
 
 const TrialLessons = () => {
   const { institution, season, user } = useApp();
@@ -271,6 +273,25 @@ const TrialLessons = () => {
     loadData();
   };
 
+  const handleSendWhatsAppReminder = (trial) => {
+    const phone = trial.phone || (trial.parentContacts && trial.parentContacts[0]?.phone);
+
+    if (!phone) {
+      setError('Telefon numarası bulunamadı');
+      return;
+    }
+
+    const data = {
+      studentName: `${trial.firstName} ${trial.lastName}`,
+      name: `${trial.firstName} ${trial.lastName}`,
+      date: trial.scheduledDate,
+      time: trial.scheduledTime,
+      courseName: trial.course?.name || '',
+    };
+
+    sendWhatsAppMessage(phone, DEFAULT_WHATSAPP_TEMPLATES.trialLessonReminder, data);
+  };
+
   const getStatusChip = (status) => {
     switch (status) {
       case 'completed':
@@ -479,6 +500,15 @@ const TrialLessons = () => {
 
                       {trial.status === 'pending' && (
                         <>
+                          <Tooltip title="WhatsApp Hatırlatma">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleSendWhatsAppReminder(trial)}
+                              sx={{ color: '#25D366' }}
+                            >
+                              <WhatsApp fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title="Tamamlandı">
                             <IconButton
                               size="small"

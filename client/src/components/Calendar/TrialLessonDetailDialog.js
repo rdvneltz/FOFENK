@@ -20,7 +20,6 @@ import {
   Select,
   FormControlLabel,
   Checkbox,
-  Divider,
 } from '@mui/material';
 import {
   Close,
@@ -33,11 +32,13 @@ import {
   Phone,
   Email,
   Schedule,
+  WhatsApp,
 } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import api from '../../api';
 import LoadingSpinner from '../Common/LoadingSpinner';
 import ConvertToStudentDialog from './ConvertToStudentDialog';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../../utils/whatsappHelper';
 
 const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDeleted }) => {
   const { user } = useApp();
@@ -146,6 +147,27 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
     setConvertDialogOpen(false);
     loadTrialLessonDetails();
     if (onUpdated) onUpdated();
+  };
+
+  const handleSendWhatsAppReminder = () => {
+    if (!trialData) return;
+
+    const phone = trialData.phone || (trialData.parentContacts && trialData.parentContacts[0]?.phone);
+
+    if (!phone) {
+      alert('Telefon numarası bulunamadı');
+      return;
+    }
+
+    const data = {
+      studentName: `${trialData.firstName} ${trialData.lastName}`,
+      name: `${trialData.firstName} ${trialData.lastName}`,
+      date: trialData.scheduledDate,
+      time: trialData.scheduledTime,
+      courseName: trialData.course?.name || '',
+    };
+
+    sendWhatsAppMessage(phone, DEFAULT_WHATSAPP_TEMPLATES.trialLessonReminder, data);
   };
 
   const getStatusColor = (status) => {
@@ -550,6 +572,23 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
         <DialogActions>
           <Button onClick={onClose}>Kapat</Button>
           <Box sx={{ flex: 1 }} />
+          {formData.status === 'pending' && (
+            <Button
+              startIcon={<WhatsApp />}
+              onClick={handleSendWhatsAppReminder}
+              sx={{
+                color: '#25D366',
+                borderColor: '#25D366',
+                '&:hover': {
+                  borderColor: '#128C7E',
+                  bgcolor: 'rgba(37, 211, 102, 0.08)',
+                },
+              }}
+              variant="outlined"
+            >
+              Hatırlatma
+            </Button>
+          )}
           {formData.status !== 'converted' && (
             <>
               <Button
