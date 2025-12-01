@@ -29,7 +29,7 @@ import {
   FormControlLabel,
   Tooltip,
 } from '@mui/material';
-import { ArrowBack, Edit, Delete, Payment, Undo, CreditCard, Money, Receipt } from '@mui/icons-material';
+import { ArrowBack, Edit, Delete, Payment, Undo, CreditCard, Money, Receipt, WhatsApp, Email, Send } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -39,6 +39,8 @@ import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import PaymentDialog from '../components/Payment/PaymentDialog';
+import EmailDialog from '../components/Email/EmailDialog';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
 
 const PaymentPlanDetail = () => {
   const { id } = useParams();
@@ -73,6 +75,12 @@ const PaymentPlanDetail = () => {
   });
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [notificationDialog, setNotificationDialog] = useState(false);
+  const [emailDialog, setEmailDialog] = useState({
+    open: false,
+    subject: '',
+    message: ''
+  });
 
   useEffect(() => {
     loadPaymentPlan();
@@ -267,6 +275,68 @@ const PaymentPlanDetail = () => {
     }
   };
 
+  // Generate notification message with payment plan data
+  const getNotificationData = () => {
+    const student = paymentPlan.student;
+    return {
+      studentName: `${student.firstName} ${student.lastName}`,
+      name: `${student.firstName} ${student.lastName}`,
+      totalAmount: paymentPlan.discountedAmount,
+      paidAmount: paymentPlan.paidAmount || 0,
+      remainingAmount: paymentPlan.remainingAmount || 0,
+      courseName: paymentPlan.course?.name || '',
+      // Find next unpaid installment
+      ...(paymentPlan.installments?.find(i => !i.isPaid) && {
+        amount: paymentPlan.installments.find(i => !i.isPaid).amount,
+        dueDate: paymentPlan.installments.find(i => !i.isPaid).dueDate,
+        installmentNumber: paymentPlan.installments.find(i => !i.isPaid).installmentNumber,
+        totalInstallments: paymentPlan.installments.length
+      })
+    };
+  };
+
+  const handleWhatsAppNotification = () => {
+    const student = paymentPlan.student;
+    const phone = student.phone || student.parentPhone;
+
+    if (!phone) {
+      setError('Öğrenci veya velinin telefon numarası bulunamadı');
+      return;
+    }
+
+    const data = getNotificationData();
+    sendWhatsAppMessage(phone, DEFAULT_WHATSAPP_TEMPLATES.paymentPlanStatus, data);
+    setNotificationDialog(false);
+    setSuccess('WhatsApp mesajı açıldı');
+  };
+
+  const handleEmailNotification = () => {
+    const data = getNotificationData();
+
+    const message = `Sayın ${data.studentName},
+
+Ödeme Planı Durumunuz:
+
+Kurs: ${data.courseName}
+Toplam Tutar: ${data.totalAmount?.toLocaleString('tr-TR')} TL
+Ödenen: ${data.paidAmount?.toLocaleString('tr-TR')} TL
+Kalan: ${data.remainingAmount?.toLocaleString('tr-TR')} TL
+
+${data.dueDate ? `Sonraki Taksit: ${new Date(data.dueDate).toLocaleDateString('tr-TR')} - ${data.amount?.toLocaleString('tr-TR')} TL` : ''}
+
+Sorularınız için bizimle iletişime geçebilirsiniz.
+
+Saygılarımızla,
+Fofora Tiyatro`;
+
+    setEmailDialog({
+      open: true,
+      subject: 'Ödeme Planı Durumu - Fofora Tiyatro',
+      message
+    });
+    setNotificationDialog(false);
+  };
+
   const openEditDialog = () => {
     setEditFormData({
       totalAmount: paymentPlan.totalAmount || '',
@@ -345,6 +415,14 @@ const PaymentPlanDetail = () => {
           Geri
         </Button>
         <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="contained"
+            color="success"
+            startIcon={<Send />}
+            onClick={() => setNotificationDialog(true)}
+          >
+            Bildirim Gönder
+          </Button>
           <Button
             variant="outlined"
             startIcon={<Edit />}
@@ -851,6 +929,97 @@ const PaymentPlanDetail = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Notification Dialog */}
+      <Dialog
+        open={notificationDialog}
+        onClose={() => setNotificationDialog(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ödeme Planı Bildirimi Gönder</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              {paymentPlan.student?.firstName} {paymentPlan.student?.lastName} için ödeme planı durumunu bildirin:
+            </Typography>
+
+            <Paper sx={{ p: 2, my: 2, bgcolor: 'grey.50' }}>
+              <Grid container spacing={1}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Toplam Tutar</Typography>
+                  <Typography variant="body1">₺{paymentPlan.discountedAmount?.toLocaleString('tr-TR')}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Ödenen</Typography>
+                  <Typography variant="body1" color="success.main">₺{paymentPlan.paidAmount?.toLocaleString('tr-TR') || 0}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Kalan</Typography>
+                  <Typography variant="body1" color="error.main">₺{paymentPlan.remainingAmount?.toLocaleString('tr-TR') || 0}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Durum</Typography>
+                  <Typography variant="body1">
+                    {paymentPlan.isCompleted ? 'Tamamlandı' : `${paymentPlan.installments?.filter(i => i.isPaid).length || 0}/${paymentPlan.installments?.length || 0} Taksit`}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Paper>
+
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 3 }}>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<WhatsApp />}
+                onClick={handleWhatsAppNotification}
+                sx={{
+                  bgcolor: '#25D366',
+                  '&:hover': { bgcolor: '#128C7E' },
+                  flex: 1
+                }}
+              >
+                WhatsApp
+              </Button>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<Email />}
+                onClick={handleEmailNotification}
+                color="info"
+                sx={{ flex: 1 }}
+                disabled={!paymentPlan.student?.email}
+              >
+                Email
+              </Button>
+            </Box>
+
+            {!paymentPlan.student?.email && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1, textAlign: 'center' }}>
+                Öğrencinin email adresi kayıtlı değil
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNotificationDialog(false)}>
+            Kapat
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Email Dialog */}
+      <EmailDialog
+        open={emailDialog.open}
+        onClose={() => setEmailDialog({ open: false, subject: '', message: '' })}
+        recipients={paymentPlan.student?.email ? [{
+          email: paymentPlan.student.email,
+          name: `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}`
+        }] : []}
+        defaultSubject={emailDialog.subject}
+        defaultMessage={emailDialog.message}
+        onSuccess={() => setSuccess('Email başarıyla gönderildi')}
+      />
     </Container>
   );
 };

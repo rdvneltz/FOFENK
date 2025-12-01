@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -15,54 +15,72 @@ import {
   IconButton,
   Chip,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import { Close, AttachFile, Delete } from '@mui/icons-material';
 import api from '../../api';
+import { useApp } from '../../context/AppContext';
 
-const EMAIL_TEMPLATES = {
-  custom: {
-    label: 'Özel Mesaj',
-    subject: '',
-    message: '',
-  },
-  welcome: {
-    label: 'Hoşgeldin Mesajı',
-    subject: 'Fofora Tiyatro\'ya Hoş Geldiniz!',
-    message: 'Merhaba {name},\n\nFofora Tiyatro ailesine katıldığınız için çok mutluyuz! Sizinle çalışmak bizim için bir onur.\n\nEğitim süreciniz boyunca size en iyi deneyimi sunmak için buradayız.\n\nSaygılarımızla,\nFofora Tiyatro Ekibi',
-  },
-  paymentReminder: {
-    label: 'Ödeme Hatırlatma',
-    subject: 'Ödeme Hatırlatması',
-    message: 'Sayın {name},\n\nYaklaşan veya gecikmiş ödemeleriniz bulunmaktadır. Lütfen ödemelerinizi zamanında yapmanızı rica ederiz.\n\nDetaylı bilgi için bizimle iletişime geçebilirsiniz.\n\nSaygılarımızla,\nFofora Tiyatro Ekibi',
-  },
-  lessonReminder: {
-    label: 'Ders Hatırlatma',
-    subject: 'Ders Hatırlatması',
-    message: 'Sayın {name},\n\nDersiniz yaklaşıyor! Size hatırlatmak istedik.\n\nLütfen dersinize 10 dakika önce gelerek hazırlıklarınızı yapınız.\n\nGörüşmek üzere!\nFofora Tiyatro Ekibi',
-  },
-  general: {
-    label: 'Genel Bilgilendirme',
-    subject: 'Fofora Tiyatro - Bilgilendirme',
-    message: 'Sayın {name},\n\n[Mesajınızı buraya yazın]\n\nSaygılarımızla,\nFofora Tiyatro Ekibi',
-  },
+// Default template for custom messages
+const DEFAULT_TEMPLATE = {
+  _id: 'custom',
+  name: 'Özel Mesaj',
+  template: '',
+  type: 'general',
 };
 
-const EmailDialog = ({ open, onClose, recipients = [], onSuccess }) => {
+const EmailDialog = ({ open, onClose, recipients = [], onSuccess, defaultSubject = '', defaultMessage = '' }) => {
+  const { institution } = useApp();
+  const [templates, setTemplates] = useState([DEFAULT_TEMPLATE]);
   const [formData, setFormData] = useState({
-    template: 'custom',
-    subject: '',
-    message: '',
+    templateId: 'custom',
+    subject: defaultSubject,
+    message: defaultMessage,
   });
   const [attachments, setAttachments] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingTemplates, setLoadingTemplates] = useState(false);
   const [error, setError] = useState('');
 
-  const handleTemplateChange = (template) => {
-    const selectedTemplate = EMAIL_TEMPLATES[template];
+  // Load templates from database when dialog opens
+  useEffect(() => {
+    if (open && institution) {
+      loadTemplates();
+    }
+  }, [open, institution]);
+
+  // Update form when default values change
+  useEffect(() => {
+    if (defaultSubject || defaultMessage) {
+      setFormData(prev => ({
+        ...prev,
+        subject: defaultSubject || prev.subject,
+        message: defaultMessage || prev.message,
+      }));
+    }
+  }, [defaultSubject, defaultMessage]);
+
+  const loadTemplates = async () => {
+    try {
+      setLoadingTemplates(true);
+      const response = await api.get('/message-templates', {
+        params: { institution: institution._id },
+      });
+      setTemplates([DEFAULT_TEMPLATE, ...response.data]);
+    } catch (error) {
+      console.error('Error loading templates:', error);
+      // Keep using default template on error
+    } finally {
+      setLoadingTemplates(false);
+    }
+  };
+
+  const handleTemplateChange = (templateId) => {
+    const selectedTemplate = templates.find(t => t._id === templateId) || DEFAULT_TEMPLATE;
     setFormData({
-      template,
-      subject: selectedTemplate.subject,
-      message: selectedTemplate.message,
+      templateId,
+      subject: selectedTemplate.name !== 'Özel Mesaj' ? selectedTemplate.name : '',
+      message: selectedTemplate.template || '',
     });
   };
 
@@ -104,7 +122,7 @@ const EmailDialog = ({ open, onClose, recipients = [], onSuccess }) => {
       // Single recipient
       if (recipients.length === 1) {
         const recipient = recipients[0];
-        const message = formData.message.replace(/{name}/g, recipient.name || '');
+        const message = replaceVariables(formData.message, recipient);
 
         const formDataToSend = new FormData();
         formDataToSend.append('to', recipient.email);
@@ -122,7 +140,7 @@ const EmailDialog = ({ open, onClose, recipients = [], onSuccess }) => {
           },
         });
       } else {
-        // Bulk send
+        // Bulk send - variables will be replaced on server side for each recipient
         const formDataToSend = new FormData();
         formDataToSend.append('recipients', JSON.stringify(recipients));
         formDataToSend.append('subject', formData.subject);
@@ -154,13 +172,33 @@ const EmailDialog = ({ open, onClose, recipients = [], onSuccess }) => {
 
   const handleClose = () => {
     setFormData({
-      template: 'custom',
+      templateId: 'custom',
       subject: '',
       message: '',
     });
     setAttachments([]);
     setError('');
     onClose();
+  };
+
+  // Helper function to replace template variables
+  const replaceVariables = (text, recipient) => {
+    return text
+      .replace(/{studentName}/g, recipient.name || '')
+      .replace(/{name}/g, recipient.name || '')
+      .replace(/{email}/g, recipient.email || '')
+      .replace(/{phone}/g, recipient.phone || '');
+  };
+
+  // Get type label for template display
+  const getTypeLabel = (type) => {
+    switch (type) {
+      case 'paymentPlan': return 'Ödeme Planı';
+      case 'paymentReminder': return 'Ödeme Hatırlatma';
+      case 'trialLessonReminder': return 'Deneme Dersi';
+      case 'lessonReminder': return 'Ders Hatırlatma';
+      default: return 'Genel';
+    }
   };
 
   return (
@@ -208,13 +246,20 @@ const EmailDialog = ({ open, onClose, recipients = [], onSuccess }) => {
         <FormControl fullWidth sx={{ mb: 2 }}>
           <InputLabel>Şablon Seç</InputLabel>
           <Select
-            value={formData.template}
+            value={formData.templateId}
             onChange={(e) => handleTemplateChange(e.target.value)}
             label="Şablon Seç"
+            disabled={loadingTemplates}
+            startAdornment={loadingTemplates ? <CircularProgress size={20} sx={{ mr: 1 }} /> : null}
           >
-            {Object.entries(EMAIL_TEMPLATES).map(([key, template]) => (
-              <MenuItem key={key} value={key}>
-                {template.label}
+            {templates.map((template) => (
+              <MenuItem key={template._id} value={template._id}>
+                {template.name}
+                {template._id !== 'custom' && (
+                  <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                    ({getTypeLabel(template.type)})
+                  </Typography>
+                )}
               </MenuItem>
             ))}
           </Select>
@@ -238,7 +283,7 @@ const EmailDialog = ({ open, onClose, recipients = [], onSuccess }) => {
           rows={10}
           sx={{ mb: 2 }}
           required
-          helperText="İpucu: {name} yazarak alıcının adını otomatik ekleyebilirsiniz"
+          helperText="Değişkenler: {studentName}, {parentName}, {courseName}, {amount}, {date}, {time}"
         />
 
         <Box sx={{ mb: 2 }}>

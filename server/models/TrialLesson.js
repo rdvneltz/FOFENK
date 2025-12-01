@@ -4,7 +4,10 @@ const contactSchema = new mongoose.Schema({
   name: String,
   phone: String,
   email: String,
-  relationship: String
+  relationship: {
+    type: String,
+    enum: ['Anne', 'Baba', 'Vasi', 'Diğer']
+  }
 }, { _id: false });
 
 // Deneme/Tanışma dersi kayıtları
@@ -26,9 +29,30 @@ const trialLessonSchema = new mongoose.Schema({
     ref: 'Course',
     required: true
   },
-  scheduledLesson: {
+  // Deneme dersi eğitmeni
+  instructor: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'ScheduledLesson'
+    ref: 'Instructor'
+  },
+  // Deneme dersi tarihi ve saati
+  scheduledDate: {
+    type: Date,
+    required: true
+  },
+  scheduledTime: {
+    type: String,
+    required: true
+  },
+  // Ders süresi (dakika)
+  duration: {
+    type: Number,
+    default: 60
+  },
+  // Durum: bekliyor, tamamlandı, iptal, kayıt oldu
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'cancelled', 'converted'],
+    default: 'pending'
   },
   // Deneme dersine katıldı mı
   attended: {
@@ -45,6 +69,11 @@ const trialLessonSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Student'
   },
+  // Kayıt yapıldıysa enrollment ID
+  enrollment: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StudentCourseEnrollment'
+  },
   season: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Season',
@@ -55,7 +84,22 @@ const trialLessonSchema = new mongoose.Schema({
     ref: 'Institution',
     required: true
   },
+  // Ders öncesi notlar
   notes: String,
+  // Ders sonrası geri bildirim/notlar
+  feedbackNotes: String,
+  // Kayıt olmak istiyor mu?
+  interestedInEnrollment: {
+    type: Boolean,
+    default: null
+  },
+  // Bizi nasıl duydunuz?
+  referralSource: {
+    type: String,
+    enum: ['instagram', 'facebook', 'google', 'friend', 'flyer', 'other', ''],
+    default: ''
+  },
+  referralDetails: String,
   createdAt: {
     type: Date,
     default: Date.now

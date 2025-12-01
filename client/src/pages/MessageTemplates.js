@@ -199,8 +199,10 @@ const MessageTemplates = () => {
                   </Typography>
                   <Typography variant="caption" color="primary" sx={{ mb: 1, display: 'block' }}>
                     {template.type === 'general' ? 'Genel' :
-                     template.type === 'payment' ? 'Ödeme' :
-                     template.type === 'reminder' ? 'Hatırlatma' : 'Hoş Geldin'}
+                     template.type === 'paymentPlan' ? 'Ödeme Planı' :
+                     template.type === 'paymentReminder' ? 'Ödeme Hatırlatma' :
+                     template.type === 'trialLessonReminder' ? 'Deneme Dersi Hatırlatma' :
+                     template.type === 'lessonReminder' ? 'Ders Hatırlatma' : 'Genel'}
                   </Typography>
                   <Typography
                     variant="body2"
@@ -279,9 +281,10 @@ const MessageTemplates = () => {
                     label="Tip"
                   >
                     <MenuItem value="general">Genel</MenuItem>
-                    <MenuItem value="payment">Ödeme</MenuItem>
-                    <MenuItem value="reminder">Hatırlatma</MenuItem>
-                    <MenuItem value="welcome">Hoş Geldin</MenuItem>
+                    <MenuItem value="paymentPlan">Ödeme Planı</MenuItem>
+                    <MenuItem value="paymentReminder">Ödeme Hatırlatma</MenuItem>
+                    <MenuItem value="trialLessonReminder">Deneme Dersi Hatırlatma</MenuItem>
+                    <MenuItem value="lessonReminder">Ders Hatırlatma</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
@@ -291,14 +294,23 @@ const MessageTemplates = () => {
                     Kullanılabilir Değişkenler (Tıklayın):
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                    {['(Ad)', '(Soyad)', '(Telefon)', '(Email)', '(Tutar)', '(Tarih)'].map((variable) => (
+                    {[
+                      { key: '{studentName}', label: 'Öğrenci Adı' },
+                      { key: '{parentName}', label: 'Veli Adı' },
+                      { key: '{courseName}', label: 'Kurs Adı' },
+                      { key: '{amount}', label: 'Tutar' },
+                      { key: '{date}', label: 'Tarih' },
+                      { key: '{time}', label: 'Saat' },
+                      { key: '{phone}', label: 'Telefon' },
+                      { key: '{email}', label: 'Email' },
+                    ].map((variable) => (
                       <Button
-                        key={variable}
+                        key={variable.key}
                         size="small"
                         variant="outlined"
-                        onClick={() => insertVariable(variable)}
+                        onClick={() => insertVariable(variable.key)}
                       >
-                        {variable}
+                        {variable.label}
                       </Button>
                     ))}
                   </Box>
