@@ -47,7 +47,9 @@ const activityLogSchema = new mongoose.Schema({
       'Settings',
       'System',
       'User',
-      'Database'
+      'Database',
+      'SalaryAccrual',
+      'SalaryPayment'
     ]
   },
   entityId: {
