@@ -1,18 +1,31 @@
 const express = require('express');
 const router = express.Router();
 const TrialLesson = require('../models/TrialLesson');
+const Student = require('../models/Student');
+const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 const ActivityLog = require('../models/ActivityLog');
 
 // Get all trial lessons with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, status, startDate, endDate } = req.query;
+    const { institution, season, status, month, year, startDate, endDate } = req.query;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    if (institution) filter.institution = institution;
+    if (season) filter.season = season;
     if (status) filter.status = status;
 
+    // Filter by month/year for calendar view
+    if (month && year) {
+      const startOfMonth = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0, 23, 59, 59);
+      filter.scheduledDate = {
+        $gte: startOfMonth,
+        $lte: endOfMonth
+      };
+    }
+
+    // Filter by date range
     if (startDate && endDate) {
       filter.scheduledDate = {
         $gte: new Date(startDate),
@@ -23,6 +36,9 @@ router.get('/', async (req, res) => {
     const trialLessons = await TrialLesson.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
+      .populate('course', 'name')
+      .populate('instructor', 'name')
+      .populate('student', 'firstName lastName')
       .sort({ scheduledDate: -1 });
 
     res.json(trialLessons);
@@ -36,7 +52,10 @@ router.get('/:id', async (req, res) => {
   try {
     const trialLesson = await TrialLesson.findById(req.params.id)
       .populate('institution', 'name')
-      .populate('season', 'name startDate endDate');
+      .populate('season', 'name startDate endDate')
+      .populate('course', 'name')
+      .populate('instructor', 'name')
+      .populate('student', 'firstName lastName');
 
     if (!trialLesson) {
       return res.status(404).json({ message: 'Deneme dersi bulunamadı' });
@@ -50,7 +69,18 @@ router.get('/:id', async (req, res) => {
 // Create trial lesson
 router.post('/', async (req, res) => {
   try {
-    const trialLesson = new TrialLesson(req.body);
+    // Handle date field - convert date string to scheduledDate if needed
+    const trialData = { ...req.body };
+    if (trialData.date && !trialData.scheduledDate) {
+      trialData.scheduledDate = new Date(trialData.date);
+      delete trialData.date;
+    }
+    if (trialData.time && !trialData.scheduledTime) {
+      trialData.scheduledTime = trialData.time;
+      delete trialData.time;
+    }
+
+    const trialLesson = new TrialLesson(trialData);
     const newTrialLesson = await trialLesson.save();
 
     // Log activity
@@ -59,14 +89,15 @@ router.post('/', async (req, res) => {
       action: 'create',
       entity: 'TrialLesson',
       entityId: newTrialLesson._id,
-      description: `Yeni deneme dersi oluşturuldu: ${newTrialLesson.studentName}`,
-      institution: newTrialLesson.institution,
-      season: newTrialLesson.season
+      description: `Yeni deneme dersi oluşturuldu: ${newTrialLesson.firstName} ${newTrialLesson.lastName}`,
+      institution: newTrialLesson.institution
     });
 
     const populatedTrialLesson = await TrialLesson.findById(newTrialLesson._id)
       .populate('institution', 'name')
-      .populate('season', 'name startDate endDate');
+      .populate('season', 'name startDate endDate')
+      .populate('course', 'name')
+      .populate('instructor', 'name');
 
     res.status(201).json(populatedTrialLesson);
   } catch (error) {
@@ -79,10 +110,14 @@ router.put('/:id', async (req, res) => {
   try {
     const trialLesson = await TrialLesson.findByIdAndUpdate(
       req.params.id,
-      { ...req.body, updatedBy: req.body.updatedBy },
+      { ...req.body, updatedAt: Date.now() },
       { new: true }
-    ).populate('institution', 'name')
-     .populate('season', 'name startDate endDate');
+    )
+      .populate('institution', 'name')
+      .populate('season', 'name startDate endDate')
+      .populate('course', 'name')
+      .populate('instructor', 'name')
+      .populate('student', 'firstName lastName');
 
     if (!trialLesson) {
       return res.status(404).json({ message: 'Deneme dersi bulunamadı' });
@@ -94,12 +129,117 @@ router.put('/:id', async (req, res) => {
       action: 'update',
       entity: 'TrialLesson',
       entityId: trialLesson._id,
-      description: `Deneme dersi güncellendi: ${trialLesson.studentName} - ${trialLesson.status}`,
-      institution: trialLesson.institution._id,
-      season: trialLesson.season._id
+      description: `Deneme dersi güncellendi: ${trialLesson.firstName} ${trialLesson.lastName} - ${trialLesson.status}`,
+      institution: trialLesson.institution._id || trialLesson.institution
     });
 
     res.json(trialLesson);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Convert trial lesson to student (Kesin Kayıt)
+router.post('/:id/convert-to-student', async (req, res) => {
+  try {
+    const trialLesson = await TrialLesson.findById(req.params.id)
+      .populate('course');
+
+    if (!trialLesson) {
+      return res.status(404).json({ message: 'Deneme dersi bulunamadı' });
+    }
+
+    if (trialLesson.convertedToStudent) {
+      return res.status(400).json({ message: 'Bu deneme dersi zaten kayıt olmuş' });
+    }
+
+    const {
+      // Student data (can override trial lesson data)
+      firstName,
+      lastName,
+      dateOfBirth,
+      phone,
+      email,
+      tcNo,
+      address,
+      parentContacts,
+      emergencyContact,
+      healthNotes,
+      notes,
+      // Enrollment options
+      enrollInCourse,
+      enrollmentDate,
+      createdBy
+    } = req.body;
+
+    // Create student
+    const studentData = {
+      firstName: firstName || trialLesson.firstName,
+      lastName: lastName || trialLesson.lastName,
+      dateOfBirth: dateOfBirth || trialLesson.dateOfBirth,
+      phone: phone || trialLesson.phone,
+      email: email || trialLesson.email,
+      tcNo,
+      address,
+      parentContacts: parentContacts || trialLesson.parentContacts,
+      emergencyContact,
+      healthNotes,
+      notes,
+      institution: trialLesson.institution,
+      season: trialLesson.season,
+      status: 'active',
+      createdBy: createdBy || 'System'
+    };
+
+    const student = new Student(studentData);
+    await student.save();
+
+    let enrollment = null;
+
+    // Enroll in course if requested
+    if (enrollInCourse !== false) {
+      const enrollmentData = {
+        student: student._id,
+        course: trialLesson.course._id || trialLesson.course,
+        enrollmentDate: enrollmentDate || new Date(),
+        status: 'active',
+        institution: trialLesson.institution,
+        season: trialLesson.season,
+        createdBy: createdBy || 'System'
+      };
+
+      enrollment = new StudentCourseEnrollment(enrollmentData);
+      await enrollment.save();
+    }
+
+    // Update trial lesson
+    trialLesson.convertedToStudent = true;
+    trialLesson.student = student._id;
+    trialLesson.enrollment = enrollment ? enrollment._id : null;
+    trialLesson.status = 'converted';
+    trialLesson.updatedBy = createdBy || 'System';
+    await trialLesson.save();
+
+    // Log activity
+    await ActivityLog.create({
+      user: createdBy || 'System',
+      action: 'create',
+      entity: 'Student',
+      entityId: student._id,
+      description: `Deneme dersinden kesin kayıt: ${student.firstName} ${student.lastName}`,
+      metadata: {
+        trialLessonId: trialLesson._id,
+        enrollmentId: enrollment ? enrollment._id : null
+      },
+      institution: trialLesson.institution
+    });
+
+    res.json({
+      message: 'Öğrenci başarıyla kaydedildi',
+      student,
+      enrollment,
+      trialLesson
+    });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -121,9 +261,8 @@ router.delete('/:id', async (req, res) => {
       action: 'delete',
       entity: 'TrialLesson',
       entityId: trialLesson._id,
-      description: `Deneme dersi silindi: ${trialLesson.studentName}`,
-      institution: trialLesson.institution,
-      season: trialLesson.season
+      description: `Deneme dersi silindi: ${trialLesson.firstName} ${trialLesson.lastName}`,
+      institution: trialLesson.institution
     });
 
     res.json({ message: 'Deneme dersi silindi' });

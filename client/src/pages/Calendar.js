@@ -7,15 +7,29 @@ import {
   Grid,
   IconButton,
   Snackbar,
-  Alert
+  Alert,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  Chip,
 } from '@mui/material';
-import { ChevronLeft, ChevronRight, CalendarMonth, Delete } from '@mui/icons-material';
+import {
+  ChevronLeft,
+  ChevronRight,
+  CalendarMonth,
+  Delete,
+  Add,
+  PersonAdd,
+} from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import CalendarDay from '../components/Calendar/CalendarDay';
 import AutoScheduleDialog from '../components/Schedule/AutoScheduleDialog';
 import BulkDeleteLessonsDialog from '../components/Calendar/BulkDeleteLessonsDialog';
 import CreateLessonDialog from '../components/Calendar/CreateLessonDialog';
+import CreateTrialLessonDialog from '../components/Calendar/CreateTrialLessonDialog';
 import LessonDetailDialog from '../components/Calendar/LessonDetailDialog';
+import TrialLessonDetailDialog from '../components/Calendar/TrialLessonDetailDialog';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 
@@ -23,24 +37,40 @@ const Calendar = () => {
   const { institution, season } = useApp();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [lessons, setLessons] = useState({});
+  const [trialLessons, setTrialLessons] = useState({});
   const [loading, setLoading] = useState(true);
   const [autoScheduleOpen, setAutoScheduleOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [createLessonOpen, setCreateLessonOpen] = useState(false);
+  const [createTrialLessonOpen, setCreateTrialLessonOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
+  const [selectedTrialLesson, setSelectedTrialLesson] = useState(null);
   const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
+  const [trialLessonDetailOpen, setTrialLessonDetailOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+
+  // Menu for day click
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [menuDate, setMenuDate] = useState(null);
 
   useEffect(() => {
     if (institution && season) {
-      loadLessons();
+      loadAllData();
     }
   }, [institution, season, currentDate]);
 
-  const loadLessons = async () => {
+  const loadAllData = async () => {
     try {
       setLoading(true);
+      await Promise.all([loadLessons(), loadTrialLessons()]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadLessons = async () => {
+    try {
       const response = await api.get('/scheduled-lessons', {
         params: {
           institution: institution._id,
@@ -62,8 +92,32 @@ const Calendar = () => {
       setLessons(grouped);
     } catch (error) {
       console.error('Error loading lessons:', error);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const loadTrialLessons = async () => {
+    try {
+      const response = await api.get('/trial-lessons', {
+        params: {
+          institution: institution._id,
+          season: season._id,
+          month: currentDate.getMonth() + 1,
+          year: currentDate.getFullYear(),
+        },
+      });
+
+      // Group trial lessons by date
+      const grouped = {};
+      response.data.forEach((trial) => {
+        const date = new Date(trial.scheduledDate).toDateString();
+        if (!grouped[date]) {
+          grouped[date] = [];
+        }
+        grouped[date].push(trial);
+      });
+      setTrialLessons(grouped);
+    } catch (error) {
+      console.error('Error loading trial lessons:', error);
     }
   };
 
@@ -130,7 +184,7 @@ const Calendar = () => {
       message: `Başarıyla ${result.count} ders oluşturuldu!`,
       severity: 'success'
     });
-    loadLessons(); // Reload calendar
+    loadAllData();
   };
 
   const handleCloseSnackbar = () => {
@@ -142,13 +196,23 @@ const Calendar = () => {
     setLessonDetailOpen(true);
   };
 
+  const handleTrialLessonClick = (trialLesson) => {
+    setSelectedTrialLesson(trialLesson);
+    setTrialLessonDetailOpen(true);
+  };
+
   const handleLessonDetailClose = () => {
     setLessonDetailOpen(false);
     setSelectedLesson(null);
   };
 
+  const handleTrialLessonDetailClose = () => {
+    setTrialLessonDetailOpen(false);
+    setSelectedTrialLesson(null);
+  };
+
   const handleLessonUpdated = () => {
-    loadLessons(); // Reload calendar
+    loadAllData();
     setSnackbar({
       open: true,
       message: 'Ders başarıyla güncellendi!',
@@ -156,10 +220,19 @@ const Calendar = () => {
     });
   };
 
+  const handleTrialLessonUpdated = () => {
+    loadAllData();
+    setSnackbar({
+      open: true,
+      message: 'Deneme dersi başarıyla güncellendi!',
+      severity: 'success'
+    });
+  };
+
   const handleLessonDeleted = () => {
     setLessonDetailOpen(false);
     setSelectedLesson(null);
-    loadLessons(); // Reload calendar
+    loadAllData();
     setSnackbar({
       open: true,
       message: 'Ders başarıyla silindi!',
@@ -167,8 +240,19 @@ const Calendar = () => {
     });
   };
 
+  const handleTrialLessonDeleted = () => {
+    setTrialLessonDetailOpen(false);
+    setSelectedTrialLesson(null);
+    loadAllData();
+    setSnackbar({
+      open: true,
+      message: 'Deneme dersi başarıyla silindi!',
+      severity: 'success'
+    });
+  };
+
   const handleBulkDeleteSuccess = () => {
-    loadLessons(); // Reload calendar
+    loadAllData();
     setSnackbar({
       open: true,
       message: 'Dersler başarıyla silindi!',
@@ -176,16 +260,42 @@ const Calendar = () => {
     });
   };
 
-  const handleDayClick = (date) => {
-    setSelectedDate(date);
+  const handleDayClick = (date, event) => {
+    setMenuDate(date);
+    setMenuAnchor(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setMenuAnchor(null);
+    setMenuDate(null);
+  };
+
+  const handleCreateLesson = () => {
+    setSelectedDate(menuDate);
     setCreateLessonOpen(true);
+    handleMenuClose();
+  };
+
+  const handleCreateTrialLesson = () => {
+    setSelectedDate(menuDate);
+    setCreateTrialLessonOpen(true);
+    handleMenuClose();
   };
 
   const handleCreateLessonSuccess = () => {
-    loadLessons(); // Reload calendar
+    loadAllData();
     setSnackbar({
       open: true,
       message: 'Ders başarıyla oluşturuldu!',
+      severity: 'success'
+    });
+  };
+
+  const handleCreateTrialLessonSuccess = () => {
+    loadAllData();
+    setSnackbar({
+      open: true,
+      message: 'Deneme dersi başarıyla oluşturuldu!',
       severity: 'success'
     });
   };
@@ -240,6 +350,35 @@ const Calendar = () => {
             </Button>
           </Box>
         </Box>
+
+        {/* Legend */}
+        <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap' }}>
+          <Chip
+            size="small"
+            sx={{ backgroundColor: 'primary.light', color: 'white' }}
+            label="Planlanmış Ders"
+          />
+          <Chip
+            size="small"
+            sx={{ backgroundColor: 'success.light', color: 'white' }}
+            label="Tamamlanmış Ders"
+          />
+          <Chip
+            size="small"
+            sx={{ backgroundColor: '#ff9800', color: 'white', border: '2px dashed rgba(255,255,255,0.5)' }}
+            label="Deneme Dersi (Bekliyor)"
+          />
+          <Chip
+            size="small"
+            sx={{ backgroundColor: '#4caf50', color: 'white', border: '2px dashed rgba(255,255,255,0.5)' }}
+            label="Deneme Dersi (Tamamlandı)"
+          />
+          <Chip
+            size="small"
+            sx={{ backgroundColor: '#2196f3', color: 'white', border: '2px dashed rgba(255,255,255,0.5)' }}
+            label="Deneme Dersi (Kayıt Oldu)"
+          />
+        </Box>
       </Paper>
 
       <Paper sx={{ p: 2 }}>
@@ -261,13 +400,35 @@ const Calendar = () => {
                 isCurrentMonth={day.isCurrentMonth}
                 isToday={isToday(day.date)}
                 lessons={lessons[day.date.toDateString()]}
+                trialLessons={trialLessons[day.date.toDateString()]}
                 onLessonClick={handleLessonClick}
+                onTrialLessonClick={handleTrialLessonClick}
                 onDayClick={handleDayClick}
               />
             </Grid>
           ))}
         </Grid>
       </Paper>
+
+      {/* Day Click Menu */}
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={handleMenuClose}
+      >
+        <MenuItem onClick={handleCreateLesson}>
+          <ListItemIcon>
+            <Add fontSize="small" />
+          </ListItemIcon>
+          <ListItemText>Yeni Ders Oluştur</ListItemText>
+        </MenuItem>
+        <MenuItem onClick={handleCreateTrialLesson}>
+          <ListItemIcon>
+            <PersonAdd fontSize="small" color="warning" />
+          </ListItemIcon>
+          <ListItemText>Yeni Deneme Dersi</ListItemText>
+        </MenuItem>
+      </Menu>
 
       {/* Auto Schedule Dialog */}
       <AutoScheduleDialog
@@ -291,6 +452,14 @@ const Calendar = () => {
         onSuccess={handleCreateLessonSuccess}
       />
 
+      {/* Create Trial Lesson Dialog */}
+      <CreateTrialLessonDialog
+        open={createTrialLessonOpen}
+        onClose={() => setCreateTrialLessonOpen(false)}
+        selectedDate={selectedDate}
+        onSuccess={handleCreateTrialLessonSuccess}
+      />
+
       {/* Lesson Detail Dialog */}
       {selectedLesson && (
         <LessonDetailDialog
@@ -299,6 +468,17 @@ const Calendar = () => {
           lesson={selectedLesson}
           onUpdated={handleLessonUpdated}
           onDeleted={handleLessonDeleted}
+        />
+      )}
+
+      {/* Trial Lesson Detail Dialog */}
+      {selectedTrialLesson && (
+        <TrialLessonDetailDialog
+          open={trialLessonDetailOpen}
+          onClose={handleTrialLessonDetailClose}
+          trialLesson={selectedTrialLesson}
+          onUpdated={handleTrialLessonUpdated}
+          onDeleted={handleTrialLessonDeleted}
         />
       )}
 

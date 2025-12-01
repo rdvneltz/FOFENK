@@ -1,11 +1,72 @@
 import React from 'react';
 import { Box, Typography, Paper } from '@mui/material';
 
-const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onLessonClick, onDayClick }) => {
+const CalendarDay = ({
+  date,
+  isCurrentMonth,
+  isToday,
+  lessons,
+  trialLessons,
+  onLessonClick,
+  onTrialLessonClick,
+  onDayClick
+}) => {
   const handleDayClick = (e) => {
     // Only allow clicking on current month days
     if (isCurrentMonth && onDayClick) {
-      onDayClick(date);
+      onDayClick(date, e);
+    }
+  };
+
+  // Combine and sort all events by time
+  const allEvents = [];
+
+  if (lessons) {
+    lessons.forEach(lesson => {
+      allEvents.push({
+        ...lesson,
+        type: 'lesson',
+        sortTime: lesson.startTime
+      });
+    });
+  }
+
+  if (trialLessons) {
+    trialLessons.forEach(trial => {
+      allEvents.push({
+        ...trial,
+        type: 'trial',
+        sortTime: trial.scheduledTime
+      });
+    });
+  }
+
+  // Sort by time
+  allEvents.sort((a, b) => (a.sortTime || '').localeCompare(b.sortTime || ''));
+
+  const getTrialLessonColor = (status) => {
+    switch (status) {
+      case 'completed':
+        return '#4caf50'; // Green
+      case 'cancelled':
+        return '#f44336'; // Red
+      case 'converted':
+        return '#2196f3'; // Blue
+      default:
+        return '#ff9800'; // Orange for pending
+    }
+  };
+
+  const getLessonColor = (status) => {
+    switch (status) {
+      case 'completed':
+        return 'success.light';
+      case 'cancelled':
+        return 'error.light';
+      case 'postponed':
+        return 'warning.light';
+      default:
+        return 'primary.light';
     }
   };
 
@@ -40,46 +101,84 @@ const CalendarDay = ({ date, isCurrentMonth, isToday, lessons, onLessonClick, on
         {date.getDate()}
       </Typography>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, overflow: 'hidden' }}>
-        {lessons && lessons.slice(0, 4).map((lesson, index) => (
-          <Box
-            key={lesson._id || index}
-            sx={{
-              fontSize: '0.75rem',
-              p: 0.75,
-              borderRadius: 1,
-              backgroundColor: lesson.status === 'completed' ? 'success.light' :
-                             lesson.status === 'cancelled' ? 'error.light' :
-                             lesson.status === 'postponed' ? 'warning.light' : 'primary.light',
-              color: 'white',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontWeight: 500,
-              lineHeight: 1.3,
-              cursor: 'pointer',
-              '&:hover': {
-                opacity: 0.8,
-                transform: 'scale(1.02)',
-              },
-              transition: 'all 0.2s',
-            }}
-            title={`${lesson.startTime}-${lesson.endTime} ${lesson.course?.name || 'Ders'}`}
-            onClick={(e) => {
-              e.stopPropagation(); // Prevent day click
-              onLessonClick(lesson);
-            }}
-          >
-            <Box sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
-              {lesson.startTime}-{lesson.endTime}
+        {allEvents.slice(0, 4).map((event, index) => (
+          event.type === 'trial' ? (
+            // Trial Lesson
+            <Box
+              key={`trial-${event._id || index}`}
+              sx={{
+                fontSize: '0.75rem',
+                p: 0.75,
+                borderRadius: 1,
+                backgroundColor: getTrialLessonColor(event.status),
+                color: 'white',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontWeight: 500,
+                lineHeight: 1.3,
+                cursor: 'pointer',
+                border: '2px dashed rgba(255,255,255,0.5)',
+                '&:hover': {
+                  opacity: 0.8,
+                  transform: 'scale(1.02)',
+                },
+                transition: 'all 0.2s',
+              }}
+              title={`DENEME: ${event.scheduledTime} - ${event.firstName} ${event.lastName} (${event.course?.name || 'Ders'})`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onTrialLessonClick) onTrialLessonClick(event);
+              }}
+            >
+              <Box sx={{ fontSize: '0.7rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <span>&#9733;</span> {/* Star icon for trial */}
+                {event.scheduledTime}
+              </Box>
+              <Box sx={{ fontSize: '0.65rem', mt: 0.3 }}>
+                {event.firstName} {event.lastName?.charAt(0)}.
+              </Box>
             </Box>
-            <Box sx={{ fontSize: '0.65rem', mt: 0.3 }}>
-              {lesson.course?.name || 'Ders'}
+          ) : (
+            // Regular Lesson
+            <Box
+              key={`lesson-${event._id || index}`}
+              sx={{
+                fontSize: '0.75rem',
+                p: 0.75,
+                borderRadius: 1,
+                backgroundColor: getLessonColor(event.status),
+                color: 'white',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontWeight: 500,
+                lineHeight: 1.3,
+                cursor: 'pointer',
+                '&:hover': {
+                  opacity: 0.8,
+                  transform: 'scale(1.02)',
+                },
+                transition: 'all 0.2s',
+              }}
+              title={`${event.startTime}-${event.endTime} ${event.course?.name || 'Ders'}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onLessonClick) onLessonClick(event);
+              }}
+            >
+              <Box sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                {event.startTime}-{event.endTime}
+              </Box>
+              <Box sx={{ fontSize: '0.65rem', mt: 0.3 }}>
+                {event.course?.name || 'Ders'}
+              </Box>
             </Box>
-          </Box>
+          )
         ))}
-        {lessons && lessons.length > 4 && (
+        {allEvents.length > 4 && (
           <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
-            +{lessons.length - 4} daha
+            +{allEvents.length - 4} daha
           </Typography>
         )}
       </Box>
