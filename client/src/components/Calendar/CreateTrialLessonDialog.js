@@ -44,14 +44,22 @@ const CreateTrialLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => 
     parentContacts: [],
   });
 
+  // Format date to YYYY-MM-DD in local timezone (avoids UTC offset issue)
+  const formatDateLocal = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   useEffect(() => {
     if (open) {
       loadData();
       setFormData(prev => ({
         ...prev,
-        scheduledDate: selectedDate
-          ? selectedDate.toISOString().split('T')[0]
-          : new Date().toISOString().split('T')[0],
+        scheduledDate: formatDateLocal(selectedDate || new Date()),
       }));
       setError('');
     }
@@ -162,9 +170,7 @@ const CreateTrialLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => 
         email: '',
         course: '',
         instructor: '',
-        scheduledDate: selectedDate
-          ? selectedDate.toISOString().split('T')[0]
-          : new Date().toISOString().split('T')[0],
+        scheduledDate: formatDateLocal(selectedDate || new Date()),
         scheduledTime: '',
         duration: 60,
         notes: '',
