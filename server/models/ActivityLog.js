@@ -24,7 +24,8 @@ const activityLogSchema = new mongoose.Schema({
       'logout',
       'reset',
       'refund',
-      'transfer'
+      'transfer',
+      'copy'
     ]
   },
   entity: {
@@ -49,7 +50,9 @@ const activityLogSchema = new mongoose.Schema({
       'User',
       'Database',
       'SalaryAccrual',
-      'SalaryPayment'
+      'SalaryPayment',
+      'MessageTemplate',
+      'PlannedExpense'
     ]
   },
   entityId: {
@@ -63,6 +66,10 @@ const activityLogSchema = new mongoose.Schema({
   institution: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Institution'
+  },
+  season: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Season'
   },
   createdAt: {
     type: Date,

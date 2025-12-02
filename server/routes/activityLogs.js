@@ -70,7 +70,9 @@ router.get('/entity/:entityId', async (req, res) => {
 router.get('/recent/:limit', async (req, res) => {
   try {
     const limit = parseInt(req.params.limit) || 50;
-    const { institutionId, seasonId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
