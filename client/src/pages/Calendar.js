@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Paper,
@@ -13,6 +13,9 @@ import {
   ListItemIcon,
   ListItemText,
   Chip,
+  ToggleButtonGroup,
+  ToggleButton,
+  Tooltip,
 } from '@mui/material';
 import {
   ChevronLeft,
@@ -21,6 +24,10 @@ import {
   Delete,
   Add,
   PersonAdd,
+  ViewWeek,
+  ViewModule,
+  Today,
+  Visibility,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import CalendarDay from '../components/Calendar/CalendarDay';
@@ -30,14 +37,19 @@ import CreateLessonDialog from '../components/Calendar/CreateLessonDialog';
 import CreateTrialLessonDialog from '../components/Calendar/CreateTrialLessonDialog';
 import LessonDetailDialog from '../components/Calendar/LessonDetailDialog';
 import TrialLessonDetailDialog from '../components/Calendar/TrialLessonDetailDialog';
+import DayDetailDialog from '../components/Calendar/DayDetailDialog';
+import WeeklyCalendarView from '../components/Calendar/WeeklyCalendarView';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 
 const Calendar = () => {
   const { institution, season } = useApp();
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState('monthly'); // 'monthly' or 'weekly'
   const [lessons, setLessons] = useState({});
+  const [lessonsArray, setLessonsArray] = useState([]);
   const [trialLessons, setTrialLessons] = useState({});
+  const [trialLessonsArray, setTrialLessonsArray] = useState([]);
   const [loading, setLoading] = useState(true);
   const [autoScheduleOpen, setAutoScheduleOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -48,6 +60,7 @@ const Calendar = () => {
   const [selectedTrialLesson, setSelectedTrialLesson] = useState(null);
   const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
   const [trialLessonDetailOpen, setTrialLessonDetailOpen] = useState(false);
+  const [dayDetailOpen, setDayDetailOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   // Menu for day click
@@ -58,7 +71,7 @@ const Calendar = () => {
     if (institution && season) {
       loadAllData();
     }
-  }, [institution, season, currentDate]);
+  }, [institution, season, currentDate, viewMode]);
 
   const loadAllData = async () => {
     try {
@@ -71,16 +84,23 @@ const Calendar = () => {
 
   const loadLessons = async () => {
     try {
+      // For weekly view, we need to fetch a different range
+      let month = currentDate.getMonth() + 1;
+      let year = currentDate.getFullYear();
+
       const response = await api.get('/scheduled-lessons', {
         params: {
           institution: institution._id,
           season: season._id,
-          month: currentDate.getMonth() + 1,
-          year: currentDate.getFullYear(),
+          month,
+          year,
         },
       });
 
-      // Group lessons by date
+      // Store as array for weekly view
+      setLessonsArray(response.data);
+
+      // Group lessons by date for monthly view
       const grouped = {};
       response.data.forEach((lesson) => {
         const date = new Date(lesson.date).toDateString();
@@ -106,7 +126,10 @@ const Calendar = () => {
         },
       });
 
-      // Group trial lessons by date
+      // Store as array for weekly view
+      setTrialLessonsArray(response.data);
+
+      // Group trial lessons by date for monthly view
       const grouped = {};
       response.data.forEach((trial) => {
         const date = new Date(trial.scheduledDate).toDateString();
@@ -127,7 +150,6 @@ const Calendar = () => {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
-    // Pazartesi'yi haftanın ilk günü yapmak için: 0=Pazar -> 6, 1=Pazartesi -> 0
     const startingDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
 
     const days = [];
@@ -150,7 +172,7 @@ const Calendar = () => {
     }
 
     // Next month days
-    const remainingDays = 42 - days.length; // 6 weeks * 7 days
+    const remainingDays = 42 - days.length;
     for (let i = 1; i <= remainingDays; i++) {
       days.push({
         date: new Date(year, month + 1, i),
@@ -161,12 +183,24 @@ const Calendar = () => {
     return days;
   };
 
-  const previousMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+  const previousPeriod = () => {
+    if (viewMode === 'weekly') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() - 7));
+    } else {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+    }
   };
 
-  const nextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+  const nextPeriod = () => {
+    if (viewMode === 'weekly') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate() + 7));
+    } else {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+    }
+  };
+
+  const goToToday = () => {
+    setCurrentDate(new Date());
   };
 
   const isToday = (date) => {
@@ -176,6 +210,12 @@ const Calendar = () => {
       date.getMonth() === today.getMonth() &&
       date.getFullYear() === today.getFullYear()
     );
+  };
+
+  const handleViewModeChange = (event, newMode) => {
+    if (newMode !== null) {
+      setViewMode(newMode);
+    }
   };
 
   const handleAutoScheduleSuccess = (result) => {
@@ -201,6 +241,39 @@ const Calendar = () => {
     setTrialLessonDetailOpen(true);
   };
 
+  const handleDayClick = (date, event) => {
+    setMenuDate(date);
+    setMenuAnchor(event.currentTarget);
+  };
+
+  const handleDayDoubleClick = (date) => {
+    setSelectedDate(date);
+    setDayDetailOpen(true);
+  };
+
+  const handleMenuClose = () => {
+    setMenuAnchor(null);
+    setMenuDate(null);
+  };
+
+  const handleViewDayDetail = () => {
+    setSelectedDate(menuDate);
+    setDayDetailOpen(true);
+    handleMenuClose();
+  };
+
+  const handleCreateLesson = () => {
+    setSelectedDate(menuDate);
+    setCreateLessonOpen(true);
+    handleMenuClose();
+  };
+
+  const handleCreateTrialLesson = () => {
+    setSelectedDate(menuDate);
+    setCreateTrialLessonOpen(true);
+    handleMenuClose();
+  };
+
   const handleLessonDetailClose = () => {
     setLessonDetailOpen(false);
     setSelectedLesson(null);
@@ -209,6 +282,10 @@ const Calendar = () => {
   const handleTrialLessonDetailClose = () => {
     setTrialLessonDetailOpen(false);
     setSelectedTrialLesson(null);
+  };
+
+  const handleDayDetailClose = () => {
+    setDayDetailOpen(false);
   };
 
   const handleLessonUpdated = () => {
@@ -260,28 +337,6 @@ const Calendar = () => {
     });
   };
 
-  const handleDayClick = (date, event) => {
-    setMenuDate(date);
-    setMenuAnchor(event.currentTarget);
-  };
-
-  const handleMenuClose = () => {
-    setMenuAnchor(null);
-    setMenuDate(null);
-  };
-
-  const handleCreateLesson = () => {
-    setSelectedDate(menuDate);
-    setCreateLessonOpen(true);
-    handleMenuClose();
-  };
-
-  const handleCreateTrialLesson = () => {
-    setSelectedDate(menuDate);
-    setCreateTrialLessonOpen(true);
-    handleMenuClose();
-  };
-
   const handleCreateLessonSuccess = () => {
     loadAllData();
     setSnackbar({
@@ -320,95 +375,136 @@ const Calendar = () => {
   return (
     <Box>
       <Paper sx={{ p: 2, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton onClick={previousMonth}>
+            <IconButton onClick={previousPeriod}>
               <ChevronLeft />
             </IconButton>
-            <Typography variant="h5">
-              {currentDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
+            <Typography variant="h5" sx={{ minWidth: '200px', textAlign: 'center' }}>
+              {viewMode === 'weekly'
+                ? `${currentDate.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })} Haftası`
+                : currentDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
+              }
             </Typography>
-            <IconButton onClick={nextMonth}>
+            <IconButton onClick={nextPeriod}>
               <ChevronRight />
             </IconButton>
+            <Tooltip title="Bugün">
+              <IconButton onClick={goToToday} color="primary">
+                <Today />
+              </IconButton>
+            </Tooltip>
           </Box>
-          <Box sx={{ display: 'flex', gap: 2 }}>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            {/* View Mode Toggle */}
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={handleViewModeChange}
+              size="small"
+            >
+              <ToggleButton value="monthly">
+                <Tooltip title="Aylık Görünüm">
+                  <ViewModule />
+                </Tooltip>
+              </ToggleButton>
+              <ToggleButton value="weekly">
+                <Tooltip title="Haftalık Görünüm">
+                  <ViewWeek />
+                </Tooltip>
+              </ToggleButton>
+            </ToggleButtonGroup>
+
             <Button
               variant="outlined"
               color="error"
               startIcon={<Delete />}
               onClick={() => setBulkDeleteOpen(true)}
             >
-              Toplu Ders Sil
+              Toplu Sil
             </Button>
             <Button
               variant="contained"
               startIcon={<CalendarMonth />}
               onClick={() => setAutoScheduleOpen(true)}
             >
-              Otomatik Program Oluştur
+              Otomatik Program
             </Button>
           </Box>
         </Box>
 
         {/* Legend */}
-        <Box sx={{ display: 'flex', gap: 2, mt: 2, flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 1.5, mt: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Typography variant="caption" color="text.secondary">Renk Açıklaması:</Typography>
           <Chip
             size="small"
-            sx={{ backgroundColor: 'primary.light', color: 'white' }}
-            label="Planlanmış Ders"
+            sx={{ bgcolor: '#2196f3', color: 'white', height: 24 }}
+            label="Ders"
           />
           <Chip
             size="small"
-            sx={{ backgroundColor: 'success.light', color: 'white' }}
-            label="Tamamlanmış Ders"
+            sx={{ bgcolor: '#ff9800', color: 'white', height: 24 }}
+            label="Deneme (Bekliyor)"
           />
           <Chip
             size="small"
-            sx={{ backgroundColor: '#ff9800', color: 'white', border: '2px dashed rgba(255,255,255,0.5)' }}
-            label="Deneme Dersi (Bekliyor)"
+            sx={{ bgcolor: '#4caf50', color: 'white', height: 24 }}
+            label="Tamamlandı"
           />
           <Chip
             size="small"
-            sx={{ backgroundColor: '#4caf50', color: 'white', border: '2px dashed rgba(255,255,255,0.5)' }}
-            label="Deneme Dersi (Tamamlandı)"
+            sx={{ bgcolor: '#9c27b0', color: 'white', height: 24 }}
+            label="Kayıt Oldu"
           />
           <Chip
             size="small"
-            sx={{ backgroundColor: '#2196f3', color: 'white', border: '2px dashed rgba(255,255,255,0.5)' }}
-            label="Deneme Dersi (Kayıt Oldu)"
+            sx={{ bgcolor: '#f44336', color: 'white', height: 24 }}
+            label="İptal"
           />
         </Box>
       </Paper>
 
-      <Paper sx={{ p: 2 }}>
-        <Grid container spacing={1}>
-          {/* Week day headers */}
-          {weekDays.map((day) => (
-            <Grid item xs={12 / 7} key={day}>
-              <Typography variant="subtitle2" align="center" sx={{ fontWeight: 'bold', mb: 1 }}>
-                {day}
-              </Typography>
-            </Grid>
-          ))}
+      {/* Calendar View */}
+      {viewMode === 'weekly' ? (
+        <WeeklyCalendarView
+          currentDate={currentDate}
+          lessons={lessonsArray}
+          trialLessons={trialLessonsArray}
+          onWeekChange={setCurrentDate}
+          onUpdated={loadAllData}
+        />
+      ) : (
+        <Paper sx={{ p: 2 }}>
+          <Grid container spacing={1}>
+            {/* Week day headers */}
+            {weekDays.map((day) => (
+              <Grid item xs={12 / 7} key={day}>
+                <Typography variant="subtitle2" align="center" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  {day}
+                </Typography>
+              </Grid>
+            ))}
 
-          {/* Calendar days */}
-          {days.map((day, index) => (
-            <Grid item xs={12 / 7} key={index}>
-              <CalendarDay
-                date={day.date}
-                isCurrentMonth={day.isCurrentMonth}
-                isToday={isToday(day.date)}
-                lessons={lessons[day.date.toDateString()]}
-                trialLessons={trialLessons[day.date.toDateString()]}
-                onLessonClick={handleLessonClick}
-                onTrialLessonClick={handleTrialLessonClick}
-                onDayClick={handleDayClick}
-              />
-            </Grid>
-          ))}
-        </Grid>
-      </Paper>
+            {/* Calendar days */}
+            {days.map((day, index) => (
+              <Grid item xs={12 / 7} key={index}>
+                <CalendarDay
+                  date={day.date}
+                  isCurrentMonth={day.isCurrentMonth}
+                  isToday={isToday(day.date)}
+                  lessons={lessons[day.date.toDateString()]}
+                  trialLessons={trialLessons[day.date.toDateString()]}
+                  onLessonClick={handleLessonClick}
+                  onTrialLessonClick={handleTrialLessonClick}
+                  onDayClick={handleDayClick}
+                  onDayDoubleClick={handleDayDoubleClick}
+                />
+              </Grid>
+            ))}
+          </Grid>
+        </Paper>
+      )}
 
       {/* Day Click Menu */}
       <Menu
@@ -416,6 +512,12 @@ const Calendar = () => {
         open={Boolean(menuAnchor)}
         onClose={handleMenuClose}
       >
+        <MenuItem onClick={handleViewDayDetail}>
+          <ListItemIcon>
+            <Visibility fontSize="small" color="info" />
+          </ListItemIcon>
+          <ListItemText>Gün Detayını Görüntüle</ListItemText>
+        </MenuItem>
         <MenuItem onClick={handleCreateLesson}>
           <ListItemIcon>
             <Add fontSize="small" />
@@ -458,6 +560,17 @@ const Calendar = () => {
         onClose={() => setCreateTrialLessonOpen(false)}
         selectedDate={selectedDate}
         onSuccess={handleCreateTrialLessonSuccess}
+      />
+
+      {/* Day Detail Dialog */}
+      <DayDetailDialog
+        open={dayDetailOpen}
+        onClose={handleDayDetailClose}
+        date={selectedDate}
+        lessons={selectedDate ? lessons[selectedDate.toDateString()] || [] : []}
+        trialLessons={selectedDate ? trialLessons[selectedDate.toDateString()] || [] : []}
+        onDateChange={(newDate) => setSelectedDate(newDate)}
+        onUpdated={loadAllData}
       />
 
       {/* Lesson Detail Dialog */}

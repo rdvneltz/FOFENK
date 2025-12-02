@@ -9,12 +9,20 @@ const CalendarDay = ({
   trialLessons,
   onLessonClick,
   onTrialLessonClick,
-  onDayClick
+  onDayClick,
+  onDayDoubleClick
 }) => {
   const handleDayClick = (e) => {
     // Only allow clicking on current month days
     if (isCurrentMonth && onDayClick) {
       onDayClick(date, e);
+    }
+  };
+
+  const handleDayDoubleClick = (e) => {
+    if (isCurrentMonth && onDayDoubleClick) {
+      e.preventDefault();
+      onDayDoubleClick(date);
     }
   };
 
@@ -89,6 +97,7 @@ const CalendarDay = ({
         flexDirection: 'column',
       }}
       onClick={handleDayClick}
+      onDoubleClick={handleDayDoubleClick}
     >
       <Typography
         variant="body1"

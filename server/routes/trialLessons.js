@@ -37,7 +37,7 @@ router.get('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
-      .populate('instructor', 'name')
+      .populate('instructor', 'firstName lastName name')
       .populate('student', 'firstName lastName')
       .sort({ scheduledDate: -1 });
 
@@ -54,7 +54,7 @@ router.get('/:id', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
-      .populate('instructor', 'name')
+      .populate('instructor', 'firstName lastName name')
       .populate('student', 'firstName lastName');
 
     if (!trialLesson) {
@@ -80,6 +80,11 @@ router.post('/', async (req, res) => {
       delete trialData.time;
     }
 
+    // Remove empty instructor field to avoid ObjectId cast error
+    if (!trialData.instructor || trialData.instructor === '') {
+      delete trialData.instructor;
+    }
+
     const trialLesson = new TrialLesson(trialData);
     const newTrialLesson = await trialLesson.save();
 
@@ -97,7 +102,7 @@ router.post('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
-      .populate('instructor', 'name');
+      .populate('instructor', 'firstName lastName name');
 
     res.status(201).json(populatedTrialLesson);
   } catch (error) {
@@ -108,15 +113,22 @@ router.post('/', async (req, res) => {
 // Update trial lesson
 router.put('/:id', async (req, res) => {
   try {
+    // Remove empty instructor field to avoid ObjectId cast error
+    const updateData = { ...req.body, updatedAt: Date.now() };
+    if (updateData.instructor === '') {
+      updateData.$unset = { instructor: 1 };
+      delete updateData.instructor;
+    }
+
     const trialLesson = await TrialLesson.findByIdAndUpdate(
       req.params.id,
-      { ...req.body, updatedAt: Date.now() },
+      updateData,
       { new: true }
     )
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
-      .populate('instructor', 'name')
+      .populate('instructor', 'firstName lastName name')
       .populate('student', 'firstName lastName');
 
     if (!trialLesson) {

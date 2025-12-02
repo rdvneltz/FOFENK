@@ -58,6 +58,7 @@ const TrialLessons = () => {
   const [selectedTrial, setSelectedTrial] = useState(null);
   const [error, setError] = useState('');
   const [tabValue, setTabValue] = useState(0);
+  const [courseFilter, setCourseFilter] = useState('');
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -318,6 +319,12 @@ const TrialLessons = () => {
   };
 
   const filteredTrials = trials.filter(trial => {
+    // Course filter
+    if (courseFilter && trial.course?._id !== courseFilter) {
+      return false;
+    }
+
+    // Status tab filter
     switch (tabValue) {
       case 0: return true; // All
       case 1: return trial.status === 'pending';
@@ -395,16 +402,33 @@ const TrialLessons = () => {
         </Grid>
       </Grid>
 
-      {/* Tabs */}
-      <Paper sx={{ mb: 2 }}>
-        <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
-          <Tab label={`Tümü (${trials.length})`} />
-          <Tab label={`Bekliyor (${pendingCount})`} />
-          <Tab label={`Tamamlandı (${completedCount})`} />
-          <Tab label={`Kayıt Oldu (${convertedCount})`} />
-          <Tab label={`İptal (${cancelledCount})`} />
-        </Tabs>
-      </Paper>
+      {/* Course Filter and Tabs */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Paper sx={{ flex: 1 }}>
+          <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
+            <Tab label={`Tümü (${trials.length})`} />
+            <Tab label={`Bekliyor (${pendingCount})`} />
+            <Tab label={`Tamamlandı (${completedCount})`} />
+            <Tab label={`Kayıt Oldu (${convertedCount})`} />
+            <Tab label={`İptal (${cancelledCount})`} />
+          </Tabs>
+        </Paper>
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel>Ders Filtrele</InputLabel>
+          <Select
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
+            label="Ders Filtrele"
+          >
+            <MenuItem value="">Tüm Dersler</MenuItem>
+            {courses.map((course) => (
+              <MenuItem key={course._id} value={course._id}>
+                {course.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
 
       <TableContainer component={Paper}>
         <Table>
@@ -452,9 +476,9 @@ const TrialLessons = () => {
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">{trial.course?.name || '-'}</Typography>
-                    {trial.instructor && (
+                    {trial.instructor && (trial.instructor.firstName || trial.instructor.name) && (
                       <Typography variant="caption" color="text.secondary">
-                        {trial.instructor.name || `${trial.instructor.firstName} ${trial.instructor.lastName}`}
+                        {trial.instructor.name || `${trial.instructor.firstName || ''} ${trial.instructor.lastName || ''}`.trim()}
                       </Typography>
                     )}
                   </TableCell>
