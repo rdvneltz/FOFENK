@@ -6,7 +6,8 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all seasons
 router.get('/', async (req, res) => {
   try {
-    const { institutionId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
     const query = institutionId ? { institution: institutionId } : {};
     const seasons = await Season.find(query).populate('institution').sort('-createdAt');
     res.json(seasons);
