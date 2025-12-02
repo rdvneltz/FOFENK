@@ -7,7 +7,10 @@ const scheduleGenerator = require('../utils/scheduleGenerator');
 // Get all scheduled lessons with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, courseId, instructorId, startDate, endDate, month, year } = req.query;
+    const { courseId, instructorId, startDate, endDate, month, year } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
