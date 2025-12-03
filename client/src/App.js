@@ -63,6 +63,24 @@ const PrivateRoute = ({ children }) => {
   return children;
 };
 
+// ProtectedRoute component with permission check
+const ProtectedRoute = ({ children, permission }) => {
+  const { currentUser } = useApp();
+
+  // Check if user has permission (only superadmin bypasses)
+  const hasPermission = () => {
+    if (!permission) return true; // No permission required
+    if (currentUser?.role === 'superadmin') return true;
+    return currentUser?.permissions?.[permission] !== false;
+  };
+
+  if (!hasPermission()) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
 // Setup check component
 const SetupCheck = () => {
   const navigate = useNavigate();
@@ -153,31 +171,31 @@ function App() {
                   <MainLayout>
                     <Routes>
                       <Route path="/" element={<Dashboard />} />
-                      <Route path="/institutions" element={<Institutions />} />
-                      <Route path="/institution-setup" element={<InstitutionSetup />} />
-                      <Route path="/seasons" element={<SeasonManagement />} />
-                      <Route path="/students" element={<Students />} />
-                      <Route path="/students/new" element={<StudentForm />} />
-                      <Route path="/students/:id" element={<StudentDetail />} />
-                      <Route path="/students/:id/edit" element={<StudentForm />} />
-                      <Route path="/archived-students" element={<ArchivedStudents />} />
-                      <Route path="/courses" element={<Courses />} />
-                      <Route path="/calendar" element={<Calendar />} />
-                      <Route path="/instructors" element={<Instructors />} />
-                      <Route path="/instructors/:id" element={<InstructorDetail />} />
-                      <Route path="/payments" element={<Payments />} />
-                      <Route path="/payment-plan/:studentId" element={<PaymentPlan />} />
-                      <Route path="/payment-plan-detail/:id" element={<PaymentPlanDetail />} />
-                      <Route path="/expenses" element={<Expenses />} />
-                      <Route path="/cash-registers" element={<CashRegisters />} />
-                      <Route path="/trial-lessons" element={<TrialLessons />} />
+                      <Route path="/institutions" element={<ProtectedRoute permission="canManageSettings"><Institutions /></ProtectedRoute>} />
+                      <Route path="/institution-setup" element={<ProtectedRoute permission="canManageSettings"><InstitutionSetup /></ProtectedRoute>} />
+                      <Route path="/seasons" element={<ProtectedRoute permission="canManageSettings"><SeasonManagement /></ProtectedRoute>} />
+                      <Route path="/students" element={<ProtectedRoute permission="canManageStudents"><Students /></ProtectedRoute>} />
+                      <Route path="/students/new" element={<ProtectedRoute permission="canManageStudents"><StudentForm /></ProtectedRoute>} />
+                      <Route path="/students/:id" element={<ProtectedRoute permission="canManageStudents"><StudentDetail /></ProtectedRoute>} />
+                      <Route path="/students/:id/edit" element={<ProtectedRoute permission="canManageStudents"><StudentForm /></ProtectedRoute>} />
+                      <Route path="/archived-students" element={<ProtectedRoute permission="canManageStudents"><ArchivedStudents /></ProtectedRoute>} />
+                      <Route path="/courses" element={<ProtectedRoute permission="canManageCourses"><Courses /></ProtectedRoute>} />
+                      <Route path="/calendar" element={<ProtectedRoute permission="canViewCalendar"><Calendar /></ProtectedRoute>} />
+                      <Route path="/instructors" element={<ProtectedRoute permission="canManageInstructors"><Instructors /></ProtectedRoute>} />
+                      <Route path="/instructors/:id" element={<ProtectedRoute permission="canManageInstructors"><InstructorDetail /></ProtectedRoute>} />
+                      <Route path="/payments" element={<ProtectedRoute permission="canManagePayments"><Payments /></ProtectedRoute>} />
+                      <Route path="/payment-plan/:studentId" element={<ProtectedRoute permission="canManagePayments"><PaymentPlan /></ProtectedRoute>} />
+                      <Route path="/payment-plan-detail/:id" element={<ProtectedRoute permission="canManagePayments"><PaymentPlanDetail /></ProtectedRoute>} />
+                      <Route path="/expenses" element={<ProtectedRoute permission="canManageExpenses"><Expenses /></ProtectedRoute>} />
+                      <Route path="/cash-registers" element={<ProtectedRoute permission="canManageExpenses"><CashRegisters /></ProtectedRoute>} />
+                      <Route path="/trial-lessons" element={<ProtectedRoute permission="canManageCourses"><TrialLessons /></ProtectedRoute>} />
                       <Route path="/phone-book" element={<PhoneBook />} />
                       <Route path="/message-templates" element={<MessageTemplates />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route path="/reports" element={<Reports />} />
-                      <Route path="/users" element={<Users />} />
-                      <Route path="/activity-logs" element={<ActivityLogs />} />
-                      <Route path="/backup" element={<Backup />} />
+                      <Route path="/settings" element={<ProtectedRoute permission="canManageSettings"><Settings /></ProtectedRoute>} />
+                      <Route path="/reports" element={<ProtectedRoute permission="canViewReports"><Reports /></ProtectedRoute>} />
+                      <Route path="/users" element={<ProtectedRoute permission="canManageUsers"><Users /></ProtectedRoute>} />
+                      <Route path="/activity-logs" element={<ProtectedRoute permission="canManageUsers"><ActivityLogs /></ProtectedRoute>} />
+                      <Route path="/backup" element={<ProtectedRoute permission="canManageSettings"><Backup /></ProtectedRoute>} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                   </MainLayout>

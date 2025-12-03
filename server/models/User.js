@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
   phone: String,
   role: {
     type: String,
-    enum: ['superadmin', 'admin', 'manager', 'accountant', 'staff'],
+    enum: ['superadmin', 'admin', 'manager', 'accountant', 'instructor', 'staff'],
     default: 'staff'
   },
   // Yetkiler (basit yetki sistemi)

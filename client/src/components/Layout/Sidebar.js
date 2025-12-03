@@ -59,14 +59,14 @@ const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { status, lastChecked } = useServerHealth();
-  const { user } = useApp();
+  const { currentUser } = useApp();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
 
-  // Check if user has permission (superadmin and admin have all permissions)
+  // Check if user has permission (only superadmin bypasses permission checks)
   const hasPermission = (permission) => {
     if (!permission) return true; // No permission required
-    if (user?.role === 'superadmin' || user?.role === 'admin') return true;
-    return user?.permissions?.[permission] !== false;
+    if (currentUser?.role === 'superadmin') return true; // Only superadmin bypasses
+    return currentUser?.permissions?.[permission] !== false;
   };
 
   // Filter menu items based on permissions

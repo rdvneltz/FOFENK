@@ -64,14 +64,14 @@ ChartJS.register(
 );
 
 const Dashboard = () => {
-  const { institution, season, user } = useApp();
+  const { institution, season, currentUser } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
-  // Permission check helper
+  // Permission check helper (only superadmin bypasses permission checks)
   const hasPermission = (permission) => {
-    if (user?.role === 'superadmin' || user?.role === 'admin') return true;
-    return user?.permissions?.[permission] !== false;
+    if (currentUser?.role === 'superadmin') return true; // Only superadmin bypasses
+    return currentUser?.permissions?.[permission] !== false;
   };
 
   // Check if user can see financial data
@@ -198,7 +198,7 @@ const Dashboard = () => {
       setError('');
       await api.post(`/payment-plans/${paymentDialog.payment.paymentPlanId}/process-credit-card-payment`, {
         cashRegisterId: paymentDialog.cashRegisterId,
-        createdBy: user?.username || 'System'
+        createdBy: currentUser?.username || 'System'
       });
 
       // Close dialog
