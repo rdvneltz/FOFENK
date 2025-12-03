@@ -65,7 +65,8 @@ const Users = () => {
       canManageSettings: false,
       canManageUsers: false
     },
-    avatarColor: '#1976d2'
+    avatarColor: '#1976d2',
+    isActive: true
   });
 
   useEffect(() => {
@@ -107,6 +108,10 @@ const Users = () => {
   const handleOpenDialog = (user = null) => {
     if (user) {
       setSelectedUser(user);
+      // Handle institutions that might be ObjectId objects or strings
+      const userInstitutions = (user.institutions || []).map(inst =>
+        typeof inst === 'object' ? inst._id : inst
+      );
       setFormData({
         username: user.username,
         fullName: user.fullName,
@@ -114,9 +119,19 @@ const Users = () => {
         phone: user.phone || '',
         password: '',
         role: user.role,
-        institutions: user.institutions || [],
-        permissions: user.permissions,
-        avatarColor: user.avatarColor
+        institutions: userInstitutions,
+        permissions: user.permissions || {
+          canManageStudents: true,
+          canManageCourses: true,
+          canManagePayments: true,
+          canManageExpenses: true,
+          canManageInstructors: true,
+          canViewReports: true,
+          canManageSettings: false,
+          canManageUsers: false
+        },
+        avatarColor: user.avatarColor || '#1976d2',
+        isActive: user.isActive !== false
       });
     } else {
       setSelectedUser(null);
@@ -138,7 +153,8 @@ const Users = () => {
           canManageSettings: false,
           canManageUsers: false
         },
-        avatarColor: '#1976d2'
+        avatarColor: '#1976d2',
+        isActive: true
       });
     }
     setOpenDialog(true);
@@ -161,6 +177,7 @@ const Users = () => {
         institutions: formData.role === 'superadmin' ? [] : formData.institutions,
         permissions: formData.permissions,
         avatarColor: formData.avatarColor,
+        isActive: formData.isActive,
         institution: institution?._id || null,
         [selectedUser ? 'updatedBy' : 'createdBy']: currentUser?.username
       };
@@ -392,6 +409,20 @@ const Users = () => {
                 <MenuItem value="staff">Personel</MenuItem>
               </Select>
             </FormControl>
+
+            {/* Active/Passive Status - Only when editing */}
+            {selectedUser && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    color="success"
+                  />
+                }
+                label={formData.isActive ? "Aktif Kullanıcı" : "Pasif Kullanıcı"}
+              />
+            )}
 
             {/* Institutions Selection - Only for non-superadmin */}
             {formData.role !== 'superadmin' && (

@@ -98,9 +98,25 @@ const Login = () => {
 
       // Check different scenarios
       if (user.role === 'superadmin') {
-        // Superadmin - direct login, no institution selection needed
-        login(token, user);
-        navigate('/');
+        // Superadmin - show institution selection if multiple institutions exist
+        if (institutions && institutions.length > 1) {
+          setTempToken(token);
+          setTempUser(user);
+          setUserInstitutions(institutions);
+          setStep(2);
+          setLoading(false);
+        } else if (institutions && institutions.length === 1) {
+          const userWithInstitution = {
+            ...user,
+            institution: institutions[0]
+          };
+          login(token, userWithInstitution);
+          navigate('/');
+        } else {
+          // No institutions - still login (superadmin can manage this)
+          login(token, user);
+          navigate('/');
+        }
       } else if (!institutions || institutions.length === 0) {
         // No institutions accessible
         setError('Hicbir kuruma erisim yetkiniz yok');
