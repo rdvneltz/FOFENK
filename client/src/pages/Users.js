@@ -29,7 +29,7 @@ import {
   Checkbox,
   ListItemText
 } from '@mui/material';
-import { Add, Edit, Delete, DeleteForever, Visibility } from '@mui/icons-material';
+import { Add, Edit, Delete, DeleteForever, Visibility, School } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -63,7 +63,9 @@ const Users = () => {
       canManageInstructors: true,
       canViewReports: true,
       canManageSettings: false,
-      canManageUsers: false
+      canManageUsers: false,
+      canViewCalendar: true,
+      canMarkAttendance: true
     },
     avatarColor: '#1976d2',
     isActive: true
@@ -120,7 +122,7 @@ const Users = () => {
         password: '',
         role: user.role,
         institutions: userInstitutions,
-        permissions: user.permissions || {
+        permissions: {
           canManageStudents: true,
           canManageCourses: true,
           canManagePayments: true,
@@ -128,7 +130,10 @@ const Users = () => {
           canManageInstructors: true,
           canViewReports: true,
           canManageSettings: false,
-          canManageUsers: false
+          canManageUsers: false,
+          canViewCalendar: true,
+          canMarkAttendance: true,
+          ...user.permissions
         },
         avatarColor: user.avatarColor || '#1976d2',
         isActive: user.isActive !== false
@@ -151,7 +156,9 @@ const Users = () => {
           canManageInstructors: true,
           canViewReports: true,
           canManageSettings: false,
-          canManageUsers: false
+          canManageUsers: false,
+          canViewCalendar: true,
+          canMarkAttendance: true
         },
         avatarColor: '#1976d2',
         isActive: true
@@ -461,92 +468,252 @@ const Users = () => {
               </Alert>
             )}
 
-            <Typography variant="subtitle2" sx={{ mt: 2 }}>Yetkiler:</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 2 }}>
+              <Typography variant="subtitle2">Yetkiler:</Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<School />}
+                onClick={() => setFormData({
+                  ...formData,
+                  permissions: {
+                    canManageStudents: false,
+                    canManageCourses: false,
+                    canManagePayments: false,
+                    canManageExpenses: false,
+                    canManageInstructors: false,
+                    canViewReports: false,
+                    canManageSettings: false,
+                    canManageUsers: false,
+                    canViewCalendar: true,
+                    canMarkAttendance: true
+                  }
+                })}
+              >
+                Eğitmen Profili
+              </Button>
+            </Box>
+            <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+              Eğitmen Profili: Sadece takvimi görüntüler ve yoklama alabilir, mali verilere erişemez.
+            </Typography>
             <FormGroup>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.permissions.canManageStudents}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      permissions: { ...formData.permissions, canManageStudents: e.target.checked }
-                    })}
-                  />
-                }
-                label="Öğrenci Yönetimi"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.permissions.canManageCourses}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      permissions: { ...formData.permissions, canManageCourses: e.target.checked }
-                    })}
-                  />
-                }
-                label="Ders Yönetimi"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.permissions.canManagePayments}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      permissions: { ...formData.permissions, canManagePayments: e.target.checked }
-                    })}
-                  />
-                }
-                label="Ödeme Yönetimi"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.permissions.canManageExpenses}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      permissions: { ...formData.permissions, canManageExpenses: e.target.checked }
-                    })}
-                  />
-                }
-                label="Gider Yönetimi"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.permissions.canViewReports}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      permissions: { ...formData.permissions, canViewReports: e.target.checked }
-                    })}
-                  />
-                }
-                label="Raporları Görüntüleme"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.permissions.canManageSettings}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      permissions: { ...formData.permissions, canManageSettings: e.target.checked }
-                    })}
-                  />
-                }
-                label="Ayarları Yönetme"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={formData.permissions.canManageUsers}
-                    onChange={(e) => setFormData({
-                      ...formData,
-                      permissions: { ...formData.permissions, canManageUsers: e.target.checked }
-                    })}
-                  />
-                }
-                label="Kullanıcı Yönetimi"
-              />
+              {/* Calendar & Attendance - Basic permissions */}
+              <Box sx={{ mb: 1, p: 1, bgcolor: 'success.50', borderRadius: 1 }}>
+                <Typography variant="caption" color="success.main" fontWeight="bold">
+                  Temel Yetkiler
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canViewCalendar}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canViewCalendar: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Takvimi Görüntüle</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Ders takvimini ve programı görüntüleyebilir
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canMarkAttendance}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canMarkAttendance: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Yoklama Al</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Dersleri tamamlandı olarak işaretleyebilir ve not ekleyebilir
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Box>
+
+              {/* Student & Course Management */}
+              <Box sx={{ mb: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                <Typography variant="caption" color="text.secondary" fontWeight="bold">
+                  Öğrenci ve Ders Yönetimi
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canManageStudents}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canManageStudents: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Öğrenci Yönetimi</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Öğrenci ekleme, düzenleme, silme ve kayıt işlemleri
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canManageCourses}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canManageCourses: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Ders Yönetimi</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Ders ekleme, düzenleme, silme ve ders programı işlemleri
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canManageInstructors}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canManageInstructors: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Eğitmen Yönetimi</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Eğitmen ekleme, düzenleme ve maaş işlemleri
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Box>
+
+              {/* Financial Management */}
+              <Box sx={{ mb: 1, p: 1, bgcolor: 'warning.50', borderRadius: 1 }}>
+                <Typography variant="caption" color="warning.main" fontWeight="bold">
+                  Mali Yetkiler (Hassas)
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canManagePayments}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canManagePayments: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Ödeme Yönetimi</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Öğrenci ödemelerini görüntüleme, ekleme ve bakiye bilgileri
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canManageExpenses}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canManageExpenses: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Gider Yönetimi</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Giderleri görüntüleme, ekleme ve kasa işlemleri
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canViewReports}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canViewReports: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Raporları Görüntüle</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Mali raporlar, gelir-gider özeti ve istatistikler
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Box>
+
+              {/* System Management */}
+              <Box sx={{ mb: 1, p: 1, bgcolor: 'error.50', borderRadius: 1 }}>
+                <Typography variant="caption" color="error.main" fontWeight="bold">
+                  Sistem Yetkileri (Sadece Yöneticiler)
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canManageSettings}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canManageSettings: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Ayarları Yönet</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Kurum ayarları, sezon yönetimi ve sistem yapılandırması
+                      </Typography>
+                    </Box>
+                  }
+                />
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={formData.permissions.canManageUsers}
+                      onChange={(e) => setFormData({
+                        ...formData,
+                        permissions: { ...formData.permissions, canManageUsers: e.target.checked }
+                      })}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography variant="body2">Kullanıcı Yönetimi</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Kullanıcı ekleme, düzenleme, silme ve yetki atama
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Box>
             </FormGroup>
           </Box>
         </DialogContent>

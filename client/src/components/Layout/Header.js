@@ -11,11 +11,13 @@ import {
   Avatar,
   Menu,
   MenuItem as MenuItemMui,
+  InputLabel,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
   AccountCircle,
   Logout,
+  SwapHoriz,
 } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import { useNavigate } from 'react-router-dom';
@@ -24,6 +26,32 @@ const Header = ({ handleDrawerToggle }) => {
   const { institution, season, institutions, seasons, changeInstitution, changeSeason, currentUser, logout } = useApp();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState(null);
+
+  // Get user's accessible institutions
+  const getUserInstitutions = () => {
+    if (!currentUser) return [];
+
+    // Superadmin can access all institutions
+    if (currentUser.role === 'superadmin') {
+      return institutions;
+    }
+
+    // Regular users - filter by their institutions array
+    if (currentUser.institutions && currentUser.institutions.length > 0) {
+      return institutions.filter(inst =>
+        currentUser.institutions.some(userInst => {
+          const userInstId = typeof userInst === 'object' ? userInst._id : userInst;
+          return userInstId === inst._id;
+        })
+      );
+    }
+
+    // Fallback to current institution only
+    return institution ? [institution] : [];
+  };
+
+  const userInstitutions = getUserInstitutions();
+  const canSwitchInstitution = userInstitutions.length > 1;
 
   const handleMenu = (event) => {
     setAnchorEl(event.currentTarget);
@@ -77,12 +105,33 @@ const Header = ({ handleDrawerToggle }) => {
         </IconButton>
 
         <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Institution Display (no longer selectable, selected at login) */}
-          {institution && (
+          {/* Institution Selector or Display */}
+          {canSwitchInstitution ? (
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <Select
+                value={institution?._id || ''}
+                onChange={(e) => changeInstitution(e.target.value)}
+                displayEmpty
+                startAdornment={<SwapHoriz sx={{ mr: 1, color: 'primary.main' }} />}
+                sx={{
+                  '& .MuiSelect-select': {
+                    display: 'flex',
+                    alignItems: 'center',
+                  }
+                }}
+              >
+                {userInstitutions.map((inst) => (
+                  <MenuItem key={inst._id} value={inst._id}>
+                    {inst.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          ) : institution ? (
             <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
               {institution.name}
             </Typography>
-          )}
+          ) : null}
 
           {/* Season Selector - still changeable */}
           {seasons.length > 0 && (

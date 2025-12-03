@@ -67,6 +67,17 @@ const Dashboard = () => {
   const { institution, season, user } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+
+  // Permission check helper
+  const hasPermission = (permission) => {
+    if (user?.role === 'superadmin' || user?.role === 'admin') return true;
+    return user?.permissions?.[permission] !== false;
+  };
+
+  // Check if user can see financial data
+  const canSeeFinancials = hasPermission('canManagePayments') || hasPermission('canManageExpenses');
+  const canSeePayments = hasPermission('canManagePayments');
+  const canSeeExpenses = hasPermission('canManageExpenses');
   const [stats, setStats] = useState({
     totalStudents: 0,
     activeStudents: 0,
@@ -387,7 +398,7 @@ const Dashboard = () => {
 
       <Grid container spacing={3}>
         {/* Stats Cards */}
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={canSeeFinancials ? 3 : 6}>
           <StatCard
             title="Toplam Öğrenci"
             value={stats.totalStudents}
@@ -398,85 +409,96 @@ const Dashboard = () => {
           />
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Toplam Gelir"
-            value={`₺${(stats.totalIncome || 0).toLocaleString('tr-TR')}`}
-            icon={<IncomeIcon />}
-            color="success"
-          />
-        </Grid>
+        {canSeePayments && (
+          <Grid item xs={12} sm={6} md={3}>
+            <StatCard
+              title="Toplam Gelir"
+              value={`₺${(stats.totalIncome || 0).toLocaleString('tr-TR')}`}
+              icon={<IncomeIcon />}
+              color="success"
+            />
+          </Grid>
+        )}
 
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Toplam Gider"
-            value={`₺${(stats.totalExpenses || 0).toLocaleString('tr-TR')}`}
-            icon={<ExpenseIcon />}
-            color="error"
-          />
-        </Grid>
+        {canSeeExpenses && (
+          <Grid item xs={12} sm={6} md={3}>
+            <StatCard
+              title="Toplam Gider"
+              value={`₺${(stats.totalExpenses || 0).toLocaleString('tr-TR')}`}
+              icon={<ExpenseIcon />}
+              color="error"
+            />
+          </Grid>
+        )}
 
-        <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Kasa Bakiyesi"
-            value={`₺${(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')}`}
-            icon={<MoneyIcon />}
-            color="warning"
-          />
-        </Grid>
+        {canSeeExpenses && (
+          <Grid item xs={12} sm={6} md={3}>
+            <StatCard
+              title="Kasa Bakiyesi"
+              value={`₺${(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')}`}
+              icon={<MoneyIcon />}
+              color="warning"
+            />
+          </Grid>
+        )}
 
-        {/* Net Income */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>
-              Net Gelir
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
-              <Typography variant="h3" color={stats.netIncome >= 0 ? "success.main" : "error.main"}>
-                ₺{(stats.netIncome || 0).toLocaleString('tr-TR')}
+        {/* Net Income - Only for users with financial permissions */}
+        {canSeeFinancials && (
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 3, height: '100%' }}>
+              <Typography variant="h6" gutterBottom>
+                Net Gelir
               </Typography>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Toplam Gelir - Toplam Gider
-            </Typography>
-          </Paper>
-        </Grid>
-
-        {/* Quick Stats */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>
-              Hızlı Özet
-            </Typography>
-            <Box sx={{ mt: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body1">Net Gelir:</Typography>
-                <Typography
-                  variant="h6"
-                  color={(stats.totalIncome || 0) - (stats.totalExpenses || 0) >= 0 ? 'success.main' : 'error.main'}
-                >
-                  ₺{((stats.totalIncome || 0) - (stats.totalExpenses || 0)).toLocaleString('tr-TR')}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
+                <Typography variant="h3" color={stats.netIncome >= 0 ? "success.main" : "error.main"}>
+                  ₺{(stats.netIncome || 0).toLocaleString('tr-TR')}
                 </Typography>
               </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="body1">Ortalama Öğrenci Başı Gelir:</Typography>
-                <Typography variant="h6">
-                  ₺
-                  {stats.activeStudents > 0
-                    ? Math.round(stats.totalIncome / stats.activeStudents).toLocaleString('tr-TR')
-                    : 0}
-                </Typography>
-              </Box>
-            </Box>
-          </Paper>
-        </Grid>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Toplam Gelir - Toplam Gider
+              </Typography>
+            </Paper>
+          </Grid>
+        )}
 
-        {/* Expected Payments Widget */}
-        <Grid item xs={12}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Beklenen Ödemeler
-            </Typography>
+        {/* Quick Stats - Only for users with financial permissions */}
+        {canSeeFinancials && (
+          <Grid item xs={12} md={6}>
+            <Paper sx={{ p: 3, height: '100%' }}>
+              <Typography variant="h6" gutterBottom>
+                Hızlı Özet
+              </Typography>
+              <Box sx={{ mt: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                  <Typography variant="body1">Net Gelir:</Typography>
+                  <Typography
+                    variant="h6"
+                    color={(stats.totalIncome || 0) - (stats.totalExpenses || 0) >= 0 ? 'success.main' : 'error.main'}
+                  >
+                    ₺{((stats.totalIncome || 0) - (stats.totalExpenses || 0)).toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                  <Typography variant="body1">Ortalama Öğrenci Başı Gelir:</Typography>
+                  <Typography variant="h6">
+                    ₺
+                    {stats.activeStudents > 0
+                      ? Math.round(stats.totalIncome / stats.activeStudents).toLocaleString('tr-TR')
+                      : 0}
+                  </Typography>
+                </Box>
+              </Box>
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Expected Payments Widget - Only for users with payment permissions */}
+        {canSeePayments && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Beklenen Ödemeler
+              </Typography>
             <Grid container spacing={2} sx={{ mt: 1 }}>
               <Grid item xs={12} sm={6} md={2.4}>
                 <Box
@@ -600,97 +622,102 @@ const Dashboard = () => {
             </Grid>
           </Paper>
         </Grid>
+        )}
 
-        {/* Income vs Expense Chart */}
-        <Grid item xs={12} lg={8}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Gelir ve Gider Trendi (Son 12 Ay)
-            </Typography>
-            {incomeExpenseData.length > 0 && (
-              <Line
-                data={{
-                  labels: incomeExpenseData.map(d => d.period),
-                  datasets: [
-                    {
-                      label: 'Gelir',
-                      data: incomeExpenseData.map(d => d.income),
-                      borderColor: 'rgb(75, 192, 192)',
-                      backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                      tension: 0.3
-                    },
-                    {
-                      label: 'Gider',
-                      data: incomeExpenseData.map(d => d.expense),
-                      borderColor: 'rgb(255, 99, 132)',
-                      backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                      tension: 0.3
-                    }
-                  ]
-                }}
-                options={{
-                  responsive: true,
-                  plugins: {
-                    legend: {
-                      position: 'top'
-                    }
-                  },
-                  scales: {
-                    y: {
-                      beginAtZero: true,
-                      ticks: {
-                        callback: (value) => '₺' + value.toLocaleString('tr-TR')
+        {/* Income vs Expense Chart - Only for users with financial permissions */}
+        {canSeeFinancials && (
+          <Grid item xs={12} lg={8}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Gelir ve Gider Trendi (Son 12 Ay)
+              </Typography>
+              {incomeExpenseData.length > 0 && (
+                <Line
+                  data={{
+                    labels: incomeExpenseData.map(d => d.period),
+                    datasets: [
+                      {
+                        label: 'Gelir',
+                        data: incomeExpenseData.map(d => d.income),
+                        borderColor: 'rgb(75, 192, 192)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        tension: 0.3
+                      },
+                      {
+                        label: 'Gider',
+                        data: incomeExpenseData.map(d => d.expense),
+                        borderColor: 'rgb(255, 99, 132)',
+                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        tension: 0.3
                       }
-                    }
-                  }
-                }}
-              />
-            )}
-          </Paper>
-        </Grid>
-
-        {/* Payment Methods Distribution */}
-        <Grid item xs={12} lg={4}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Ödeme Yöntemleri Dağılımı
-            </Typography>
-            {paymentMethodsData.length > 0 && (
-              <Pie
-                data={{
-                  labels: paymentMethodsData.map(d => d._id || 'Diğer'),
-                  datasets: [{
-                    data: paymentMethodsData.map(d => d.totalAmount),
-                    backgroundColor: [
-                      'rgba(255, 99, 132, 0.8)',
-                      'rgba(54, 162, 235, 0.8)',
-                      'rgba(255, 206, 86, 0.8)',
-                      'rgba(75, 192, 192, 0.8)',
-                      'rgba(153, 102, 255, 0.8)',
                     ]
-                  }]
-                }}
-                options={{
-                  responsive: true,
-                  plugins: {
-                    legend: {
-                      position: 'bottom'
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: {
+                        position: 'top'
+                      }
                     },
-                    tooltip: {
-                      callbacks: {
-                        label: (context) => {
-                          const label = context.label || '';
-                          const value = context.parsed || 0;
-                          return `${label}: ₺${value.toLocaleString('tr-TR')}`;
+                    scales: {
+                      y: {
+                        beginAtZero: true,
+                        ticks: {
+                          callback: (value) => '₺' + value.toLocaleString('tr-TR')
                         }
                       }
                     }
-                  }
-                }}
-              />
-            )}
-          </Paper>
-        </Grid>
+                  }}
+                />
+              )}
+            </Paper>
+          </Grid>
+        )}
+
+        {/* Payment Methods Distribution - Only for users with payment permissions */}
+        {canSeePayments && (
+          <Grid item xs={12} lg={4}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Ödeme Yöntemleri Dağılımı
+              </Typography>
+              {paymentMethodsData.length > 0 && (
+                <Pie
+                  data={{
+                    labels: paymentMethodsData.map(d => d._id || 'Diğer'),
+                    datasets: [{
+                      data: paymentMethodsData.map(d => d.totalAmount),
+                      backgroundColor: [
+                        'rgba(255, 99, 132, 0.8)',
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(255, 206, 86, 0.8)',
+                        'rgba(75, 192, 192, 0.8)',
+                        'rgba(153, 102, 255, 0.8)',
+                      ]
+                    }]
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: {
+                        position: 'bottom'
+                      },
+                      tooltip: {
+                        callbacks: {
+                          label: (context) => {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            return `${label}: ₺${value.toLocaleString('tr-TR')}`;
+                          }
+                        }
+                      }
+                    }
+                  }}
+                />
+              )}
+            </Paper>
+          </Grid>
+        )}
 
         {/* Student Growth Chart */}
         <Grid item xs={12} lg={6}>
@@ -731,52 +758,54 @@ const Dashboard = () => {
           </Paper>
         </Grid>
 
-        {/* Expense Categories Distribution */}
-        <Grid item xs={12} lg={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Gider Kategorileri Dağılımı
-            </Typography>
-            {expenseCategoriesData.length > 0 && (
-              <Doughnut
-                data={{
-                  labels: expenseCategoriesData.map(d => d.categoryName || d._id || 'Diğer'),
-                  datasets: [{
-                    data: expenseCategoriesData.map(d => d.totalAmount),
-                    backgroundColor: [
-                      'rgba(255, 99, 132, 0.8)',
-                      'rgba(54, 162, 235, 0.8)',
-                      'rgba(255, 206, 86, 0.8)',
-                      'rgba(75, 192, 192, 0.8)',
-                      'rgba(153, 102, 255, 0.8)',
-                      'rgba(255, 159, 64, 0.8)',
-                    ]
-                  }]
-                }}
-                options={{
-                  responsive: true,
-                  plugins: {
-                    legend: {
-                      position: 'bottom'
-                    },
-                    tooltip: {
-                      callbacks: {
-                        label: (context) => {
-                          const label = context.label || '';
-                          const value = context.parsed || 0;
-                          return `${label}: ₺${value.toLocaleString('tr-TR')}`;
+        {/* Expense Categories Distribution - Only for users with expense permissions */}
+        {canSeeExpenses && (
+          <Grid item xs={12} lg={6}>
+            <Paper sx={{ p: 3 }}>
+              <Typography variant="h6" gutterBottom>
+                Gider Kategorileri Dağılımı
+              </Typography>
+              {expenseCategoriesData.length > 0 && (
+                <Doughnut
+                  data={{
+                    labels: expenseCategoriesData.map(d => d.categoryName || d._id || 'Diğer'),
+                    datasets: [{
+                      data: expenseCategoriesData.map(d => d.totalAmount),
+                      backgroundColor: [
+                        'rgba(255, 99, 132, 0.8)',
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(255, 206, 86, 0.8)',
+                        'rgba(75, 192, 192, 0.8)',
+                        'rgba(153, 102, 255, 0.8)',
+                        'rgba(255, 159, 64, 0.8)',
+                      ]
+                    }]
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: {
+                        position: 'bottom'
+                      },
+                      tooltip: {
+                        callbacks: {
+                          label: (context) => {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            return `${label}: ₺${value.toLocaleString('tr-TR')}`;
+                          }
                         }
                       }
                     }
-                  }
-                }}
-              />
-            )}
-          </Paper>
-        </Grid>
+                  }}
+                />
+              )}
+            </Paper>
+          </Grid>
+        )}
 
-        {/* Pending Credit Card Payments Widget */}
-        {expectedPayments.pendingCreditCard.length > 0 && (
+        {/* Pending Credit Card Payments Widget - Only for users with payment permissions */}
+        {canSeePayments && expectedPayments.pendingCreditCard.length > 0 && (
           <Grid item xs={12}>
             <Paper sx={{ p: 3 }}>
               <Typography variant="h6" gutterBottom color="warning.main">
@@ -936,7 +965,7 @@ const Dashboard = () => {
                   <TableCell>Öğrenci</TableCell>
                   <TableCell>Durum</TableCell>
                   <TableCell>İndirim/Burs</TableCell>
-                  <TableCell>Bakiye</TableCell>
+                  {canSeePayments && <TableCell>Bakiye</TableCell>}
                   <TableCell align="right">İşlem</TableCell>
                 </TableRow>
               </TableHead>
@@ -963,14 +992,16 @@ const Dashboard = () => {
                     <TableCell>
                       {getDiscountBadge(student) || <Typography variant="caption" color="text.secondary">-</Typography>}
                     </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color={student.balance > 0 ? 'error.main' : 'success.main'}
-                      >
-                        {student.balance > 0 ? '-' : ''}₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
-                      </Typography>
-                    </TableCell>
+                    {canSeePayments && (
+                      <TableCell>
+                        <Typography
+                          variant="body2"
+                          color={student.balance > 0 ? 'error.main' : 'success.main'}
+                        >
+                          {student.balance > 0 ? '-' : ''}₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
+                        </Typography>
+                      </TableCell>
+                    )}
                     <TableCell align="right">
                       <IconButton
                         size="small"
