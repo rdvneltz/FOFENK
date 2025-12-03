@@ -32,32 +32,54 @@ import {
 } from '@mui/icons-material';
 import useServerHealth from '../../hooks/useServerHealth';
 import ServerStatusIndicator from '../Common/ServerStatusIndicator';
+import { useApp } from '../../context/AppContext';
 
-const menuItems = [
+// Menu items with permission requirements
+const allMenuItems = [
   { text: 'Panel', icon: <DashboardIcon />, path: '/' },
-  { divider: true },
-  { text: 'Öğrenciler', icon: <PeopleIcon />, path: '/students' },
-  { text: 'Dersler', icon: <MenuBookIcon />, path: '/courses' },
-  { text: 'Takvim', icon: <CalendarIcon />, path: '/calendar' },
-  { text: 'Eğitmenler', icon: <InstructorIcon />, path: '/instructors' },
-  { text: 'Deneme Dersleri', icon: <TrialIcon />, path: '/trial-lessons' },
-  { divider: true },
-  { text: 'Ödemeler', icon: <PaymentIcon />, path: '/payments' },
-  { text: 'Giderler', icon: <ExpenseIcon />, path: '/expenses' },
-  { text: 'Kasa Yönetimi', icon: <CashIcon />, path: '/cash-registers' },
-  { divider: true },
+  { divider: true, group: 'management' },
+  { text: 'Öğrenciler', icon: <PeopleIcon />, path: '/students', permission: 'canManageStudents' },
+  { text: 'Dersler', icon: <MenuBookIcon />, path: '/courses', permission: 'canManageCourses' },
+  { text: 'Takvim', icon: <CalendarIcon />, path: '/calendar', permission: 'canViewCalendar' },
+  { text: 'Eğitmenler', icon: <InstructorIcon />, path: '/instructors', permission: 'canManageInstructors' },
+  { text: 'Deneme Dersleri', icon: <TrialIcon />, path: '/trial-lessons', permission: 'canManageCourses' },
+  { divider: true, group: 'financial' },
+  { text: 'Ödemeler', icon: <PaymentIcon />, path: '/payments', permission: 'canManagePayments' },
+  { text: 'Giderler', icon: <ExpenseIcon />, path: '/expenses', permission: 'canManageExpenses' },
+  { text: 'Kasa Yönetimi', icon: <CashIcon />, path: '/cash-registers', permission: 'canManageExpenses' },
+  { divider: true, group: 'communication' },
   { text: 'Telefon Rehberi', icon: <PhoneBookIcon />, path: '/phone-book' },
   { text: 'Mesaj Şablonları', icon: <MessageIcon />, path: '/message-templates' },
-  { divider: true },
-  { text: 'Raporlar', icon: <ReportIcon />, path: '/reports' },
-  { text: 'Ayarlar', icon: <SettingsIcon />, path: '/settings' },
+  { divider: true, group: 'system' },
+  { text: 'Raporlar', icon: <ReportIcon />, path: '/reports', permission: 'canViewReports' },
+  { text: 'Ayarlar', icon: <SettingsIcon />, path: '/settings', permission: 'canManageSettings' },
 ];
 
 const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { status, lastChecked } = useServerHealth();
+  const { user } = useApp();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
+
+  // Check if user has permission (superadmin and admin have all permissions)
+  const hasPermission = (permission) => {
+    if (!permission) return true; // No permission required
+    if (user?.role === 'superadmin' || user?.role === 'admin') return true;
+    return user?.permissions?.[permission] !== false;
+  };
+
+  // Filter menu items based on permissions
+  const menuItems = allMenuItems.filter((item, index, arr) => {
+    if (item.divider) {
+      // Check if there are any visible items after this divider
+      const nextDividerIndex = arr.findIndex((i, idx) => idx > index && i.divider);
+      const itemsInGroup = arr.slice(index + 1, nextDividerIndex === -1 ? arr.length : nextDividerIndex);
+      const hasVisibleItems = itemsInGroup.some(i => !i.divider && hasPermission(i.permission));
+      return hasVisibleItems;
+    }
+    return hasPermission(item.permission);
+  });
 
   useEffect(() => {
     const timer = setInterval(() => {

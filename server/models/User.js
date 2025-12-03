@@ -33,7 +33,9 @@ const userSchema = new mongoose.Schema({
     canViewReports: { type: Boolean, default: true },
     canManageSettings: { type: Boolean, default: false },
     canManageUsers: { type: Boolean, default: false },
-    canManageInstitutions: { type: Boolean, default: false }
+    canManageInstitutions: { type: Boolean, default: false },
+    canViewCalendar: { type: Boolean, default: true },
+    canMarkAttendance: { type: Boolean, default: true }
   },
   // Kullanıcının erişebildiği kurumlar (superadmin hariç)
   institutions: [{
