@@ -243,9 +243,11 @@ const Users = () => {
 
   const getRoleName = (role) => {
     const roles = {
+      superadmin: 'Süper Admin',
       admin: 'Yönetici',
       manager: 'Müdür',
       accountant: 'Muhasebe',
+      instructor: 'Eğitmen',
       staff: 'Personel'
     };
     return roles[role] || role;
@@ -408,14 +410,41 @@ const Users = () => {
               <Select
                 value={formData.role}
                 label="Rol"
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                onChange={(e) => {
+                  const newRole = e.target.value;
+                  // Eğitmen rolü seçildiğinde otomatik eğitmen profili yükle
+                  if (newRole === 'instructor') {
+                    setFormData({
+                      ...formData,
+                      role: newRole,
+                      permissions: {
+                        canManageStudents: false,
+                        canManageCourses: false,
+                        canManagePayments: false,
+                        canManageExpenses: false,
+                        canManageInstructors: false,
+                        canViewReports: false,
+                        canManageSettings: false,
+                        canManageUsers: false,
+                        canViewCalendar: true,
+                        canMarkAttendance: true
+                      }
+                    });
+                  } else {
+                    setFormData({ ...formData, role: newRole });
+                  }
+                }}
               >
-                <MenuItem value="admin">Yönetici</MenuItem>
+                <MenuItem value="admin">Yönetici (Tüm yetkiler)</MenuItem>
                 <MenuItem value="manager">Müdür</MenuItem>
                 <MenuItem value="accountant">Muhasebe</MenuItem>
+                <MenuItem value="instructor">Eğitmen (Sadece takvim ve yoklama)</MenuItem>
                 <MenuItem value="staff">Personel</MenuItem>
               </Select>
             </FormControl>
+            <Typography variant="caption" color="text.secondary">
+              Not: Rol seçimi yetkiler üzerinde etkili değildir. Yetkileri aşağıdan ayarlayın.
+            </Typography>
 
             {/* Active/Passive Status - Only when editing */}
             {selectedUser && (
