@@ -9,7 +9,10 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all payments with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, studentId, cashRegisterId, paymentType, startDate, endDate } = req.query;
+    const { studentId, cashRegisterId, paymentType, startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -443,7 +446,8 @@ router.post('/repair/fix-payment-statuses', async (req, res) => {
 // List all cash registers with their balances
 router.get('/repair/list-cash-registers', async (req, res) => {
   try {
-    const { institutionId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
     const filter = institutionId ? { institution: institutionId } : {};
 
     const cashRegisters = await CashRegister.find(filter)
@@ -470,7 +474,9 @@ router.get('/repair/list-cash-registers', async (req, res) => {
 // List all students with their balances
 router.get('/repair/list-students', async (req, res) => {
   try {
-    const { institutionId, seasonId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
@@ -582,7 +588,9 @@ router.post('/repair/reset-student-balance', async (req, res) => {
 // Delete orphaned payments (payments with no student or deleted payment plan)
 router.post('/repair/cleanup-orphaned-records', async (req, res) => {
   try {
-    const { institutionId, dryRun = true } = req.body;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.body.institution || req.body.institutionId;
+    const { dryRun = true } = req.body;
     const filter = institutionId ? { institution: institutionId } : {};
 
     const results = {
@@ -646,10 +654,12 @@ router.post('/repair/cleanup-orphaned-records', async (req, res) => {
 // Full data repair - recalculate all balances from scratch
 router.post('/repair/full-recalculate', async (req, res) => {
   try {
-    const { institutionId, dryRun = true } = req.body;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.body.institution || req.body.institutionId;
+    const { dryRun = true } = req.body;
 
     if (!institutionId) {
-      return res.status(400).json({ message: 'institutionId gerekli' });
+      return res.status(400).json({ message: 'institution veya institutionId gerekli' });
     }
 
     const results = {

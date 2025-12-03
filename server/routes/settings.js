@@ -20,7 +20,9 @@ const TrialLesson = require('../models/TrialLesson');
 // Get all settings with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, category } = req.query;
+    const { category } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -69,7 +71,8 @@ router.get('/:id', async (req, res) => {
 // Get setting by key
 router.get('/key/:key', async (req, res) => {
   try {
-    const { institutionId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
     const filter = { key: req.params.key };
 
     if (institutionId) filter.institution = institutionId;
@@ -170,7 +173,8 @@ router.put('/:id', async (req, res) => {
 // Update setting by key
 router.put('/key/:key', async (req, res) => {
   try {
-    const { institutionId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
     const filter = { key: req.params.key };
 
     if (institutionId) filter.institution = institutionId;

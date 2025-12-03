@@ -29,7 +29,7 @@ import {
   Checkbox,
   ListItemText
 } from '@mui/material';
-import { Add, Edit, Delete, Visibility } from '@mui/icons-material';
+import { Add, Edit, Delete, DeleteForever, Visibility } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -44,7 +44,7 @@ const Users = () => {
   const [openActivitiesDialog, setOpenActivitiesDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userActivities, setUserActivities] = useState([]);
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null, permanent: false });
   const [alert, setAlert] = useState({ show: false, message: '', severity: 'success' });
 
   const [formData, setFormData] = useState({
@@ -65,7 +65,8 @@ const Users = () => {
       canManageSettings: false,
       canManageUsers: false
     },
-    avatarColor: '#1976d2'
+    avatarColor: '#1976d2',
+    isActive: true
   });
 
   useEffect(() => {
@@ -107,6 +108,10 @@ const Users = () => {
   const handleOpenDialog = (user = null) => {
     if (user) {
       setSelectedUser(user);
+      // Handle institutions that might be ObjectId objects or strings
+      const userInstitutions = (user.institutions || []).map(inst =>
+        typeof inst === 'object' ? inst._id : inst
+      );
       setFormData({
         username: user.username,
         fullName: user.fullName,
@@ -114,9 +119,19 @@ const Users = () => {
         phone: user.phone || '',
         password: '',
         role: user.role,
-        institutions: user.institutions || [],
-        permissions: user.permissions,
-        avatarColor: user.avatarColor
+        institutions: userInstitutions,
+        permissions: user.permissions || {
+          canManageStudents: true,
+          canManageCourses: true,
+          canManagePayments: true,
+          canManageExpenses: true,
+          canManageInstructors: true,
+          canViewReports: true,
+          canManageSettings: false,
+          canManageUsers: false
+        },
+        avatarColor: user.avatarColor || '#1976d2',
+        isActive: user.isActive !== false
       });
     } else {
       setSelectedUser(null);
@@ -138,7 +153,8 @@ const Users = () => {
           canManageSettings: false,
           canManageUsers: false
         },
-        avatarColor: '#1976d2'
+        avatarColor: '#1976d2',
+        isActive: true
       });
     }
     setOpenDialog(true);
@@ -161,6 +177,7 @@ const Users = () => {
         institutions: formData.role === 'superadmin' ? [] : formData.institutions,
         permissions: formData.permissions,
         avatarColor: formData.avatarColor,
+        isActive: formData.isActive,
         institution: institution?._id || null,
         [selectedUser ? 'updatedBy' : 'createdBy']: currentUser?.username
       };
@@ -188,14 +205,21 @@ const Users = () => {
 
   const handleDelete = async () => {
     try {
-      await api.delete(`/users/${confirmDialog.user._id}`, {
-        data: { deletedBy: currentUser?.username }
-      });
-      showAlert('Kullanıcı pasif edildi');
+      if (confirmDialog.permanent) {
+        await api.delete(`/users/${confirmDialog.user._id}/permanent`, {
+          data: { deletedBy: currentUser?.username }
+        });
+        showAlert('Kullanıcı kalıcı olarak silindi');
+      } else {
+        await api.delete(`/users/${confirmDialog.user._id}`, {
+          data: { deletedBy: currentUser?.username }
+        });
+        showAlert('Kullanıcı pasif edildi');
+      }
       loadUsers();
-      setConfirmDialog({ open: false, user: null });
+      setConfirmDialog({ open: false, user: null, permanent: false });
     } catch (error) {
-      showAlert('Kullanıcı silinirken hata oluştu', 'error');
+      showAlert(error.response?.data?.message || 'Kullanıcı silinirken hata oluştu', 'error');
     }
   };
 
@@ -306,11 +330,21 @@ const Users = () => {
                   </IconButton>
                   <IconButton
                     size="small"
-                    onClick={() => setConfirmDialog({ open: true, user })}
-                    title="Sil"
+                    onClick={() => setConfirmDialog({ open: true, user, permanent: false })}
+                    title="Pasif Et"
                   >
                     <Delete />
                   </IconButton>
+                  {user.role !== 'superadmin' && (
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => setConfirmDialog({ open: true, user, permanent: true })}
+                      title="Kalıcı Olarak Sil"
+                    >
+                      <DeleteForever />
+                    </IconButton>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -375,6 +409,20 @@ const Users = () => {
                 <MenuItem value="staff">Personel</MenuItem>
               </Select>
             </FormControl>
+
+            {/* Active/Passive Status - Only when editing */}
+            {selectedUser && (
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={formData.isActive}
+                    onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                    color="success"
+                  />
+                }
+                label={formData.isActive ? "Aktif Kullanıcı" : "Pasif Kullanıcı"}
+              />
+            )}
 
             {/* Institutions Selection - Only for non-superadmin */}
             {formData.role !== 'superadmin' && (
@@ -546,10 +594,14 @@ const Users = () => {
       {/* Confirm Delete Dialog */}
       <ConfirmDialog
         open={confirmDialog.open}
-        title="Kullanıcıyı Pasif Et"
-        message={`${confirmDialog.user?.fullName} kullanıcısını pasif etmek istediğinizden emin misiniz?`}
+        title={confirmDialog.permanent ? "Kullanıcıyı Kalıcı Olarak Sil" : "Kullanıcıyı Pasif Et"}
+        message={confirmDialog.permanent
+          ? `${confirmDialog.user?.fullName} kullanıcısını kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!`
+          : `${confirmDialog.user?.fullName} kullanıcısını pasif etmek istediğinizden emin misiniz?`
+        }
         onConfirm={handleDelete}
-        onCancel={() => setConfirmDialog({ open: false, user: null })}
+        onClose={() => setConfirmDialog({ open: false, user: null, permanent: false })}
+        confirmColor={confirmDialog.permanent ? "error" : "primary"}
       />
     </Box>
   );

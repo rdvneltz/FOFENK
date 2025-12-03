@@ -6,7 +6,10 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all students with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, includeArchived, includeDiscountInfo } = req.query;
+    const { includeArchived, includeDiscountInfo } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
 
     // Season filter is required
     if (!seasonId) {

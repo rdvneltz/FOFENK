@@ -163,6 +163,40 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Permanently delete user (hard delete)
+router.delete('/:id/permanent', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+
+    if (!user) {
+      return res.status(404).json({ message: 'Kullanıcı bulunamadı' });
+    }
+
+    // Prevent deleting superadmin users
+    if (user.role === 'superadmin') {
+      return res.status(403).json({ message: 'Superadmin kullanıcılar silinemez' });
+    }
+
+    const userName = user.fullName;
+    const userInstitution = user.institution;
+
+    await User.findByIdAndDelete(req.params.id);
+
+    await ActivityLog.create({
+      user: req.body.deletedBy || 'System',
+      action: 'delete',
+      entity: 'User',
+      entityId: req.params.id,
+      description: `Kullanıcı kalıcı olarak silindi: ${userName}`,
+      institution: userInstitution
+    });
+
+    res.json({ message: 'Kullanıcı kalıcı olarak silindi' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get user activity logs
 router.get('/:id/activities', async (req, res) => {
   try {

@@ -6,7 +6,9 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all message templates with filtering
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, type } = req.query;
+    const { type } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;

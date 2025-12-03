@@ -5,7 +5,10 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all activity logs with filtering (read-only)
 router.get('/', async (req, res) => {
   try {
-    const { institutionId, seasonId, entity, action, user, startDate, endDate } = req.query;
+    const { entity, action, user, startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -67,7 +70,9 @@ router.get('/entity/:entityId', async (req, res) => {
 router.get('/recent/:limit', async (req, res) => {
   try {
     const limit = parseInt(req.params.limit) || 50;
-    const { institutionId, seasonId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;

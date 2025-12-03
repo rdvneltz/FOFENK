@@ -13,7 +13,10 @@ const Attendance = require('../models/Attendance');
 // Get dashboard overview (alias for dashboard-stats)
 router.get('/dashboard', async (req, res) => {
   try {
-    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -99,7 +102,10 @@ router.get('/dashboard', async (req, res) => {
 // Get dashboard statistics
 router.get('/dashboard-stats', async (req, res) => {
   try {
-    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -181,7 +187,10 @@ router.get('/dashboard-stats', async (req, res) => {
 // Get student balances (debt/credit list)
 router.get('/student-balances', async (req, res) => {
   try {
-    const { institutionId, seasonId, balanceType } = req.query;
+    const { balanceType } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -218,7 +227,10 @@ router.get('/student-balances', async (req, res) => {
 // Get instructor payments list
 router.get('/instructor-payments', async (req, res) => {
   try {
-    const { institutionId, seasonId, instructorId, startDate, endDate } = req.query;
+    const { instructorId, startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = { paymentType: 'instructorPayment' };
 
     if (institutionId) filter.institution = institutionId;
@@ -256,7 +268,10 @@ router.get('/instructor-payments', async (req, res) => {
 // Get expected payments (upcoming installments)
 router.get('/expected-payments', async (req, res) => {
   try {
-    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -334,7 +349,10 @@ router.get('/expected-payments', async (req, res) => {
 // Get income vs expense chart data
 router.get('/income-expense-chart', async (req, res) => {
   try {
-    const { institutionId, seasonId, startDate, endDate, groupBy } = req.query;
+    const { startDate, endDate, groupBy } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -421,7 +439,10 @@ router.get('/income-expense-chart', async (req, res) => {
 // Get attendance statistics
 router.get('/attendance-stats', async (req, res) => {
   try {
-    const { institutionId, seasonId, courseId, startDate, endDate } = req.query;
+    const { courseId, startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -474,7 +495,9 @@ router.get('/attendance-stats', async (req, res) => {
 // Get course enrollment statistics
 router.get('/course-enrollment-stats', async (req, res) => {
   try {
-    const { institutionId, seasonId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -513,7 +536,10 @@ router.get('/course-enrollment-stats', async (req, res) => {
 // Get payment method distribution
 router.get('/payment-method-stats', async (req, res) => {
   try {
-    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -547,7 +573,10 @@ router.get('/payment-method-stats', async (req, res) => {
 // Get expense category distribution
 router.get('/expense-category-stats', async (req, res) => {
   try {
-    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -592,7 +621,9 @@ router.get('/expense-category-stats', async (req, res) => {
 // Get student growth chart data (last 12 months)
 router.get('/chart/student-growth', async (req, res) => {
   try {
-    const { institutionId, seasonId } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
@@ -642,7 +673,10 @@ router.get('/chart/student-growth', async (req, res) => {
 // Get payment methods distribution chart data
 router.get('/chart/payment-methods', async (req, res) => {
   try {
-    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
+    // Accept both 'institution' and 'institutionId' parameters for compatibility
+    const institutionId = req.query.institution || req.query.institutionId;
+    const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;

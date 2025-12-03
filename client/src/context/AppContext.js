@@ -109,7 +109,18 @@ export const AppProvider = ({ children }) => {
         if (selectedSeason) {
           setSeason(selectedSeason);
           localStorage.setItem('selectedSeason', selectedSeason._id);
+        } else {
+          // No season available for this institution, clear selection
+          setSeason(null);
+          localStorage.removeItem('selectedSeason');
         }
+      } else {
+        // No institution available, clear all
+        setInstitution(null);
+        setSeason(null);
+        setSeasons([]);
+        localStorage.removeItem('selectedInstitution');
+        localStorage.removeItem('selectedSeason');
       }
     } catch (error) {
       console.error('Error loading initial data:', error);
