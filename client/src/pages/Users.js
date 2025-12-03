@@ -29,7 +29,7 @@ import {
   Checkbox,
   ListItemText
 } from '@mui/material';
-import { Add, Edit, Delete, Visibility } from '@mui/icons-material';
+import { Add, Edit, Delete, DeleteForever, Visibility } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -44,7 +44,7 @@ const Users = () => {
   const [openActivitiesDialog, setOpenActivitiesDialog] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [userActivities, setUserActivities] = useState([]);
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null });
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, user: null, permanent: false });
   const [alert, setAlert] = useState({ show: false, message: '', severity: 'success' });
 
   const [formData, setFormData] = useState({
@@ -188,14 +188,21 @@ const Users = () => {
 
   const handleDelete = async () => {
     try {
-      await api.delete(`/users/${confirmDialog.user._id}`, {
-        data: { deletedBy: currentUser?.username }
-      });
-      showAlert('Kullanıcı pasif edildi');
+      if (confirmDialog.permanent) {
+        await api.delete(`/users/${confirmDialog.user._id}/permanent`, {
+          data: { deletedBy: currentUser?.username }
+        });
+        showAlert('Kullanıcı kalıcı olarak silindi');
+      } else {
+        await api.delete(`/users/${confirmDialog.user._id}`, {
+          data: { deletedBy: currentUser?.username }
+        });
+        showAlert('Kullanıcı pasif edildi');
+      }
       loadUsers();
-      setConfirmDialog({ open: false, user: null });
+      setConfirmDialog({ open: false, user: null, permanent: false });
     } catch (error) {
-      showAlert('Kullanıcı silinirken hata oluştu', 'error');
+      showAlert(error.response?.data?.message || 'Kullanıcı silinirken hata oluştu', 'error');
     }
   };
 
@@ -306,11 +313,21 @@ const Users = () => {
                   </IconButton>
                   <IconButton
                     size="small"
-                    onClick={() => setConfirmDialog({ open: true, user })}
-                    title="Sil"
+                    onClick={() => setConfirmDialog({ open: true, user, permanent: false })}
+                    title="Pasif Et"
                   >
                     <Delete />
                   </IconButton>
+                  {user.role !== 'superadmin' && (
+                    <IconButton
+                      size="small"
+                      color="error"
+                      onClick={() => setConfirmDialog({ open: true, user, permanent: true })}
+                      title="Kalıcı Olarak Sil"
+                    >
+                      <DeleteForever />
+                    </IconButton>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -546,10 +563,14 @@ const Users = () => {
       {/* Confirm Delete Dialog */}
       <ConfirmDialog
         open={confirmDialog.open}
-        title="Kullanıcıyı Pasif Et"
-        message={`${confirmDialog.user?.fullName} kullanıcısını pasif etmek istediğinizden emin misiniz?`}
+        title={confirmDialog.permanent ? "Kullanıcıyı Kalıcı Olarak Sil" : "Kullanıcıyı Pasif Et"}
+        message={confirmDialog.permanent
+          ? `${confirmDialog.user?.fullName} kullanıcısını kalıcı olarak silmek istediğinizden emin misiniz? Bu işlem geri alınamaz!`
+          : `${confirmDialog.user?.fullName} kullanıcısını pasif etmek istediğinizden emin misiniz?`
+        }
         onConfirm={handleDelete}
-        onCancel={() => setConfirmDialog({ open: false, user: null })}
+        onClose={() => setConfirmDialog({ open: false, user: null, permanent: false })}
+        confirmColor={confirmDialog.permanent ? "error" : "primary"}
       />
     </Box>
   );
