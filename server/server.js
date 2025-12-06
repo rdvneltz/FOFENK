@@ -91,6 +91,7 @@ app.use('/api/cash-registers', require('./routes/cashRegisters'));
 app.use('/api/trial-lessons', require('./routes/trialLessons'));
 app.use('/api/message-templates', require('./routes/messageTemplates'));
 app.use('/api/planned-expenses', require('./routes/plannedExpenses'));
+app.use('/api/planned-investments', require('./routes/plannedInvestments'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/activity-logs', require('./routes/activityLogs'));
 app.use('/api/reports', require('./routes/reports'));
