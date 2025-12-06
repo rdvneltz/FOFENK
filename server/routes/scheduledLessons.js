@@ -176,6 +176,7 @@ router.post('/generate-schedule', async (req, res) => {
       seasonId,
       institutionId,
       skipHolidays,
+      notes,
       createdBy
     } = req.body;
 
@@ -191,6 +192,7 @@ router.post('/generate-schedule', async (req, res) => {
       seasonId,
       institutionId,
       skipHolidays,
+      notes,
       createdBy
     });
 
