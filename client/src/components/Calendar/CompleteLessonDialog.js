@@ -11,19 +11,22 @@ import {
   Alert,
   Box,
   Divider,
+  Chip,
 } from '@mui/material';
-import { CheckCircle, Info } from '@mui/icons-material';
+import { CheckCircle, Info, Person } from '@mui/icons-material';
 
 /**
  * Dialog for completing a lesson
  * - Shows planned duration
  * - Asks for actual duration
- * - Calculates payment based on actual duration
+ * - Calculates payment based on actual duration for primary instructor
+ * - Supports additional instructors with separate payments
  * - Allows manual payment adjustment
  */
-const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete }) => {
+const CompleteLessonDialog = ({ open, onClose, lesson, instructor, additionalInstructors = [], onComplete }) => {
   const [actualDuration, setActualDuration] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [additionalPayments, setAdditionalPayments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -33,13 +36,26 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
       const planned = calculatePlannedDuration(lesson.startTime, lesson.endTime);
       setActualDuration(planned.toString());
 
-      // Calculate default payment
+      // Calculate default payment for primary instructor
       if (instructor) {
         const defaultPayment = calculatePayment(instructor, planned);
         setPaymentAmount(defaultPayment.toString());
       }
+
+      // Calculate default payments for additional instructors
+      if (additionalInstructors.length > 0) {
+        const additionalDefaults = additionalInstructors.map(ai => {
+          if (ai) {
+            return calculatePayment(ai, planned).toString();
+          }
+          return '0';
+        });
+        setAdditionalPayments(additionalDefaults);
+      } else {
+        setAdditionalPayments([]);
+      }
     }
-  }, [open, lesson, instructor]);
+  }, [open, lesson, instructor, additionalInstructors]);
 
   const calculatePlannedDuration = (startTime, endTime) => {
     const [startHour, startMin] = startTime.split(':').map(Number);
@@ -48,14 +64,14 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
     return hours;
   };
 
-  const calculatePayment = (instructor, hours) => {
-    if (!instructor || !instructor.paymentType) return 0;
+  const calculatePayment = (inst, hours) => {
+    if (!inst || !inst.paymentType) return 0;
 
-    switch (instructor.paymentType) {
+    switch (inst.paymentType) {
       case 'hourly':
-        return hours * (instructor.paymentAmount || 0);
+        return hours * (inst.paymentAmount || 0);
       case 'perLesson':
-        return instructor.paymentAmount || 0;
+        return inst.paymentAmount || 0;
       default:
         return 0;
     }
@@ -66,18 +82,36 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
     setActualDuration(value);
     setError('');
 
-    // Recalculate payment when duration changes
+    // Recalculate payment for primary instructor when duration changes
     if (instructor && value) {
       const hours = parseFloat(value);
       if (!isNaN(hours) && hours > 0) {
         const newPayment = calculatePayment(instructor, hours);
         setPaymentAmount(newPayment.toString());
+
+        // Recalculate for additional instructors too
+        if (additionalInstructors.length > 0) {
+          const newAdditionalPayments = additionalInstructors.map(ai => {
+            if (ai) {
+              return calculatePayment(ai, hours).toString();
+            }
+            return '0';
+          });
+          setAdditionalPayments(newAdditionalPayments);
+        }
       }
     }
   };
 
   const handlePaymentChange = (e) => {
     setPaymentAmount(e.target.value);
+    setError('');
+  };
+
+  const handleAdditionalPaymentChange = (index, value) => {
+    const updated = [...additionalPayments];
+    updated[index] = value;
+    setAdditionalPayments(updated);
     setError('');
   };
 
@@ -92,15 +126,25 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
     }
 
     if (!paymentAmount || isNaN(payment) || payment < 0) {
-      setError('Lütfen geçerli bir ödeme tutarı girin');
+      setError('Lütfen ana eğitmen için geçerli bir ödeme tutarı girin');
       return;
+    }
+
+    // Validate additional payments
+    const additionalPaymentValues = additionalPayments.map(p => parseFloat(p) || 0);
+    for (let i = 0; i < additionalPaymentValues.length; i++) {
+      if (additionalPaymentValues[i] < 0) {
+        setError(`Lütfen ${i + 2}. eğitmen için geçerli bir ödeme tutarı girin`);
+        return;
+      }
     }
 
     setLoading(true);
     try {
       await onComplete({
         actualDuration: duration,
-        paymentAmount: payment
+        paymentAmount: payment,
+        additionalInstructorPayments: additionalPaymentValues
       });
       handleClose();
     } catch (error) {
@@ -113,6 +157,7 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
   const handleClose = () => {
     setActualDuration('');
     setPaymentAmount('');
+    setAdditionalPayments([]);
     setError('');
     onClose();
   };
@@ -122,6 +167,10 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
   }
 
   const plannedDuration = calculatePlannedDuration(lesson.startTime, lesson.endTime);
+
+  // Calculate total payment
+  const totalPayment = (parseFloat(paymentAmount) || 0) +
+    additionalPayments.reduce((sum, p) => sum + (parseFloat(p) || 0), 0);
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
@@ -141,7 +190,7 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
 
         <Alert severity="info" icon={<Info />} sx={{ mb: 3 }}>
           Bu dersi tamamlandı olarak işaretlemeden önce gerçek ders süresini
-          ve eğitmen ödemesini kontrol edin.
+          ve eğitmen ödemelerini kontrol edin.
         </Alert>
 
         <Grid container spacing={3}>
@@ -156,9 +205,24 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
             <Typography variant="body2" color="text.secondary">
               {new Date(lesson.date).toLocaleDateString('tr-TR')} - {lesson.startTime} - {lesson.endTime}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Eğitmen: {instructor.firstName} {instructor.lastName}
-            </Typography>
+            <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+              <Chip
+                icon={<Person />}
+                label={`Ana: ${instructor.firstName} ${instructor.lastName}`}
+                size="small"
+                color="primary"
+              />
+              {additionalInstructors.map((ai, idx) => ai && (
+                <Chip
+                  key={idx}
+                  icon={<Person />}
+                  label={`${idx + 2}.: ${ai.firstName} ${ai.lastName}`}
+                  size="small"
+                  color="secondary"
+                  variant="outlined"
+                />
+              ))}
+            </Box>
           </Grid>
 
           <Grid item xs={12}>
@@ -200,53 +264,108 @@ const CompleteLessonDialog = ({ open, onClose, lesson, instructor, onComplete })
             <Divider />
           </Grid>
 
-          {/* Payment Info */}
+          {/* Primary Instructor Payment */}
           <Grid item xs={12}>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Eğitmen Ödeme Bilgileri
-            </Typography>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2">
-                Ödeme Tipi: <strong>{getPaymentTypeLabel(instructor.paymentType)}</strong>
+            <Box sx={{ p: 2, bgcolor: 'primary.50', borderRadius: 1, border: '1px solid', borderColor: 'primary.200' }}>
+              <Typography variant="subtitle2" color="primary" gutterBottom>
+                Ana Eğitmen: {instructor.firstName} {instructor.lastName}
               </Typography>
-              {instructor.paymentType === 'hourly' && (
+              <Box sx={{ mb: 2 }}>
                 <Typography variant="body2">
-                  Saatlik Ücret: <strong>₺{instructor.paymentAmount?.toLocaleString('tr-TR') || 0}</strong>
+                  Ödeme Tipi: <strong>{getPaymentTypeLabel(instructor.paymentType)}</strong>
                 </Typography>
-              )}
-              {instructor.paymentType === 'perLesson' && (
-                <Typography variant="body2">
-                  Ders Başı Ücret: <strong>₺{instructor.paymentAmount?.toLocaleString('tr-TR') || 0}</strong>
-                </Typography>
-              )}
+                {instructor.paymentType === 'hourly' && (
+                  <Typography variant="body2">
+                    Saatlik Ücret: <strong>₺{instructor.paymentAmount?.toLocaleString('tr-TR') || 0}</strong>
+                  </Typography>
+                )}
+                {instructor.paymentType === 'perLesson' && (
+                  <Typography variant="body2">
+                    Ders Başı Ücret: <strong>₺{instructor.paymentAmount?.toLocaleString('tr-TR') || 0}</strong>
+                  </Typography>
+                )}
+              </Box>
+
+              <TextField
+                fullWidth
+                required
+                type="number"
+                label="Ana Eğitmen Ödemesi (₺)"
+                value={paymentAmount}
+                onChange={handlePaymentChange}
+                inputProps={{
+                  step: 0.01,
+                  min: 0
+                }}
+                size="small"
+                helperText={
+                  instructor.paymentType === 'hourly'
+                    ? `Otomatik: ${actualDuration || plannedDuration} saat × ₺${instructor.paymentAmount || 0}`
+                    : 'İstediğiniz tutarı girebilirsiniz'
+                }
+              />
             </Box>
           </Grid>
 
-          {/* Payment Amount Input */}
-          <Grid item xs={12}>
-            <TextField
-              fullWidth
-              required
-              type="number"
-              label="Eğitmen Ödemesi (₺)"
-              value={paymentAmount}
-              onChange={handlePaymentChange}
-              inputProps={{
-                step: 0.01,
-                min: 0
-              }}
-              helperText={
-                instructor.paymentType === 'hourly'
-                  ? `Otomatik hesaplanan: ${actualDuration || plannedDuration} saat × ₺${instructor.paymentAmount || 0} = ₺${parseFloat(actualDuration || plannedDuration) * (instructor.paymentAmount || 0)}`
-                  : 'İstediğiniz tutarı girebilirsiniz'
-              }
-            />
-          </Grid>
+          {/* Additional Instructors Payment */}
+          {additionalInstructors.map((ai, index) => ai && (
+            <Grid item xs={12} key={index}>
+              <Box sx={{ p: 2, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.300' }}>
+                <Typography variant="subtitle2" color="secondary" gutterBottom>
+                  {index + 2}. Eğitmen: {ai.firstName} {ai.lastName}
+                </Typography>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    Ödeme Tipi: <strong>{getPaymentTypeLabel(ai.paymentType)}</strong>
+                  </Typography>
+                  {ai.paymentType === 'hourly' && (
+                    <Typography variant="body2">
+                      Saatlik Ücret: <strong>₺{ai.paymentAmount?.toLocaleString('tr-TR') || 0}</strong>
+                    </Typography>
+                  )}
+                  {ai.paymentType === 'perLesson' && (
+                    <Typography variant="body2">
+                      Ders Başı Ücret: <strong>₺{ai.paymentAmount?.toLocaleString('tr-TR') || 0}</strong>
+                    </Typography>
+                  )}
+                </Box>
+
+                <TextField
+                  fullWidth
+                  type="number"
+                  label={`${index + 2}. Eğitmen Ödemesi (₺)`}
+                  value={additionalPayments[index] || ''}
+                  onChange={(e) => handleAdditionalPaymentChange(index, e.target.value)}
+                  inputProps={{
+                    step: 0.01,
+                    min: 0
+                  }}
+                  size="small"
+                  helperText={
+                    ai.paymentType === 'hourly'
+                      ? `Otomatik: ${actualDuration || plannedDuration} saat × ₺${ai.paymentAmount || 0}`
+                      : 'İstediğiniz tutarı girebilirsiniz'
+                  }
+                />
+              </Box>
+            </Grid>
+          ))}
+
+          {/* Total Payment Summary */}
+          {additionalInstructors.length > 0 && (
+            <Grid item xs={12}>
+              <Box sx={{ p: 2, bgcolor: 'success.50', borderRadius: 1, border: '1px solid', borderColor: 'success.200' }}>
+                <Typography variant="subtitle1" color="success.dark">
+                  <strong>Toplam Eğitmen Ödemesi: ₺{totalPayment.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+                </Typography>
+              </Box>
+            </Grid>
+          )}
 
           <Grid item xs={12}>
             <Alert severity="info" sx={{ mt: 1 }}>
               <Typography variant="body2">
-                <strong>Not:</strong> Bu tutar eğitmenin bakiyesine borç olarak eklenecektir.
+                <strong>Not:</strong> Bu tutarlar eğitmenlerin bakiyelerine borç olarak eklenecektir.
                 Gerçek ödeme yapmak için eğitmen detay sayfasından "Öde" butonunu kullanın.
               </Typography>
             </Alert>

@@ -1,15 +1,44 @@
 const mongoose = require('mongoose');
 
+// Additional instructor schema for multiple instructors per lesson
+const additionalInstructorSchema = new mongoose.Schema({
+  instructor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Instructor',
+    required: true
+  },
+  confirmed: {
+    type: Boolean,
+    default: false
+  },
+  paymentCalculated: {
+    type: Boolean,
+    default: false
+  },
+  paymentAmount: {
+    type: Number,
+    default: 0
+  },
+  paymentPaid: {
+    type: Boolean,
+    default: false
+  },
+  paymentDate: Date
+}, { _id: true });
+
 const scheduledLessonSchema = new mongoose.Schema({
   course: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course',
     required: true
   },
+  // Primary instructor
   instructor: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Instructor'
   },
+  // Additional instructors (optional, up to 2 more)
+  additionalInstructors: [additionalInstructorSchema],
   date: {
     type: Date,
     required: true
