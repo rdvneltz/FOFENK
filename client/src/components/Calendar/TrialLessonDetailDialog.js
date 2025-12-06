@@ -128,7 +128,17 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Bu deneme dersini silmek istediğinizden emin misiniz?')) {
+    // Special warning for converted trial lessons
+    const isConverted = trialData?.status === 'converted' || trialData?.convertedToStudent;
+    let confirmMessage = 'Bu deneme dersini silmek istediğinizden emin misiniz?';
+
+    if (isConverted) {
+      confirmMessage = '⚠️ DİKKAT!\n\nBu deneme dersi kesin kayıt almış bir derstir.\n\n' +
+        'Deneme dersini silseniz bile, oluşturulmuş öğrenci kaydı ve ders kaydı SİLİNMEYECEKTİR.\n\n' +
+        'Devam etmek istiyor musunuz?';
+    }
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -589,26 +599,22 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
               Hatırlatma
             </Button>
           )}
-          {formData.status !== 'converted' && (
-            <>
-              <Button
-                startIcon={<Delete />}
-                color="error"
-                onClick={handleDelete}
-              >
-                Sil
-              </Button>
-              {(formData.status === 'completed' || formData.attended) && (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<PersonAdd />}
-                  onClick={() => setConvertDialogOpen(true)}
-                >
-                  Kesin Kayıt Al
-                </Button>
-              )}
-            </>
+          <Button
+            startIcon={<Delete />}
+            color="error"
+            onClick={handleDelete}
+          >
+            Sil
+          </Button>
+          {formData.status !== 'converted' && (formData.status === 'completed' || formData.attended) && (
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<PersonAdd />}
+              onClick={() => setConvertDialogOpen(true)}
+            >
+              Kesin Kayıt Al
+            </Button>
           )}
         </DialogActions>
       </Dialog>

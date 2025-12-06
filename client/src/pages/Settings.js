@@ -17,8 +17,23 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Chip,
+  Stepper,
+  Step,
+  StepLabel,
 } from '@mui/material';
-import { Warning as WarningIcon } from '@mui/icons-material';
+import { Warning as WarningIcon, Person, Business, School, Delete } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -53,12 +68,34 @@ const Settings = () => {
 
   const [resetDialog, setResetDialog] = useState({
     open: false,
-    step: 1, // 1: confirmation, 2: password entry
+    step: 0, // 0: select institution, 1: select data types, 2: select users, 3: confirm & password
     username: '',
     password: '',
     error: '',
-    processing: false
+    processing: false,
+    selectedInstitution: '', // '' = all institutions
+    dataTypes: {
+      students: true,
+      courses: true,
+      enrollments: true,
+      scheduledLessons: true,
+      attendance: true,
+      trialLessons: true,
+      paymentPlans: true,
+      payments: true,
+      expenses: true,
+      cashRegisters: true,
+      instructors: true,
+      activityLogs: true,
+      settings: true,
+    },
+    deleteSeasons: false,
+    deleteInstitutions: false,
+    deleteUsers: false,
+    usersToDelete: [],
   });
+  const [allInstitutions, setAllInstitutions] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
 
   useEffect(() => {
     if (institution) {
@@ -159,14 +196,60 @@ const Settings = () => {
     setTabValue(newValue);
   };
 
-  const handleResetDatabase = async () => {
-    if (resetDialog.step === 1) {
-      // Move to password entry
-      setResetDialog({ ...resetDialog, step: 2 });
-      return;
+  // Load institutions and users for reset dialog
+  const loadResetDialogData = async () => {
+    try {
+      const [institutionsRes, usersRes] = await Promise.all([
+        api.get('/institutions'),
+        api.get('/users')
+      ]);
+      setAllInstitutions(institutionsRes.data || []);
+      setAllUsers((usersRes.data || []).filter(u => u.role !== 'superadmin'));
+    } catch (error) {
+      console.error('Error loading reset dialog data:', error);
     }
+  };
 
-    // Step 2: Verify and reset
+  const handleOpenResetDialog = () => {
+    loadResetDialogData();
+    setResetDialog({
+      ...resetDialog,
+      open: true,
+      step: 0,
+      error: '',
+      selectedInstitution: '',
+      dataTypes: {
+        students: true,
+        courses: true,
+        enrollments: true,
+        scheduledLessons: true,
+        attendance: true,
+        trialLessons: true,
+        paymentPlans: true,
+        payments: true,
+        expenses: true,
+        cashRegisters: true,
+        instructors: true,
+        activityLogs: true,
+        settings: true,
+      },
+      deleteSeasons: false,
+      deleteInstitutions: false,
+      deleteUsers: false,
+      usersToDelete: [],
+    });
+  };
+
+  const handleResetNext = () => {
+    setResetDialog({ ...resetDialog, step: resetDialog.step + 1, error: '' });
+  };
+
+  const handleResetBack = () => {
+    setResetDialog({ ...resetDialog, step: resetDialog.step - 1, error: '' });
+  };
+
+  const handleResetDatabase = async () => {
+    // Verify and reset
     if (!resetDialog.username || !resetDialog.password) {
       setResetDialog({ ...resetDialog, error: 'Kullanıcı adı ve şifre gerekli' });
       return;
@@ -175,26 +258,56 @@ const Settings = () => {
     try {
       setResetDialog({ ...resetDialog, processing: true, error: '' });
 
-      await api.post('/settings/reset-database', {
+      // Collect selected data types
+      const selectedDataTypes = Object.entries(resetDialog.dataTypes)
+        .filter(([_, selected]) => selected)
+        .map(([type, _]) => type);
+
+      const response = await api.post('/settings/reset-database', {
         username: resetDialog.username,
-        password: resetDialog.password
+        password: resetDialog.password,
+        institutionId: resetDialog.selectedInstitution || null,
+        dataTypes: selectedDataTypes.length > 0 ? selectedDataTypes : null,
+        deleteSeasons: resetDialog.deleteSeasons,
+        deleteInstitutions: resetDialog.deleteInstitutions,
+        deleteUsers: resetDialog.deleteUsers,
+        usersToDelete: resetDialog.deleteUsers ? resetDialog.usersToDelete : null,
       });
 
-      // Success - close dialog and show success message
+      // Show deleted counts
+      const counts = response.data.deletedCounts || {};
+      const summary = Object.entries(counts)
+        .filter(([_, count]) => count > 0)
+        .map(([type, count]) => `${type}: ${count}`)
+        .join('\n');
+
+      alert(`✅ Veriler başarıyla silindi!\n\nSilinen kayıtlar:\n${summary || 'Hiçbir kayıt silinmedi'}`);
+
+      // Reset dialog state
       setResetDialog({
         open: false,
-        step: 1,
+        step: 0,
         username: '',
         password: '',
         error: '',
-        processing: false
+        processing: false,
+        selectedInstitution: '',
+        dataTypes: {
+          students: true, courses: true, enrollments: true, scheduledLessons: true,
+          attendance: true, trialLessons: true, paymentPlans: true, payments: true,
+          expenses: true, cashRegisters: true, instructors: true, activityLogs: true, settings: true,
+        },
+        deleteSeasons: false,
+        deleteInstitutions: false,
+        deleteUsers: false,
+        usersToDelete: [],
       });
 
-      alert('✅ Veritabanı başarıyla sıfırlandı! Lütfen yeniden giriş yapın.');
-
-      // Redirect to login
-      localStorage.clear();
-      navigate('/login');
+      // If deleted all institutions or the current one, redirect to login
+      if (resetDialog.deleteInstitutions && (!resetDialog.selectedInstitution || resetDialog.selectedInstitution === institution?._id)) {
+        localStorage.clear();
+        navigate('/login');
+      }
 
     } catch (error) {
       setResetDialog({
@@ -208,12 +321,75 @@ const Settings = () => {
   const handleCloseResetDialog = () => {
     setResetDialog({
       open: false,
-      step: 1,
+      step: 0,
       username: '',
       password: '',
       error: '',
-      processing: false
+      processing: false,
+      selectedInstitution: '',
+      dataTypes: {
+        students: true, courses: true, enrollments: true, scheduledLessons: true,
+        attendance: true, trialLessons: true, paymentPlans: true, payments: true,
+        expenses: true, cashRegisters: true, instructors: true, activityLogs: true, settings: true,
+      },
+      deleteSeasons: false,
+      deleteInstitutions: false,
+      deleteUsers: false,
+      usersToDelete: [],
     });
+  };
+
+  const toggleDataType = (type) => {
+    setResetDialog({
+      ...resetDialog,
+      dataTypes: {
+        ...resetDialog.dataTypes,
+        [type]: !resetDialog.dataTypes[type]
+      }
+    });
+  };
+
+  const toggleUserSelection = (userId) => {
+    const newSelection = resetDialog.usersToDelete.includes(userId)
+      ? resetDialog.usersToDelete.filter(id => id !== userId)
+      : [...resetDialog.usersToDelete, userId];
+    setResetDialog({ ...resetDialog, usersToDelete: newSelection });
+  };
+
+  const selectAllUsers = () => {
+    const filteredUsers = allUsers.filter(u =>
+      !resetDialog.selectedInstitution ||
+      (u.institutions && u.institutions.some(inst =>
+        (typeof inst === 'object' ? inst._id : inst) === resetDialog.selectedInstitution
+      ))
+    );
+    setResetDialog({
+      ...resetDialog,
+      usersToDelete: filteredUsers.map(u => u._id)
+    });
+  };
+
+  const deselectAllUsers = () => {
+    setResetDialog({ ...resetDialog, usersToDelete: [] });
+  };
+
+  const getDataTypeLabel = (type) => {
+    const labels = {
+      students: 'Öğrenciler',
+      courses: 'Dersler',
+      enrollments: 'Ders Kayıtları',
+      scheduledLessons: 'Takvim Dersleri',
+      attendance: 'Yoklama Kayıtları',
+      trialLessons: 'Deneme Dersleri',
+      paymentPlans: 'Ödeme Planları',
+      payments: 'Ödemeler',
+      expenses: 'Giderler',
+      cashRegisters: 'Kasalar',
+      instructors: 'Eğitmenler',
+      activityLogs: 'Aktivite Logları',
+      settings: 'Ayarlar',
+    };
+    return labels[type] || type;
   };
 
   if (!institution) {
@@ -432,13 +608,13 @@ const Settings = () => {
                     Veritabanını Sıfırla
                   </Typography>
                   <Typography variant="body2" color="text.secondary" paragraph>
-                    Sistemdeki tüm verileri siler (öğrenciler, dersler, ödemeler, giderler, vb.).
-                    Sadece süperadmin kullanıcıları korunur. Bu işlem test amaçlıdır ve geri alınamaz!
+                    Seçtiğiniz kurum ve veri türlerine göre sistemdeki verileri silebilirsiniz.
+                    Kurum seçimi, veri türü seçimi ve kullanıcı silme seçenekleri mevcuttur.
                   </Typography>
                   <Button
                     variant="outlined"
                     color="error"
-                    onClick={() => setResetDialog({ ...resetDialog, open: true })}
+                    onClick={handleOpenResetDialog}
                     startIcon={<WarningIcon />}
                   >
                     Veritabanını Sıfırla
@@ -471,11 +647,11 @@ const Settings = () => {
         )}
       </Paper>
 
-      {/* Database Reset Dialog */}
+      {/* Database Reset Dialog - Multi-step */}
       <Dialog
         open={resetDialog.open}
         onClose={handleCloseResetDialog}
-        maxWidth="sm"
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle sx={{ bgcolor: 'error.main', color: 'white' }}>
@@ -484,38 +660,303 @@ const Settings = () => {
             <span>Veritabanını Sıfırla</span>
           </Box>
         </DialogTitle>
+
         <DialogContent sx={{ mt: 2 }}>
+          {/* Stepper */}
+          <Stepper activeStep={resetDialog.step} sx={{ mb: 3 }}>
+            <Step><StepLabel>Kurum Seçimi</StepLabel></Step>
+            <Step><StepLabel>Veri Türleri</StepLabel></Step>
+            <Step><StepLabel>Kullanıcılar</StepLabel></Step>
+            <Step><StepLabel>Onay</StepLabel></Step>
+          </Stepper>
+
           {resetDialog.error && (
             <Alert severity="error" sx={{ mb: 2 }}>
               {resetDialog.error}
             </Alert>
           )}
 
-          {resetDialog.step === 1 ? (
+          {/* Step 0: Select Institution */}
+          {resetDialog.step === 0 && (
             <>
-              <DialogContentText sx={{ mb: 2 }}>
-                <strong>⚠️ UYARI: Bu işlem geri alınamaz!</strong>
-              </DialogContentText>
-              <DialogContentText sx={{ mb: 2 }}>
-                Aşağıdaki veriler <strong>kalıcı olarak silinecek</strong>:
-              </DialogContentText>
-              <Box component="ul" sx={{ pl: 3, mb: 2 }}>
-                <li>Tüm öğrenciler</li>
-                <li>Tüm dersler ve kayıtlar</li>
-                <li>Tüm ödeme planları ve ödemeler</li>
-                <li>Tüm giderler</li>
-                <li>Tüm kasalar</li>
-                <li>Tüm eğitmenler</li>
-                <li>Tüm kurumlar ve sezonlar</li>
-                <li>Tüm ayarlar</li>
-                <li>Tüm kullanıcılar (süperadmin hariç)</li>
-              </Box>
-              <Alert severity="info">
-                Sadece <strong>süperadmin kullanıcıları</strong> korunacak. Diğer her şey silinecek.
+              <Alert severity="warning" sx={{ mb: 3 }}>
+                Hangi kurumun verilerini silmek istediğinizi seçin.
+                "Tüm Kurumlar" seçerseniz sistemdeki tüm veriler etkilenir.
               </Alert>
+
+              <FormControl fullWidth sx={{ mb: 2 }}>
+                <InputLabel>Kurum Seçin</InputLabel>
+                <Select
+                  value={resetDialog.selectedInstitution}
+                  onChange={(e) => setResetDialog({ ...resetDialog, selectedInstitution: e.target.value })}
+                  label="Kurum Seçin"
+                >
+                  <MenuItem value="">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Business color="error" />
+                      <strong>TÜM KURUMLAR</strong>
+                    </Box>
+                  </MenuItem>
+                  {allInstitutions.map((inst) => (
+                    <MenuItem key={inst._id} value={inst._id}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <School color="primary" />
+                        {inst.name}
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              {!resetDialog.selectedInstitution && (
+                <Alert severity="error">
+                  "Tüm Kurumlar" seçildi. Bu seçim, <strong>sistemdeki tüm kurumların verilerini</strong> etkileyecektir!
+                </Alert>
+              )}
             </>
-          ) : (
+          )}
+
+          {/* Step 1: Select Data Types */}
+          {resetDialog.step === 1 && (
             <>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Silmek istediğiniz veri türlerini seçin:
+              </Alert>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" gutterBottom>Öğrenci & Ders Verileri</Typography>
+                  <FormGroup>
+                    {['students', 'courses', 'enrollments', 'trialLessons'].map(type => (
+                      <FormControlLabel
+                        key={type}
+                        control={
+                          <Checkbox
+                            checked={resetDialog.dataTypes[type]}
+                            onChange={() => toggleDataType(type)}
+                          />
+                        }
+                        label={getDataTypeLabel(type)}
+                      />
+                    ))}
+                  </FormGroup>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" gutterBottom>Takvim & Yoklama</Typography>
+                  <FormGroup>
+                    {['scheduledLessons', 'attendance'].map(type => (
+                      <FormControlLabel
+                        key={type}
+                        control={
+                          <Checkbox
+                            checked={resetDialog.dataTypes[type]}
+                            onChange={() => toggleDataType(type)}
+                          />
+                        }
+                        label={getDataTypeLabel(type)}
+                      />
+                    ))}
+                  </FormGroup>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" gutterBottom>Finansal Veriler</Typography>
+                  <FormGroup>
+                    {['paymentPlans', 'payments', 'expenses', 'cashRegisters'].map(type => (
+                      <FormControlLabel
+                        key={type}
+                        control={
+                          <Checkbox
+                            checked={resetDialog.dataTypes[type]}
+                            onChange={() => toggleDataType(type)}
+                          />
+                        }
+                        label={getDataTypeLabel(type)}
+                      />
+                    ))}
+                  </FormGroup>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <Typography variant="subtitle2" gutterBottom>Diğer</Typography>
+                  <FormGroup>
+                    {['instructors', 'activityLogs', 'settings'].map(type => (
+                      <FormControlLabel
+                        key={type}
+                        control={
+                          <Checkbox
+                            checked={resetDialog.dataTypes[type]}
+                            onChange={() => toggleDataType(type)}
+                          />
+                        }
+                        label={getDataTypeLabel(type)}
+                      />
+                    ))}
+                  </FormGroup>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle2" color="error" gutterBottom>
+                    Dikkat: Kurum & Sezon Silme
+                  </Typography>
+                  <FormGroup>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={resetDialog.deleteSeasons}
+                          onChange={(e) => setResetDialog({ ...resetDialog, deleteSeasons: e.target.checked })}
+                          color="error"
+                        />
+                      }
+                      label="Sezonları Sil"
+                    />
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={resetDialog.deleteInstitutions}
+                          onChange={(e) => setResetDialog({ ...resetDialog, deleteInstitutions: e.target.checked })}
+                          color="error"
+                        />
+                      }
+                      label={resetDialog.selectedInstitution ? "Bu Kurumu Sil" : "Tüm Kurumları Sil"}
+                    />
+                  </FormGroup>
+                </Grid>
+              </Grid>
+            </>
+          )}
+
+          {/* Step 2: Select Users */}
+          {resetDialog.step === 2 && (
+            <>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={resetDialog.deleteUsers}
+                    onChange={(e) => setResetDialog({ ...resetDialog, deleteUsers: e.target.checked, usersToDelete: [] })}
+                    color="error"
+                  />
+                }
+                label="Kullanıcıları Sil"
+              />
+
+              {resetDialog.deleteUsers && (
+                <Box sx={{ mt: 2 }}>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    Süperadmin kullanıcıları asla silinemez. Silmek istediğiniz kullanıcıları seçin:
+                  </Alert>
+
+                  <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                    <Button size="small" variant="outlined" onClick={selectAllUsers}>
+                      Tümünü Seç
+                    </Button>
+                    <Button size="small" variant="outlined" onClick={deselectAllUsers}>
+                      Seçimi Temizle
+                    </Button>
+                    <Chip
+                      label={`${resetDialog.usersToDelete.length} kullanıcı seçildi`}
+                      color={resetDialog.usersToDelete.length > 0 ? 'error' : 'default'}
+                      size="small"
+                    />
+                  </Box>
+
+                  <Box sx={{ maxHeight: 300, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}>
+                    <List dense>
+                      {allUsers
+                        .filter(u =>
+                          !resetDialog.selectedInstitution ||
+                          (u.institutions && u.institutions.some(inst =>
+                            (typeof inst === 'object' ? inst._id : inst) === resetDialog.selectedInstitution
+                          ))
+                        )
+                        .map((u) => (
+                          <ListItem
+                            key={u._id}
+                            button
+                            onClick={() => toggleUserSelection(u._id)}
+                            selected={resetDialog.usersToDelete.includes(u._id)}
+                          >
+                            <ListItemIcon>
+                              <Checkbox
+                                edge="start"
+                                checked={resetDialog.usersToDelete.includes(u._id)}
+                                tabIndex={-1}
+                                disableRipple
+                                color="error"
+                              />
+                            </ListItemIcon>
+                            <ListItemText
+                              primary={`${u.firstName || ''} ${u.lastName || ''} (${u.username})`}
+                              secondary={`Rol: ${u.role}`}
+                            />
+                          </ListItem>
+                        ))}
+                      {allUsers.filter(u =>
+                        !resetDialog.selectedInstitution ||
+                        (u.institutions && u.institutions.some(inst =>
+                          (typeof inst === 'object' ? inst._id : inst) === resetDialog.selectedInstitution
+                        ))
+                      ).length === 0 && (
+                        <ListItem>
+                          <ListItemText secondary="Bu kurumda silinebilecek kullanıcı yok" />
+                        </ListItem>
+                      )}
+                    </List>
+                  </Box>
+                </Box>
+              )}
+
+              {!resetDialog.deleteUsers && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  Kullanıcılar silinmeyecek.
+                </Alert>
+              )}
+            </>
+          )}
+
+          {/* Step 3: Confirm and Password */}
+          {resetDialog.step === 3 && (
+            <>
+              <Alert severity="error" sx={{ mb: 3 }}>
+                <strong>⚠️ UYARI: Bu işlem geri alınamaz!</strong>
+              </Alert>
+
+              <Typography variant="subtitle1" gutterBottom>Silinecek Veriler Özeti:</Typography>
+
+              <Box sx={{ bgcolor: 'grey.100', p: 2, borderRadius: 1, mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Kurum:</strong> {resetDialog.selectedInstitution
+                    ? allInstitutions.find(i => i._id === resetDialog.selectedInstitution)?.name
+                    : 'TÜM KURUMLAR'}
+                </Typography>
+
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  <strong>Silinecek Veri Türleri:</strong>
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                  {Object.entries(resetDialog.dataTypes)
+                    .filter(([_, selected]) => selected)
+                    .map(([type, _]) => (
+                      <Chip key={type} label={getDataTypeLabel(type)} size="small" color="error" variant="outlined" />
+                    ))}
+                </Box>
+
+                {resetDialog.deleteSeasons && (
+                  <Chip label="Sezonlar" size="small" color="error" sx={{ mt: 1, mr: 0.5 }} />
+                )}
+                {resetDialog.deleteInstitutions && (
+                  <Chip label={resetDialog.selectedInstitution ? "Bu Kurum" : "Tüm Kurumlar"} size="small" color="error" sx={{ mt: 1 }} />
+                )}
+
+                {resetDialog.deleteUsers && resetDialog.usersToDelete.length > 0 && (
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    <strong>Silinecek Kullanıcılar:</strong> {resetDialog.usersToDelete.length} kullanıcı
+                  </Typography>
+                )}
+              </Box>
+
               <DialogContentText sx={{ mb: 2 }}>
                 Devam etmek için <strong>süperadmin</strong> kullanıcı adı ve şifrenizi girin:
               </DialogContentText>
@@ -539,23 +980,35 @@ const Settings = () => {
             </>
           )}
         </DialogContent>
+
         <DialogActions>
           <Button onClick={handleCloseResetDialog} disabled={resetDialog.processing}>
             İptal
           </Button>
-          <Button
-            onClick={handleResetDatabase}
-            variant="contained"
-            color="error"
-            disabled={resetDialog.processing}
-            startIcon={resetDialog.step === 1 ? <WarningIcon /> : null}
-          >
-            {resetDialog.processing
-              ? 'Siliniyor...'
-              : resetDialog.step === 1
-              ? 'Devam Et'
-              : 'VERİTABANINI SİFIRLA'}
-          </Button>
+          {resetDialog.step > 0 && (
+            <Button onClick={handleResetBack} disabled={resetDialog.processing}>
+              Geri
+            </Button>
+          )}
+          {resetDialog.step < 3 ? (
+            <Button
+              onClick={handleResetNext}
+              variant="contained"
+              color="primary"
+            >
+              İleri
+            </Button>
+          ) : (
+            <Button
+              onClick={handleResetDatabase}
+              variant="contained"
+              color="error"
+              disabled={resetDialog.processing || !resetDialog.username || !resetDialog.password}
+              startIcon={<Delete />}
+            >
+              {resetDialog.processing ? 'Siliniyor...' : 'VERİLERİ SİL'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Container>

@@ -232,9 +232,19 @@ router.delete('/:id', async (req, res) => {
 });
 
 // Reset database (DANGER ZONE - only for superadmin)
+// Supports selective deletion by institution, data types, and users
 router.post('/reset-database', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const {
+      username,
+      password,
+      institutionId, // Optional: specific institution to reset (null = all)
+      dataTypes, // Array of data types to delete: ['students', 'courses', 'payments', etc.]
+      deleteUsers, // Boolean: whether to delete users
+      usersToDelete, // Array of user IDs to delete (if deleteUsers is true)
+      deleteInstitutions, // Boolean: whether to delete institutions
+      deleteSeasons, // Boolean: whether to delete seasons
+    } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ message: 'Kullanıcı adı ve şifre gerekli' });
@@ -259,59 +269,134 @@ router.post('/reset-database', async (req, res) => {
     }
 
     // If we got here, user is authenticated and is superadmin
-    // Now delete everything except superadmin users
-
     console.log('🔥 DATABASE RESET STARTED BY:', username);
+    console.log('Options:', { institutionId, dataTypes, deleteUsers, deleteInstitutions, deleteSeasons });
 
-    // Delete all data
-    await Student.deleteMany({});
-    console.log('✓ Students deleted');
+    const deletedCounts = {};
 
-    await Course.deleteMany({});
-    console.log('✓ Courses deleted');
+    // Build filter for institution-specific deletion
+    const institutionFilter = institutionId ? { institution: institutionId } : {};
 
-    await StudentCourseEnrollment.deleteMany({});
-    console.log('✓ Enrollments deleted');
+    // Determine what to delete
+    const deleteAll = !dataTypes || dataTypes.length === 0;
+    const shouldDelete = (type) => deleteAll || dataTypes.includes(type);
 
-    await ScheduledLesson.deleteMany({});
-    console.log('✓ Scheduled Lessons deleted');
+    // Delete data based on selection
+    if (shouldDelete('students')) {
+      const result = await Student.deleteMany(institutionFilter);
+      deletedCounts.students = result.deletedCount;
+      console.log(`✓ Students deleted: ${result.deletedCount}`);
+    }
 
-    await Attendance.deleteMany({});
-    console.log('✓ Attendance records deleted');
+    if (shouldDelete('courses')) {
+      const result = await Course.deleteMany(institutionFilter);
+      deletedCounts.courses = result.deletedCount;
+      console.log(`✓ Courses deleted: ${result.deletedCount}`);
+    }
 
-    await TrialLesson.deleteMany({});
-    console.log('✓ Trial Lessons deleted');
+    if (shouldDelete('enrollments')) {
+      const result = await StudentCourseEnrollment.deleteMany(institutionFilter);
+      deletedCounts.enrollments = result.deletedCount;
+      console.log(`✓ Enrollments deleted: ${result.deletedCount}`);
+    }
 
-    await PaymentPlan.deleteMany({});
-    console.log('✓ Payment Plans deleted');
+    if (shouldDelete('scheduledLessons')) {
+      const result = await ScheduledLesson.deleteMany(institutionFilter);
+      deletedCounts.scheduledLessons = result.deletedCount;
+      console.log(`✓ Scheduled Lessons deleted: ${result.deletedCount}`);
+    }
 
-    await Payment.deleteMany({});
-    console.log('✓ Payments deleted');
+    if (shouldDelete('attendance')) {
+      const result = await Attendance.deleteMany(institutionFilter);
+      deletedCounts.attendance = result.deletedCount;
+      console.log(`✓ Attendance records deleted: ${result.deletedCount}`);
+    }
 
-    await Expense.deleteMany({});
-    console.log('✓ Expenses deleted');
+    if (shouldDelete('trialLessons')) {
+      // Delete ALL trial lessons regardless of status (completed, converted, etc.)
+      const result = await TrialLesson.deleteMany(institutionFilter);
+      deletedCounts.trialLessons = result.deletedCount;
+      console.log(`✓ Trial Lessons deleted: ${result.deletedCount}`);
+    }
 
-    await CashRegister.deleteMany({});
-    console.log('✓ Cash Registers deleted');
+    if (shouldDelete('paymentPlans')) {
+      const result = await PaymentPlan.deleteMany(institutionFilter);
+      deletedCounts.paymentPlans = result.deletedCount;
+      console.log(`✓ Payment Plans deleted: ${result.deletedCount}`);
+    }
 
-    await Instructor.deleteMany({});
-    console.log('✓ Instructors deleted');
+    if (shouldDelete('payments')) {
+      const result = await Payment.deleteMany(institutionFilter);
+      deletedCounts.payments = result.deletedCount;
+      console.log(`✓ Payments deleted: ${result.deletedCount}`);
+    }
 
-    await Season.deleteMany({});
-    console.log('✓ Seasons deleted');
+    if (shouldDelete('expenses')) {
+      const result = await Expense.deleteMany(institutionFilter);
+      deletedCounts.expenses = result.deletedCount;
+      console.log(`✓ Expenses deleted: ${result.deletedCount}`);
+    }
 
-    await Institution.deleteMany({});
-    console.log('✓ Institutions deleted');
+    if (shouldDelete('cashRegisters')) {
+      const result = await CashRegister.deleteMany(institutionFilter);
+      deletedCounts.cashRegisters = result.deletedCount;
+      console.log(`✓ Cash Registers deleted: ${result.deletedCount}`);
+    }
 
-    await Settings.deleteMany({});
-    console.log('✓ Settings deleted');
+    if (shouldDelete('instructors')) {
+      const result = await Instructor.deleteMany(institutionFilter);
+      deletedCounts.instructors = result.deletedCount;
+      console.log(`✓ Instructors deleted: ${result.deletedCount}`);
+    }
 
-    await ActivityLog.deleteMany({});
-    console.log('✓ Activity Logs deleted');
+    if (shouldDelete('activityLogs')) {
+      const result = await ActivityLog.deleteMany(institutionFilter);
+      deletedCounts.activityLogs = result.deletedCount;
+      console.log(`✓ Activity Logs deleted: ${result.deletedCount}`);
+    }
 
-    // Delete all users except superadmins
-    const result = await User.deleteMany({ role: { $ne: 'superadmin' } });
-    console.log(`✓ Users deleted (${result.deletedCount} non-superadmin users)`);
+    if (shouldDelete('settings')) {
+      const settingsFilter = institutionId ? { institution: institutionId } : {};
+      const result = await Settings.deleteMany(settingsFilter);
+      deletedCounts.settings = result.deletedCount;
+      console.log(`✓ Settings deleted: ${result.deletedCount}`);
+    }
+
+    // Delete seasons if requested
+    if (deleteSeasons) {
+      const seasonFilter = institutionId ? { institution: institutionId } : {};
+      const result = await Season.deleteMany(seasonFilter);
+      deletedCounts.seasons = result.deletedCount;
+      console.log(`✓ Seasons deleted: ${result.deletedCount}`);
+    }
+
+    // Delete institutions if requested (only when no specific institution selected or deleting that specific one)
+    if (deleteInstitutions) {
+      const instFilter = institutionId ? { _id: institutionId } : {};
+      const result = await Institution.deleteMany(instFilter);
+      deletedCounts.institutions = result.deletedCount;
+      console.log(`✓ Institutions deleted: ${result.deletedCount}`);
+    }
+
+    // Delete users if requested
+    if (deleteUsers && usersToDelete && usersToDelete.length > 0) {
+      // Never delete superadmins
+      const result = await User.deleteMany({
+        _id: { $in: usersToDelete },
+        role: { $ne: 'superadmin' }
+      });
+      deletedCounts.users = result.deletedCount;
+      console.log(`✓ Users deleted: ${result.deletedCount}`);
+    } else if (deleteUsers && !usersToDelete) {
+      // Delete all non-superadmin users for the institution (or all if no institution)
+      let userFilter = { role: { $ne: 'superadmin' } };
+      if (institutionId) {
+        userFilter.institutions = institutionId;
+      }
+      const result = await User.deleteMany(userFilter);
+      deletedCounts.users = result.deletedCount;
+      console.log(`✓ Users deleted: ${result.deletedCount}`);
+    }
 
     // Log the reset action
     await ActivityLog.create({
@@ -319,30 +404,17 @@ router.post('/reset-database', async (req, res) => {
       action: 'reset',
       entity: 'Database',
       entityId: null,
-      description: 'Veritabanı sıfırlandı - tüm veriler silindi (superadmin hariç)',
-      institution: null,
+      description: `Veritabanı sıfırlandı${institutionId ? ' (belirli kurum)' : ' (tüm veriler)'}`,
+      metadata: { deletedCounts, institutionId, dataTypes },
+      institution: institutionId || null,
       season: null
     });
 
     console.log('✅ DATABASE RESET COMPLETED');
 
     res.json({
-      message: 'Veritabanı başarıyla sıfırlandı',
-      deletedCounts: {
-        students: 'all',
-        courses: 'all',
-        enrollments: 'all',
-        paymentPlans: 'all',
-        payments: 'all',
-        expenses: 'all',
-        cashRegisters: 'all',
-        instructors: 'all',
-        seasons: 'all',
-        institutions: 'all',
-        settings: 'all',
-        activityLogs: 'all',
-        users: `${result.deletedCount} (superadmin excluded)`
-      }
+      message: 'Veriler başarıyla silindi',
+      deletedCounts
     });
   } catch (error) {
     console.error('❌ DATABASE RESET ERROR:', error);
