@@ -13,7 +13,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Alert,
   Table,
   TableBody,
   TableCell,
@@ -22,17 +21,37 @@ import {
   TableRow,
   Chip,
   IconButton,
+  TextField,
+  LinearProgress,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
 } from '@mui/material';
-import { Close, School, LocalOffer, Visibility } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
 import {
-  People as PeopleIcon,
-  AttachMoney as MoneyIcon,
-  TrendingUp as IncomeIcon,
-  TrendingDown as ExpenseIcon,
+  Close,
+  School,
+  Visibility,
+  Add,
+  Delete,
+  AccessTime,
+  Person,
+  Event,
+  Warning,
+  TrendingUp,
+  AccountBalance,
+  ShoppingCart,
+  CalendarToday,
+  Group,
+  StarBorder,
+  AttachMoney,
+  Schedule,
+  ArrowForward,
+  CheckCircle,
+  PendingActions,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import StatCard from '../components/Dashboard/StatCard';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import SetupRequired from '../components/Common/SetupRequired';
 import api from '../api';
@@ -45,12 +64,11 @@ import {
   BarElement,
   ArcElement,
   Title,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend
 } from 'chart.js';
-import { Line, Bar, Pie, Doughnut } from 'react-chartjs-2';
+import { Line } from 'react-chartjs-2';
 
-// Register ChartJS components
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -59,103 +77,87 @@ ChartJS.register(
   BarElement,
   ArcElement,
   Title,
-  Tooltip,
+  ChartTooltip,
   Legend
 );
+
+// Helper function for local date
+const getLocalDateStr = (date) => {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 const Dashboard = () => {
   const { institution, season, currentUser } = useApp();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
 
-  // Permission check helper (only superadmin bypasses permission checks)
+  // Permission helpers
   const hasPermission = (permission) => {
-    if (currentUser?.role === 'superadmin') return true; // Only superadmin bypasses
+    if (currentUser?.role === 'superadmin') return true;
     return currentUser?.permissions?.[permission] !== false;
   };
-
-  // Check if user can see financial data
   const canSeeFinancials = hasPermission('canManagePayments') || hasPermission('canManageExpenses');
   const canSeePayments = hasPermission('canManagePayments');
   const canSeeExpenses = hasPermission('canManageExpenses');
+
+  // State
   const [stats, setStats] = useState({
     totalStudents: 0,
     activeStudents: 0,
     totalIncome: 0,
     totalExpenses: 0,
     netIncome: 0,
-    cashRegisters: [],
     totalCashRegisterBalance: 0,
-    activeEnrollments: 0,
     totalCourses: 0,
     totalInstructors: 0,
   });
-  const [incomeExpenseData, setIncomeExpenseData] = useState([]);
-  const [studentGrowthData, setStudentGrowthData] = useState([]);
-  const [paymentMethodsData, setPaymentMethodsData] = useState([]);
-  const [expenseCategoriesData, setExpenseCategoriesData] = useState([]);
-  const [expectedPayments, setExpectedPayments] = useState({
-    today: [],
-    thisWeek: [],
-    thisMonth: [],
-    nextMonth: [],
-    overdue: [],
-    pendingCreditCard: [] // Pending credit card payments
-  });
-  const [cashRegisters, setCashRegisters] = useState([]);
-  const [paymentDialog, setPaymentDialog] = useState({
-    open: false,
-    payment: null,
-    cashRegisterId: ''
-  });
-  const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState('');
 
-  // Detail dialogs state
-  const [studentsDialog, setStudentsDialog] = useState({ open: false, students: [] });
-  const [paymentsDetailDialog, setPaymentsDetailDialog] = useState({
-    open: false,
-    title: '',
-    payments: [],
-    type: '' // 'overdue', 'today', 'thisWeek', 'thisMonth', 'nextMonth'
+  const [todayLessons, setTodayLessons] = useState([]);
+  const [trialLessons, setTrialLessons] = useState([]);
+  const [courseStats, setCourseStats] = useState([]);
+  const [instructorDebts, setInstructorDebts] = useState({ total: 0, instructors: [] });
+  const [plannedInvestments, setPlannedInvestments] = useState({ total: 0, count: 0, items: [] });
+  const [upcomingIncome, setUpcomingIncome] = useState({ total: 0, thisMonth: 0, nextThreeMonths: 0, items: [] });
+  const [expectedPayments, setExpectedPayments] = useState({
+    today: [], thisWeek: [], thisMonth: [], nextMonth: [], overdue: []
   });
+  const [incomeExpenseData, setIncomeExpenseData] = useState([]);
+
+  // Dialogs
+  const [studentsDialog, setStudentsDialog] = useState({ open: false, students: [] });
+  const [paymentsDetailDialog, setPaymentsDetailDialog] = useState({ open: false, title: '', payments: [], type: '' });
+  const [investmentDialog, setInvestmentDialog] = useState({ open: false, mode: 'list' });
+  const [investmentForm, setInvestmentForm] = useState({
+    title: '', description: '', estimatedAmount: '', category: 'other', priority: 'medium', targetDate: ''
+  });
+  const [upcomingIncomeDialog, setUpcomingIncomeDialog] = useState({ open: false });
+  const [todayLessonsDialog, setTodayLessonsDialog] = useState({ open: false });
+  const [trialLessonsDialog, setTrialLessonsDialog] = useState({ open: false });
+  const [instructorDebtsDialog, setInstructorDebtsDialog] = useState({ open: false });
 
   useEffect(() => {
     if (institution && season) {
-      loadDashboardData();
-      loadChartData();
-      loadExpectedPayments();
-      loadCashRegisters();
+      loadAllData();
     } else {
       setLoading(false);
     }
   }, [institution, season]);
 
-  const loadCashRegisters = async () => {
+  const loadAllData = async () => {
+    setLoading(true);
     try {
-      const response = await api.get('/cash-registers', {
-        params: { institution: institution._id }
-      });
-      setCashRegisters(response.data);
-      // Set first cash register as default
-      if (response.data.length > 0) {
-        setPaymentDialog(prev => ({ ...prev, cashRegisterId: response.data[0]._id }));
-      }
-    } catch (error) {
-      console.error('Error loading cash registers:', error);
-    }
-  };
-
-  const loadDashboardData = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/reports/dashboard', {
-        params: {
-          institutionId: institution._id,
-          seasonId: season._id,
-        },
-      });
-      setStats(response.data);
+      await Promise.all([
+        loadDashboardStats(),
+        loadTodayLessons(),
+        loadTrialLessons(),
+        loadCourseStats(),
+        loadInstructorDebts(),
+        loadPlannedInvestments(),
+        loadUpcomingIncome(),
+        loadExpectedPayments(),
+        loadChartData(),
+      ]);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -163,211 +165,190 @@ const Dashboard = () => {
     }
   };
 
-  const loadChartData = async () => {
+  const loadDashboardStats = async () => {
     try {
-      const params = {
-        institutionId: institution._id,
-        seasonId: season._id,
-      };
-
-      // Load all chart data in parallel
-      const [incomeExpense, studentGrowth, paymentMethods, expenseCategories] = await Promise.all([
-        api.get('/reports/income-expense-chart', { params }),
-        api.get('/reports/chart/student-growth', { params }),
-        api.get('/reports/chart/payment-methods', { params }),
-        api.get('/reports/expense-category-stats', { params })
-      ]);
-
-      setIncomeExpenseData(incomeExpense.data);
-      setStudentGrowthData(studentGrowth.data);
-      setPaymentMethodsData(paymentMethods.data);
-      setExpenseCategoriesData(expenseCategories.data);
-    } catch (error) {
-      console.error('Error loading chart data:', error);
-    }
-  };
-
-  const handleProcessPayment = async () => {
-    if (!paymentDialog.cashRegisterId) {
-      setError('Lütfen bir kasa seçin');
-      return;
-    }
-
-    try {
-      setProcessing(true);
-      setError('');
-      await api.post(`/payment-plans/${paymentDialog.payment.paymentPlanId}/process-credit-card-payment`, {
-        cashRegisterId: paymentDialog.cashRegisterId,
-        createdBy: currentUser?.username || 'System'
+      const response = await api.get('/reports/dashboard', {
+        params: { institutionId: institution._id, seasonId: season._id }
       });
-
-      // Close dialog
-      setPaymentDialog({ open: false, payment: null, cashRegisterId: paymentDialog.cashRegisterId });
-
-      // Reload data
-      await loadExpectedPayments();
-      await loadDashboardData();
-
-      alert('Ödeme başarıyla işlendi!');
+      setStats(response.data);
     } catch (error) {
-      setError(error.response?.data?.message || 'Ödeme işlenirken bir hata oluştu');
-    } finally {
-      setProcessing(false);
+      console.error('Error loading stats:', error);
     }
   };
 
-  // Load students with discount info for detail dialog
-  const handleStudentsClick = async () => {
+  const loadTodayLessons = async () => {
     try {
-      const response = await api.get('/students', {
+      const today = getLocalDateStr(new Date());
+      const response = await api.get('/scheduled-lessons', {
         params: {
           institutionId: institution._id,
           seasonId: season._id,
-          includeDiscountInfo: 'true',
-        },
+          startDate: today,
+          endDate: today
+        }
       });
-      setStudentsDialog({ open: true, students: response.data });
+      const sorted = response.data.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      setTodayLessons(sorted);
     } catch (error) {
-      console.error('Error loading students:', error);
+      console.error('Error loading today lessons:', error);
     }
   };
 
-  // Handle expected payments box click
-  const handlePaymentsBoxClick = (type, title, payments) => {
-    setPaymentsDetailDialog({
-      open: true,
-      title,
-      payments,
-      type
-    });
+  const loadTrialLessons = async () => {
+    try {
+      const response = await api.get('/trial-lessons', {
+        params: {
+          institutionId: institution._id,
+          status: 'pending'
+        }
+      });
+      const sorted = response.data.sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
+      setTrialLessons(sorted);
+    } catch (error) {
+      console.error('Error loading trial lessons:', error);
+    }
   };
 
-  // Get discount badge for student
-  const getDiscountBadge = (student) => {
-    if (!student.primaryDiscount) return null;
+  const loadCourseStats = async () => {
+    try {
+      const [coursesRes, enrollmentsRes] = await Promise.all([
+        api.get('/courses', { params: { institution: institution._id, season: season._id } }),
+        api.get('/enrollments', { params: { seasonId: season._id, isActive: true } })
+      ]);
 
-    const discount = student.primaryDiscount;
+      const courses = coursesRes.data;
+      const enrollments = enrollmentsRes.data;
 
-    if (discount.type === 'fullScholarship') {
-      return <Chip icon={<School />} label="Burslu" color="success" size="small" />;
+      const stats = courses.map(course => {
+        const enrolled = enrollments.filter(e => e.course?._id === course._id).length;
+        return {
+          ...course,
+          enrolledCount: enrolled,
+          capacity: course.maxStudents || 15,
+          percentage: course.maxStudents ? Math.round((enrolled / course.maxStudents) * 100) : 0
+        };
+      });
+
+      setCourseStats(stats.sort((a, b) => b.enrolledCount - a.enrolledCount));
+    } catch (error) {
+      console.error('Error loading course stats:', error);
     }
-
-    if (discount.type === 'percentage') {
-      return <Chip icon={<LocalOffer />} label={`%${discount.value}`} color="info" size="small" />;
-    }
-
-    if (discount.type === 'fixed') {
-      return <Chip icon={<LocalOffer />} label={`₺${discount.value}`} color="info" size="small" />;
-    }
-
-    return null;
   };
 
-  // Calculate discount distribution
-  const getDiscountDistribution = (students) => {
-    const distribution = {
-      fullScholarship: 0,
-      percentage: {},
-      fixed: 0,
-      none: 0
-    };
+  const loadInstructorDebts = async () => {
+    try {
+      const response = await api.get('/instructors', {
+        params: { institutionId: institution._id, seasonId: season._id }
+      });
+      const instructors = response.data.filter(i => (i.balance || 0) > 0);
+      const total = instructors.reduce((sum, i) => sum + (i.balance || 0), 0);
+      setInstructorDebts({ total, instructors });
+    } catch (error) {
+      console.error('Error loading instructor debts:', error);
+    }
+  };
 
-    students.forEach(student => {
-      if (!student.primaryDiscount) {
-        distribution.none++;
-        return;
-      }
+  const loadPlannedInvestments = async () => {
+    try {
+      const response = await api.get('/planned-investments', {
+        params: { institution: institution._id, status: 'planned' }
+      });
+      const items = response.data;
+      const total = items.reduce((sum, i) => sum + (i.estimatedAmount || 0), 0);
+      setPlannedInvestments({ total, count: items.length, items });
+    } catch (error) {
+      console.error('Error loading planned investments:', error);
+    }
+  };
 
-      const discount = student.primaryDiscount;
-      if (discount.type === 'fullScholarship') {
-        distribution.fullScholarship++;
-      } else if (discount.type === 'percentage') {
-        const key = `%${discount.value}`;
-        distribution.percentage[key] = (distribution.percentage[key] || 0) + 1;
-      } else if (discount.type === 'fixed') {
-        distribution.fixed++;
-      } else {
-        distribution.none++;
-      }
-    });
+  const loadUpcomingIncome = async () => {
+    try {
+      const response = await api.get('/payment-plans', {
+        params: { institutionId: institution._id, seasonId: season._id }
+      });
+      const paymentPlans = response.data;
 
-    return distribution;
+      const now = new Date();
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const endOfThreeMonths = new Date(now.getFullYear(), now.getMonth() + 3, 0);
+      const seasonEnd = season.endDate ? new Date(season.endDate) : endOfThreeMonths;
+
+      let thisMonthTotal = 0;
+      let threeMonthsTotal = 0;
+      let seasonTotal = 0;
+      const allUpcoming = [];
+
+      paymentPlans.forEach(plan => {
+        plan.installments?.forEach(inst => {
+          if (!inst.isPaid) {
+            const dueDate = new Date(inst.dueDate);
+            const remaining = inst.amount - (inst.paidAmount || 0);
+
+            if (dueDate >= now) {
+              allUpcoming.push({
+                student: plan.student,
+                course: plan.course,
+                installmentNumber: inst.installmentNumber,
+                amount: remaining,
+                dueDate: dueDate
+              });
+
+              if (dueDate <= endOfMonth) thisMonthTotal += remaining;
+              if (dueDate <= endOfThreeMonths) threeMonthsTotal += remaining;
+              if (dueDate <= seasonEnd) seasonTotal += remaining;
+            }
+          }
+        });
+      });
+
+      setUpcomingIncome({
+        thisMonth: thisMonthTotal,
+        nextThreeMonths: threeMonthsTotal,
+        total: seasonTotal,
+        items: allUpcoming.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
+      });
+    } catch (error) {
+      console.error('Error loading upcoming income:', error);
+    }
   };
 
   const loadExpectedPayments = async () => {
     try {
-      const params = {
-        institutionId: institution._id,
-        seasonId: season._id,
-      };
-
-      const response = await api.get('/payment-plans', params);
+      const response = await api.get('/payment-plans', {
+        params: { institutionId: institution._id, seasonId: season._id }
+      });
       const paymentPlans = response.data;
 
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const endOfToday = new Date(startOfToday);
       endOfToday.setDate(endOfToday.getDate() + 1);
-
       const endOfWeek = new Date(startOfToday);
       endOfWeek.setDate(endOfWeek.getDate() + 7);
-
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       const endOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
 
-      const categorized = {
-        today: [],
-        thisWeek: [],
-        thisMonth: [],
-        nextMonth: [],
-        overdue: [],
-        pendingCreditCard: []
-      };
-
-      // Check for pending credit card payments
-      paymentPlans.forEach(plan => {
-        if (plan.isPendingPayment && plan.paymentType === 'creditCard' && plan.paymentDate) {
-          const paymentDate = new Date(plan.paymentDate);
-          if (paymentDate <= now) {
-            // Payment date has arrived, should be processed
-            categorized.pendingCreditCard.push({
-              student: plan.student,
-              course: plan.course,
-              amount: plan.discountedAmount,
-              paymentDate: paymentDate,
-              paymentPlanId: plan._id,
-              isPending: true
-            });
-          }
-        }
-      });
+      const categorized = { today: [], thisWeek: [], thisMonth: [], nextMonth: [], overdue: [] };
 
       paymentPlans.forEach(plan => {
-        plan.installments?.forEach(installment => {
-          if (!installment.isPaid) {
-            const dueDate = new Date(installment.dueDate);
-            const remaining = installment.amount - (installment.paidAmount || 0);
-
+        plan.installments?.forEach(inst => {
+          if (!inst.isPaid) {
+            const dueDate = new Date(inst.dueDate);
+            const remaining = inst.amount - (inst.paidAmount || 0);
             const payment = {
               student: plan.student,
               course: plan.course,
-              installmentNumber: installment.installmentNumber,
+              installmentNumber: inst.installmentNumber,
               amount: remaining,
               dueDate: dueDate,
               paymentPlanId: plan._id
             };
 
-            if (dueDate < startOfToday) {
-              categorized.overdue.push(payment);
-            } else if (dueDate >= startOfToday && dueDate < endOfToday) {
-              categorized.today.push(payment);
-            } else if (dueDate >= endOfToday && dueDate < endOfWeek) {
-              categorized.thisWeek.push(payment);
-            } else if (dueDate >= endOfWeek && dueDate <= endOfMonth) {
-              categorized.thisMonth.push(payment);
-            } else if (dueDate > endOfMonth && dueDate <= endOfNextMonth) {
-              categorized.nextMonth.push(payment);
-            }
+            if (dueDate < startOfToday) categorized.overdue.push(payment);
+            else if (dueDate < endOfToday) categorized.today.push(payment);
+            else if (dueDate < endOfWeek) categorized.thisWeek.push(payment);
+            else if (dueDate <= endOfMonth) categorized.thisMonth.push(payment);
+            else if (dueDate <= endOfNextMonth) categorized.nextMonth.push(payment);
           }
         });
       });
@@ -378,641 +359,607 @@ const Dashboard = () => {
     }
   };
 
+  const loadChartData = async () => {
+    try {
+      const response = await api.get('/reports/income-expense-chart', {
+        params: { institutionId: institution._id, seasonId: season._id }
+      });
+      setIncomeExpenseData(response.data);
+    } catch (error) {
+      console.error('Error loading chart data:', error);
+    }
+  };
+
+  // Investment handlers
+  const handleSaveInvestment = async () => {
+    try {
+      await api.post('/planned-investments', {
+        ...investmentForm,
+        estimatedAmount: parseFloat(investmentForm.estimatedAmount) || 0,
+        institution: institution._id,
+        createdBy: currentUser?.username
+      });
+      setInvestmentForm({ title: '', description: '', estimatedAmount: '', category: 'other', priority: 'medium', targetDate: '' });
+      setInvestmentDialog({ open: true, mode: 'list' });
+      loadPlannedInvestments();
+    } catch (error) {
+      alert('Kayit hatasi: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDeleteInvestment = async (id) => {
+    if (!window.confirm('Bu plani silmek istediginizden emin misiniz?')) return;
+    try {
+      await api.delete(`/planned-investments/${id}`);
+      loadPlannedInvestments();
+    } catch (error) {
+      alert('Silme hatasi: ' + error.message);
+    }
+  };
+
+  const handleCompleteInvestment = async (id) => {
+    try {
+      await api.put(`/planned-investments/${id}`, {
+        status: 'completed',
+        completedDate: new Date(),
+        updatedBy: currentUser?.username
+      });
+      loadPlannedInvestments();
+    } catch (error) {
+      alert('Guncelleme hatasi: ' + error.message);
+    }
+  };
+
+  // Students dialog
+  const handleStudentsClick = async () => {
+    try {
+      const response = await api.get('/students', {
+        params: { institutionId: institution._id, seasonId: season._id }
+      });
+      setStudentsDialog({ open: true, students: response.data });
+    } catch (error) {
+      console.error('Error loading students:', error);
+    }
+  };
+
+  const handlePaymentsBoxClick = (type, title, payments) => {
+    setPaymentsDetailDialog({ open: true, title, payments, type });
+  };
+
   if (loading) {
-    return <LoadingSpinner message="Panel yükleniyor..." />;
+    return <LoadingSpinner message="Panel yukleniyor..." />;
   }
 
-  if (!institution) {
-    return <SetupRequired type="institution" />;
-  }
+  if (!institution) return <SetupRequired type="institution" />;
+  if (!season) return <SetupRequired type="season" />;
 
-  if (!season) {
-    return <SetupRequired type="season" />;
-  }
+  const getCategoryLabel = (cat) => {
+    const labels = {
+      equipment: 'Ekipman', furniture: 'Mobilya', renovation: 'Tadilat',
+      event: 'Etkinlik', marketing: 'Pazarlama', education: 'Egitim', other: 'Diger'
+    };
+    return labels[cat] || cat;
+  };
+
+  const getPriorityColor = (priority) => {
+    const colors = { urgent: 'error', high: 'warning', medium: 'info', low: 'default' };
+    return colors[priority] || 'default';
+  };
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 3 }}>
-        Panel
-      </Typography>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4">Panel</Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button size="small" startIcon={<Add />} onClick={() => navigate('/students/new')}>Ogrenci</Button>
+          <Button size="small" startIcon={<Event />} onClick={() => navigate('/calendar')}>Takvim</Button>
+        </Box>
+      </Box>
 
-      <Grid container spacing={3}>
-        {/* Stats Cards */}
-        <Grid item xs={12} sm={6} md={canSeeFinancials ? 3 : 6}>
-          <StatCard
-            title="Toplam Öğrenci"
-            value={stats.totalStudents}
-            icon={<PeopleIcon />}
-            color="primary"
-            subtitle={`${stats.activeStudents} aktif`}
-            onClick={handleStudentsClick}
-          />
-        </Grid>
-
-        {canSeePayments && (
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Toplam Gelir"
-              value={`₺${(stats.totalIncome || 0).toLocaleString('tr-TR')}`}
-              icon={<IncomeIcon />}
-              color="success"
-            />
-          </Grid>
-        )}
-
-        {canSeeExpenses && (
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Toplam Gider"
-              value={`₺${(stats.totalExpenses || 0).toLocaleString('tr-TR')}`}
-              icon={<ExpenseIcon />}
-              color="error"
-            />
-          </Grid>
-        )}
-
-        {canSeeExpenses && (
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="Kasa Bakiyesi"
-              value={`₺${(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')}`}
-              icon={<MoneyIcon />}
-              color="warning"
-            />
-          </Grid>
-        )}
-
-        {/* Net Income - Only for users with financial permissions */}
-        {canSeeFinancials && (
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3, height: '100%' }}>
-              <Typography variant="h6" gutterBottom>
-                Net Gelir
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 2 }}>
-                <Typography variant="h3" color={stats.netIncome >= 0 ? "success.main" : "error.main"}>
-                  ₺{(stats.netIncome || 0).toLocaleString('tr-TR')}
-                </Typography>
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Toplam Gelir - Toplam Gider
-              </Typography>
-            </Paper>
-          </Grid>
-        )}
-
-        {/* Quick Stats - Only for users with financial permissions */}
-        {canSeeFinancials && (
-          <Grid item xs={12} md={6}>
-            <Paper sx={{ p: 3, height: '100%' }}>
-              <Typography variant="h6" gutterBottom>
-                Hızlı Özet
-              </Typography>
-              <Box sx={{ mt: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="body1">Net Gelir:</Typography>
-                  <Typography
-                    variant="h6"
-                    color={(stats.totalIncome || 0) - (stats.totalExpenses || 0) >= 0 ? 'success.main' : 'error.main'}
-                  >
-                    ₺{((stats.totalIncome || 0) - (stats.totalExpenses || 0)).toLocaleString('tr-TR')}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography variant="body1">Ortalama Öğrenci Başı Gelir:</Typography>
-                  <Typography variant="h6">
-                    ₺
-                    {stats.activeStudents > 0
-                      ? Math.round(stats.totalIncome / stats.activeStudents).toLocaleString('tr-TR')
-                      : 0}
-                  </Typography>
-                </Box>
-              </Box>
-            </Paper>
-          </Grid>
-        )}
-
-        {/* Expected Payments Widget - Only for users with payment permissions */}
-        {canSeePayments && (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Beklenen Ödemeler
-              </Typography>
-            <Grid container spacing={2} sx={{ mt: 1 }}>
-              <Grid item xs={12} sm={6} md={2.4}>
-                <Box
-                  sx={{
-                    p: 2,
-                    bgcolor: 'error.light',
-                    borderRadius: 1,
-                    cursor: expectedPayments.overdue.length > 0 ? 'pointer' : 'default',
-                    transition: 'transform 0.2s',
-                    '&:hover': expectedPayments.overdue.length > 0 ? { transform: 'scale(1.02)' } : {}
-                  }}
-                  onClick={() => expectedPayments.overdue.length > 0 && handlePaymentsBoxClick('overdue', 'Gecikmiş Ödemeler', expectedPayments.overdue)}
-                >
-                  <Typography variant="body2" color="error.dark" gutterBottom>
-                    Gecikmiş
-                  </Typography>
-                  <Typography variant="h5" color="error.dark">
-                    {expectedPayments.overdue.length}
-                  </Typography>
-                  <Typography variant="body2" color="error.dark">
-                    ₺{expectedPayments.overdue.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
-                  </Typography>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={2.4}>
-                <Box
-                  sx={{
-                    p: 2,
-                    bgcolor: 'warning.light',
-                    borderRadius: 1,
-                    cursor: expectedPayments.today.length > 0 ? 'pointer' : 'default',
-                    transition: 'transform 0.2s',
-                    '&:hover': expectedPayments.today.length > 0 ? { transform: 'scale(1.02)' } : {}
-                  }}
-                  onClick={() => expectedPayments.today.length > 0 && handlePaymentsBoxClick('today', 'Bugünkü Ödemeler', expectedPayments.today)}
-                >
-                  <Typography variant="body2" color="warning.dark" gutterBottom>
-                    Bugün
-                  </Typography>
-                  <Typography variant="h5" color="warning.dark">
-                    {expectedPayments.today.length}
-                  </Typography>
-                  <Typography variant="body2" color="warning.dark">
-                    ₺{expectedPayments.today.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
-                  </Typography>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={2.4}>
-                <Box
-                  sx={{
-                    p: 2,
-                    bgcolor: 'info.light',
-                    borderRadius: 1,
-                    cursor: expectedPayments.thisWeek.length > 0 ? 'pointer' : 'default',
-                    transition: 'transform 0.2s',
-                    '&:hover': expectedPayments.thisWeek.length > 0 ? { transform: 'scale(1.02)' } : {}
-                  }}
-                  onClick={() => expectedPayments.thisWeek.length > 0 && handlePaymentsBoxClick('thisWeek', 'Bu Haftaki Ödemeler', expectedPayments.thisWeek)}
-                >
-                  <Typography variant="body2" color="info.dark" gutterBottom>
-                    Bu Hafta
-                  </Typography>
-                  <Typography variant="h5" color="info.dark">
-                    {expectedPayments.thisWeek.length}
-                  </Typography>
-                  <Typography variant="body2" color="info.dark">
-                    ₺{expectedPayments.thisWeek.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
-                  </Typography>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={2.4}>
-                <Box
-                  sx={{
-                    p: 2,
-                    bgcolor: 'success.light',
-                    borderRadius: 1,
-                    cursor: expectedPayments.thisMonth.length > 0 ? 'pointer' : 'default',
-                    transition: 'transform 0.2s',
-                    '&:hover': expectedPayments.thisMonth.length > 0 ? { transform: 'scale(1.02)' } : {}
-                  }}
-                  onClick={() => expectedPayments.thisMonth.length > 0 && handlePaymentsBoxClick('thisMonth', 'Bu Ayki Ödemeler', expectedPayments.thisMonth)}
-                >
-                  <Typography variant="body2" color="success.dark" gutterBottom>
-                    Bu Ay
-                  </Typography>
-                  <Typography variant="h5" color="success.dark">
-                    {expectedPayments.thisMonth.length}
-                  </Typography>
-                  <Typography variant="body2" color="success.dark">
-                    ₺{expectedPayments.thisMonth.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
-                  </Typography>
-                </Box>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={2.4}>
-                <Box
-                  sx={{
-                    p: 2,
-                    bgcolor: 'grey.300',
-                    borderRadius: 1,
-                    cursor: expectedPayments.nextMonth.length > 0 ? 'pointer' : 'default',
-                    transition: 'transform 0.2s',
-                    '&:hover': expectedPayments.nextMonth.length > 0 ? { transform: 'scale(1.02)' } : {}
-                  }}
-                  onClick={() => expectedPayments.nextMonth.length > 0 && handlePaymentsBoxClick('nextMonth', 'Gelecek Ay Ödemeler', expectedPayments.nextMonth)}
-                >
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Gelecek Ay
-                  </Typography>
-                  <Typography variant="h5" color="text.primary">
-                    {expectedPayments.nextMonth.length}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    ₺{expectedPayments.nextMonth.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
+      <Grid container spacing={2}>
+        {/* TOP ROW - Key Stats */}
+        <Grid item xs={6} sm={4} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={handleStudentsClick}>
+            <Group color="primary" sx={{ fontSize: 32 }} />
+            <Typography variant="h4">{stats.totalStudents}</Typography>
+            <Typography variant="body2" color="text.secondary">Ogrenci</Typography>
+            <Chip size="small" label={`${stats.activeStudents} aktif`} sx={{ mt: 0.5 }} />
           </Paper>
         </Grid>
-        )}
 
-        {/* Income vs Expense Chart - Only for users with financial permissions */}
-        {canSeeFinancials && (
-          <Grid item xs={12} lg={8}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Gelir ve Gider Trendi (Son 12 Ay)
-              </Typography>
-              {incomeExpenseData.length > 0 && (
-                <Line
-                  data={{
-                    labels: incomeExpenseData.map(d => d.period),
-                    datasets: [
-                      {
-                        label: 'Gelir',
-                        data: incomeExpenseData.map(d => d.income),
-                        borderColor: 'rgb(75, 192, 192)',
-                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                        tension: 0.3
-                      },
-                      {
-                        label: 'Gider',
-                        data: incomeExpenseData.map(d => d.expense),
-                        borderColor: 'rgb(255, 99, 132)',
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                        tension: 0.3
-                      }
-                    ]
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: {
-                        position: 'top'
-                      }
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        ticks: {
-                          callback: (value) => '₺' + value.toLocaleString('tr-TR')
-                        }
-                      }
-                    }
-                  }}
-                />
-              )}
-            </Paper>
-          </Grid>
-        )}
-
-        {/* Payment Methods Distribution - Only for users with payment permissions */}
-        {canSeePayments && (
-          <Grid item xs={12} lg={4}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Ödeme Yöntemleri Dağılımı
-              </Typography>
-              {paymentMethodsData.length > 0 && (
-                <Pie
-                  data={{
-                    labels: paymentMethodsData.map(d => d._id || 'Diğer'),
-                    datasets: [{
-                      data: paymentMethodsData.map(d => d.totalAmount),
-                      backgroundColor: [
-                        'rgba(255, 99, 132, 0.8)',
-                        'rgba(54, 162, 235, 0.8)',
-                        'rgba(255, 206, 86, 0.8)',
-                        'rgba(75, 192, 192, 0.8)',
-                        'rgba(153, 102, 255, 0.8)',
-                      ]
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: {
-                        position: 'bottom'
-                      },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => {
-                            const label = context.label || '';
-                            const value = context.parsed || 0;
-                            return `${label}: ₺${value.toLocaleString('tr-TR')}`;
-                          }
-                        }
-                      }
-                    }
-                  }}
-                />
-              )}
-            </Paper>
-          </Grid>
-        )}
-
-        {/* Student Growth Chart */}
-        <Grid item xs={12} lg={6}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              Öğrenci Kayıt Trendi (Son 12 Ay)
-            </Typography>
-            {studentGrowthData.length > 0 && (
-              <Bar
-                data={{
-                  labels: studentGrowthData.map(d => d.period),
-                  datasets: [{
-                    label: 'Yeni Öğrenci Sayısı',
-                    data: studentGrowthData.map(d => d.count),
-                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
-                  }]
-                }}
-                options={{
-                  responsive: true,
-                  plugins: {
-                    legend: {
-                      display: false
-                    }
-                  },
-                  scales: {
-                    y: {
-                      beginAtZero: true,
-                      ticks: {
-                        stepSize: 1
-                      }
-                    }
-                  }
-                }}
-              />
+        <Grid item xs={6} sm={4} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setInstructorDebtsDialog({ open: true })}>
+            <Person color="secondary" sx={{ fontSize: 32 }} />
+            <Typography variant="h4">{stats.totalInstructors || instructorDebts.instructors.length}</Typography>
+            <Typography variant="body2" color="text.secondary">Egitmen</Typography>
+            {instructorDebts.total > 0 && (
+              <Chip size="small" color="warning" label={`${instructorDebts.total.toLocaleString('tr-TR')} TL borc`} sx={{ mt: 0.5 }} />
             )}
           </Paper>
         </Grid>
 
-        {/* Expense Categories Distribution - Only for users with expense permissions */}
-        {canSeeExpenses && (
-          <Grid item xs={12} lg={6}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom>
-                Gider Kategorileri Dağılımı
-              </Typography>
-              {expenseCategoriesData.length > 0 && (
-                <Doughnut
-                  data={{
-                    labels: expenseCategoriesData.map(d => d.categoryName || d._id || 'Diğer'),
-                    datasets: [{
-                      data: expenseCategoriesData.map(d => d.totalAmount),
-                      backgroundColor: [
-                        'rgba(255, 99, 132, 0.8)',
-                        'rgba(54, 162, 235, 0.8)',
-                        'rgba(255, 206, 86, 0.8)',
-                        'rgba(75, 192, 192, 0.8)',
-                        'rgba(153, 102, 255, 0.8)',
-                        'rgba(255, 159, 64, 0.8)',
-                      ]
-                    }]
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: {
-                        position: 'bottom'
-                      },
-                      tooltip: {
-                        callbacks: {
-                          label: (context) => {
-                            const label = context.label || '';
-                            const value = context.parsed || 0;
-                            return `${label}: ₺${value.toLocaleString('tr-TR')}`;
-                          }
-                        }
-                      }
-                    }
-                  }}
-                />
-              )}
+        <Grid item xs={6} sm={4} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setTodayLessonsDialog({ open: true })}>
+            <Schedule color="info" sx={{ fontSize: 32 }} />
+            <Typography variant="h4">{todayLessons.length}</Typography>
+            <Typography variant="body2" color="text.secondary">Bugun Ders</Typography>
+            {todayLessons.filter(l => l.status === 'completed').length > 0 && (
+              <Chip size="small" color="success" label={`${todayLessons.filter(l => l.status === 'completed').length} tamamlandi`} sx={{ mt: 0.5 }} />
+            )}
+          </Paper>
+        </Grid>
+
+        {canSeePayments && (
+          <Grid item xs={6} sm={4} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <TrendingUp color="success" sx={{ fontSize: 32 }} />
+              <Typography variant="h5">{(stats.totalIncome || 0).toLocaleString('tr-TR')} TL</Typography>
+              <Typography variant="body2" color="text.secondary">Toplam Gelir</Typography>
             </Paper>
           </Grid>
         )}
 
-        {/* Pending Credit Card Payments Widget - Only for users with payment permissions */}
-        {canSeePayments && expectedPayments.pendingCreditCard.length > 0 && (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 3 }}>
-              <Typography variant="h6" gutterBottom color="warning.main">
-                ⏰ Vadesi Gelen Kredi Kartı Ödemeleri
-              </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Bu ödemeler beklemede - ödeme tarihi geldi, kasaya işlenmeyi bekliyor
-              </Typography>
-              <Box sx={{ mt: 2 }}>
-                {expectedPayments.pendingCreditCard.map((payment, index) => (
-                  <Box
-                    key={index}
-                    sx={{
-                      p: 2,
-                      mb: 1,
-                      bgcolor: 'warning.light',
-                      borderRadius: 1,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center'
-                    }}
-                  >
-                    <Box>
-                      <Typography variant="body1" fontWeight="bold">
-                        {payment.student?.firstName} {payment.student?.lastName}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {payment.course?.name}
-                      </Typography>
-                      <Typography variant="caption">
-                        Ödeme Tarihi: {new Date(payment.paymentDate).toLocaleDateString('tr-TR')}
-                      </Typography>
+        {canSeeExpenses && (
+          <Grid item xs={6} sm={4} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <AccountBalance color="warning" sx={{ fontSize: 32 }} />
+              <Typography variant="h5">{(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')} TL</Typography>
+              <Typography variant="body2" color="text.secondary">Kasa</Typography>
+            </Paper>
+          </Grid>
+        )}
+
+        <Grid item xs={6} sm={4} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', bgcolor: 'primary.light', color: 'white', '&:hover': { bgcolor: 'primary.main' } }} onClick={() => setInvestmentDialog({ open: true, mode: 'list' })}>
+            <ShoppingCart sx={{ fontSize: 32 }} />
+            <Typography variant="h5">{plannedInvestments.total.toLocaleString('tr-TR')} TL</Typography>
+            <Typography variant="body2">Planlanan Harcama</Typography>
+            <Chip size="small" label={`${plannedInvestments.count} plan`} sx={{ mt: 0.5, bgcolor: 'rgba(255,255,255,0.3)' }} />
+          </Paper>
+        </Grid>
+
+        {/* Second Row - Today's Schedule & Urgent */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2, height: '100%' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6"><CalendarToday sx={{ mr: 1, verticalAlign: 'middle' }} />Bugunku Program</Typography>
+              <Button size="small" endIcon={<ArrowForward />} onClick={() => navigate('/calendar')}>Takvim</Button>
+            </Box>
+            {todayLessons.length === 0 ? (
+              <Typography color="text.secondary" align="center" sx={{ py: 3 }}>Bugun planlanmis ders yok</Typography>
+            ) : (
+              <List dense sx={{ maxHeight: 200, overflow: 'auto' }}>
+                {todayLessons.slice(0, 5).map((lesson) => (
+                  <ListItem key={lesson._id} sx={{ bgcolor: lesson.status === 'completed' ? 'success.light' : 'transparent', borderRadius: 1, mb: 0.5 }}>
+                    <ListItemIcon><AccessTime fontSize="small" /></ListItemIcon>
+                    <ListItemText
+                      primary={`${lesson.startTime}-${lesson.endTime} ${lesson.course?.name || 'Ders'}${lesson.notes ? ` - ${lesson.notes}` : ''}`}
+                      secondary={lesson.instructor ? `${lesson.instructor.firstName} ${lesson.instructor.lastName}` : 'Egitmen atanmadi'}
+                    />
+                    {lesson.status === 'completed' && <CheckCircle color="success" fontSize="small" />}
+                  </ListItem>
+                ))}
+                {todayLessons.length > 5 && (
+                  <Button size="small" fullWidth onClick={() => setTodayLessonsDialog({ open: true })}>
+                    +{todayLessons.length - 5} ders daha
+                  </Button>
+                )}
+              </List>
+            )}
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2, height: '100%' }}>
+            <Typography variant="h6" sx={{ mb: 2 }}><Warning color="error" sx={{ mr: 1, verticalAlign: 'middle' }} />Acil / Oncelikli</Typography>
+            <List dense>
+              {expectedPayments.overdue.length > 0 && (
+                <ListItem button onClick={() => handlePaymentsBoxClick('overdue', 'Gecikmis Odemeler', expectedPayments.overdue)} sx={{ bgcolor: 'error.light', borderRadius: 1, mb: 0.5 }}>
+                  <ListItemText
+                    primary={<Typography color="error.dark" fontWeight="bold">{expectedPayments.overdue.length} Gecikmis Odeme</Typography>}
+                    secondary={`${expectedPayments.overdue.reduce((s, p) => s + p.amount, 0).toLocaleString('tr-TR')} TL`}
+                  />
+                </ListItem>
+              )}
+              {expectedPayments.today.length > 0 && (
+                <ListItem button onClick={() => handlePaymentsBoxClick('today', 'Bugunku Odemeler', expectedPayments.today)} sx={{ bgcolor: 'warning.light', borderRadius: 1, mb: 0.5 }}>
+                  <ListItemText
+                    primary={<Typography color="warning.dark" fontWeight="bold">{expectedPayments.today.length} Bugun Vadeli</Typography>}
+                    secondary={`${expectedPayments.today.reduce((s, p) => s + p.amount, 0).toLocaleString('tr-TR')} TL`}
+                  />
+                </ListItem>
+              )}
+              {trialLessons.length > 0 && (
+                <ListItem button onClick={() => setTrialLessonsDialog({ open: true })} sx={{ bgcolor: 'info.light', borderRadius: 1, mb: 0.5 }}>
+                  <ListItemIcon><StarBorder /></ListItemIcon>
+                  <ListItemText
+                    primary={<Typography color="info.dark" fontWeight="bold">{trialLessons.length} Deneme Dersi</Typography>}
+                    secondary="Bekleyen"
+                  />
+                </ListItem>
+              )}
+              {instructorDebts.total > 0 && (
+                <ListItem button onClick={() => setInstructorDebtsDialog({ open: true })} sx={{ bgcolor: 'grey.200', borderRadius: 1 }}>
+                  <ListItemIcon><AttachMoney /></ListItemIcon>
+                  <ListItemText
+                    primary="Egitmen Borclari"
+                    secondary={`${instructorDebts.total.toLocaleString('tr-TR')} TL`}
+                  />
+                </ListItem>
+              )}
+              {expectedPayments.overdue.length === 0 && expectedPayments.today.length === 0 && trialLessons.length === 0 && instructorDebts.total === 0 && (
+                <Typography color="text.secondary" align="center" sx={{ py: 2 }}>Acil durum yok</Typography>
+              )}
+            </List>
+          </Paper>
+        </Grid>
+
+        {/* Third Row - Course Capacity & Trial Lessons */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}><School sx={{ mr: 1, verticalAlign: 'middle' }} />Ders Doluluk Durumu</Typography>
+            {courseStats.length === 0 ? (
+              <Typography color="text.secondary" align="center">Ders bulunamadi</Typography>
+            ) : (
+              <Box sx={{ maxHeight: 200, overflow: 'auto' }}>
+                {courseStats.slice(0, 5).map((course) => (
+                  <Box key={course._id} sx={{ mb: 2 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                      <Typography variant="body2">{course.name}</Typography>
+                      <Typography variant="body2" color="text.secondary">{course.enrolledCount}/{course.capacity}</Typography>
                     </Box>
-                    <Box sx={{ textAlign: 'right', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <Typography variant="h6" color="warning.dark">
-                        ₺{payment.amount?.toLocaleString('tr-TR')}
-                      </Typography>
-                      <Typography variant="caption">
-                        Kredi Kartı - Bekliyor
-                      </Typography>
-                      <Button
-                        variant="contained"
-                        color="success"
-                        size="small"
-                        onClick={() => setPaymentDialog({ open: true, payment: payment, cashRegisterId: cashRegisters[0]?._id || '' })}
-                      >
-                        Ödeme Al
-                      </Button>
-                    </Box>
+                    <LinearProgress
+                      variant="determinate"
+                      value={Math.min(course.percentage, 100)}
+                      color={course.percentage >= 90 ? 'success' : course.percentage >= 50 ? 'primary' : 'warning'}
+                      sx={{ height: 8, borderRadius: 4 }}
+                    />
                   </Box>
                 ))}
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6"><StarBorder sx={{ mr: 1, verticalAlign: 'middle' }} />Deneme Dersleri</Typography>
+              <Button size="small" onClick={() => navigate('/trial-lessons')}>Tumu</Button>
+            </Box>
+            {trialLessons.length === 0 ? (
+              <Typography color="text.secondary" align="center" sx={{ py: 2 }}>Bekleyen deneme dersi yok</Typography>
+            ) : (
+              <List dense sx={{ maxHeight: 180, overflow: 'auto' }}>
+                {trialLessons.slice(0, 4).map((trial) => (
+                  <ListItem key={trial._id}>
+                    <ListItemText
+                      primary={`${trial.firstName} ${trial.lastName}`}
+                      secondary={`${new Date(trial.scheduledDate).toLocaleDateString('tr-TR')} ${trial.scheduledTime} - ${trial.course?.name || ''}`}
+                    />
+                    <Chip size="small" color="warning" label="Bekliyor" />
+                  </ListItem>
+                ))}
+              </List>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* Fourth Row - Payment Tracking */}
+        {canSeePayments && (
+          <>
+            <Grid item xs={12} md={6}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6" sx={{ mb: 2 }}><PendingActions sx={{ mr: 1, verticalAlign: 'middle' }} />Beklenen Odemeler</Typography>
+                <Grid container spacing={1}>
+                  {[
+                    { key: 'overdue', label: 'Gecikmis', color: 'error.light', textColor: 'error.dark' },
+                    { key: 'today', label: 'Bugun', color: 'warning.light', textColor: 'warning.dark' },
+                    { key: 'thisWeek', label: 'Bu Hafta', color: 'info.light', textColor: 'info.dark' },
+                    { key: 'thisMonth', label: 'Bu Ay', color: 'success.light', textColor: 'success.dark' },
+                    { key: 'nextMonth', label: 'Gelecek Ay', color: 'grey.200', textColor: 'text.primary' }
+                  ].map(({ key, label, color, textColor }) => (
+                    <Grid item xs={4} sm={2.4} key={key}>
+                      <Box
+                        sx={{ p: 1.5, bgcolor: color, borderRadius: 1, textAlign: 'center', cursor: expectedPayments[key].length > 0 ? 'pointer' : 'default', '&:hover': expectedPayments[key].length > 0 ? { opacity: 0.9 } : {} }}
+                        onClick={() => expectedPayments[key].length > 0 && handlePaymentsBoxClick(key, label, expectedPayments[key])}
+                      >
+                        <Typography variant="caption" color={textColor}>{label}</Typography>
+                        <Typography variant="h6" color={textColor}>{expectedPayments[key].length}</Typography>
+                        <Typography variant="caption" color={textColor}>{expectedPayments[key].reduce((s, p) => s + p.amount, 0).toLocaleString('tr-TR')} TL</Typography>
+                      </Box>
+                    </Grid>
+                  ))}
+                </Grid>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <Paper sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setUpcomingIncomeDialog({ open: true })}>
+                <Typography variant="h6" sx={{ mb: 2 }}><TrendingUp sx={{ mr: 1, verticalAlign: 'middle' }} />Gelecek Gelirler (Alacaklar)</Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={4}>
+                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'success.light', borderRadius: 1 }}>
+                      <Typography variant="caption" color="success.dark">Bu Ay</Typography>
+                      <Typography variant="h6" color="success.dark">{upcomingIncome.thisMonth.toLocaleString('tr-TR')} TL</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'info.light', borderRadius: 1 }}>
+                      <Typography variant="caption" color="info.dark">3 Ay</Typography>
+                      <Typography variant="h6" color="info.dark">{upcomingIncome.nextThreeMonths.toLocaleString('tr-TR')} TL</Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'primary.light', borderRadius: 1 }}>
+                      <Typography variant="caption" color="primary.contrastText">Sezon</Typography>
+                      <Typography variant="h6" color="primary.contrastText">{upcomingIncome.total.toLocaleString('tr-TR')} TL</Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Paper>
+            </Grid>
+          </>
+        )}
+
+        {/* Charts */}
+        {canSeeFinancials && incomeExpenseData.length > 0 && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 2 }}>
+              <Typography variant="h6" gutterBottom>Gelir/Gider Trendi</Typography>
+              <Box sx={{ height: 250 }}>
+                <Line
+                  data={{
+                    labels: incomeExpenseData.map(d => d.period),
+                    datasets: [
+                      { label: 'Gelir', data: incomeExpenseData.map(d => d.income), borderColor: '#4caf50', backgroundColor: 'rgba(76,175,80,0.1)', tension: 0.3 },
+                      { label: 'Gider', data: incomeExpenseData.map(d => d.expense), borderColor: '#f44336', backgroundColor: 'rgba(244,67,54,0.1)', tension: 0.3 }
+                    ]
+                  }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('tr-TR') + ' TL' } } } }}
+                />
               </Box>
             </Paper>
           </Grid>
         )}
       </Grid>
 
-      {/* Payment Dialog */}
-      <Dialog
-        open={paymentDialog.open}
-        onClose={() => setPaymentDialog({ ...paymentDialog, open: false })}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Kredi Kartı Ödemesini İşle</DialogTitle>
+      {/* DIALOGS */}
+
+      {/* Planned Investments Dialog */}
+      <Dialog open={investmentDialog.open} onClose={() => setInvestmentDialog({ open: false, mode: 'list' })} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">Planlanan Harcamalar / Yatirimlar</Typography>
+          <Box>
+            {investmentDialog.mode === 'list' && (
+              <Button startIcon={<Add />} onClick={() => setInvestmentDialog({ open: true, mode: 'add' })}>Yeni Ekle</Button>
+            )}
+            <IconButton onClick={() => setInvestmentDialog({ open: false, mode: 'list' })}><Close /></IconButton>
+          </Box>
+        </DialogTitle>
         <DialogContent>
-          {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
-            </Alert>
+          {investmentDialog.mode === 'add' ? (
+            <Grid container spacing={2} sx={{ mt: 1 }}>
+              <Grid item xs={12}><TextField fullWidth label="Baslik" value={investmentForm.title} onChange={e => setInvestmentForm({ ...investmentForm, title: e.target.value })} /></Grid>
+              <Grid item xs={12}><TextField fullWidth multiline rows={2} label="Aciklama" value={investmentForm.description} onChange={e => setInvestmentForm({ ...investmentForm, description: e.target.value })} /></Grid>
+              <Grid item xs={6}><TextField fullWidth type="number" label="Tahmini Tutar (TL)" value={investmentForm.estimatedAmount} onChange={e => setInvestmentForm({ ...investmentForm, estimatedAmount: e.target.value })} /></Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Kategori</InputLabel>
+                  <Select value={investmentForm.category} onChange={e => setInvestmentForm({ ...investmentForm, category: e.target.value })} label="Kategori">
+                    <MenuItem value="equipment">Ekipman</MenuItem>
+                    <MenuItem value="furniture">Mobilya</MenuItem>
+                    <MenuItem value="renovation">Tadilat</MenuItem>
+                    <MenuItem value="event">Etkinlik</MenuItem>
+                    <MenuItem value="marketing">Pazarlama</MenuItem>
+                    <MenuItem value="education">Egitim</MenuItem>
+                    <MenuItem value="other">Diger</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Oncelik</InputLabel>
+                  <Select value={investmentForm.priority} onChange={e => setInvestmentForm({ ...investmentForm, priority: e.target.value })} label="Oncelik">
+                    <MenuItem value="low">Dusuk</MenuItem>
+                    <MenuItem value="medium">Orta</MenuItem>
+                    <MenuItem value="high">Yuksek</MenuItem>
+                    <MenuItem value="urgent">Acil</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}><TextField fullWidth type="date" label="Hedef Tarih" InputLabelProps={{ shrink: true }} value={investmentForm.targetDate} onChange={e => setInvestmentForm({ ...investmentForm, targetDate: e.target.value })} /></Grid>
+            </Grid>
+          ) : (
+            <>
+              <Box sx={{ mb: 2, p: 2, bgcolor: 'primary.light', borderRadius: 1 }}>
+                <Typography variant="h5" color="primary.contrastText">Toplam: {plannedInvestments.total.toLocaleString('tr-TR')} TL</Typography>
+                <Typography variant="body2" color="primary.contrastText">{plannedInvestments.count} adet plan</Typography>
+              </Box>
+              {plannedInvestments.items.length === 0 ? (
+                <Typography color="text.secondary" align="center" sx={{ py: 3 }}>Henuz planlanan harcama yok</Typography>
+              ) : (
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Baslik</TableCell>
+                        <TableCell>Kategori</TableCell>
+                        <TableCell>Oncelik</TableCell>
+                        <TableCell align="right">Tutar</TableCell>
+                        <TableCell align="right">Islem</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {plannedInvestments.items.map((inv) => (
+                        <TableRow key={inv._id} hover>
+                          <TableCell>
+                            <Typography variant="body2" fontWeight="bold">{inv.title}</Typography>
+                            {inv.description && <Typography variant="caption" color="text.secondary">{inv.description}</Typography>}
+                          </TableCell>
+                          <TableCell><Chip size="small" label={getCategoryLabel(inv.category)} /></TableCell>
+                          <TableCell><Chip size="small" color={getPriorityColor(inv.priority)} label={inv.priority} /></TableCell>
+                          <TableCell align="right">{inv.estimatedAmount?.toLocaleString('tr-TR')} TL</TableCell>
+                          <TableCell align="right">
+                            <IconButton size="small" color="success" onClick={() => handleCompleteInvestment(inv._id)} title="Tamamlandi"><CheckCircle fontSize="small" /></IconButton>
+                            <IconButton size="small" color="error" onClick={() => handleDeleteInvestment(inv._id)}><Delete fontSize="small" /></IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </>
           )}
-          {paymentDialog.payment && (
-            <Box sx={{ mb: 3 }}>
-              <Typography variant="body1" gutterBottom>
-                <strong>Öğrenci:</strong> {paymentDialog.payment.student?.firstName} {paymentDialog.payment.student?.lastName}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Ders:</strong> {paymentDialog.payment.course?.name}
-              </Typography>
-              <Typography variant="body1" gutterBottom>
-                <strong>Tutar:</strong> ₺{paymentDialog.payment.amount?.toLocaleString('tr-TR')}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Ödeme Tarihi: {paymentDialog.payment.paymentDate && new Date(paymentDialog.payment.paymentDate).toLocaleDateString('tr-TR')}
-              </Typography>
-            </Box>
-          )}
-          <FormControl fullWidth>
-            <InputLabel>Kasa Seçin</InputLabel>
-            <Select
-              value={paymentDialog.cashRegisterId}
-              onChange={(e) => setPaymentDialog({ ...paymentDialog, cashRegisterId: e.target.value })}
-              label="Kasa Seçin"
-            >
-              {cashRegisters.map((register) => (
-                <MenuItem key={register._id} value={register._id}>
-                  {register.name} - Bakiye: ₺{register.balance?.toLocaleString('tr-TR')}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPaymentDialog({ ...paymentDialog, open: false })} disabled={processing}>
-            İptal
-          </Button>
-          <Button onClick={handleProcessPayment} variant="contained" color="success" disabled={processing}>
-            {processing ? 'İşleniyor...' : 'Ödemeyi İşle'}
-          </Button>
+          {investmentDialog.mode === 'add' ? (
+            <>
+              <Button onClick={() => setInvestmentDialog({ open: true, mode: 'list' })}>Geri</Button>
+              <Button variant="contained" onClick={handleSaveInvestment}>Kaydet</Button>
+            </>
+          ) : (
+            <Button onClick={() => setInvestmentDialog({ open: false, mode: 'list' })}>Kapat</Button>
+          )}
         </DialogActions>
       </Dialog>
 
-      {/* Students Detail Dialog */}
-      <Dialog
-        open={studentsDialog.open}
-        onClose={() => setStudentsDialog({ open: false, students: [] })}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">Öğrenci Listesi ({studentsDialog.students.length})</Typography>
-          <IconButton onClick={() => setStudentsDialog({ open: false, students: [] })}>
-            <Close />
-          </IconButton>
-        </DialogTitle>
+      {/* Upcoming Income Dialog */}
+      <Dialog open={upcomingIncomeDialog.open} onClose={() => setUpcomingIncomeDialog({ open: false })} maxWidth="md" fullWidth>
+        <DialogTitle>Gelecek Gelirler (Alacaklar)</DialogTitle>
         <DialogContent>
-          {/* Discount Distribution Summary */}
-          {studentsDialog.students.length > 0 && (
-            <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-              <Typography variant="subtitle2" gutterBottom>İndirim Dağılımı</Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {(() => {
-                  const dist = getDiscountDistribution(studentsDialog.students);
-                  return (
-                    <>
-                      {dist.fullScholarship > 0 && (
-                        <Chip icon={<School />} label={`Burslu: ${dist.fullScholarship}`} color="success" size="small" />
-                      )}
-                      {Object.entries(dist.percentage).map(([key, count]) => (
-                        <Chip key={key} icon={<LocalOffer />} label={`${key}: ${count}`} color="info" size="small" />
-                      ))}
-                      {dist.fixed > 0 && (
-                        <Chip icon={<LocalOffer />} label={`Sabit İndirim: ${dist.fixed}`} color="info" size="small" />
-                      )}
-                      <Chip label={`İndirimsiz: ${dist.none}`} size="small" />
-                    </>
-                  );
-                })()}
-              </Box>
-            </Box>
-          )}
-
+          <Box sx={{ mb: 2, p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
+            <Typography variant="h5" color="success.dark">Toplam Alacak: {upcomingIncome.total.toLocaleString('tr-TR')} TL</Typography>
+          </Box>
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Öğrenci</TableCell>
+                  <TableCell>Ogrenci</TableCell>
+                  <TableCell>Ders</TableCell>
+                  <TableCell>Vade</TableCell>
+                  <TableCell align="right">Tutar</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {upcomingIncome.items.slice(0, 50).map((item, idx) => (
+                  <TableRow key={idx} hover>
+                    <TableCell>{item.student?.firstName} {item.student?.lastName}</TableCell>
+                    <TableCell>{item.course?.name}</TableCell>
+                    <TableCell>{new Date(item.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                    <TableCell align="right">{item.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setUpcomingIncomeDialog({ open: false })}>Kapat</Button></DialogActions>
+      </Dialog>
+
+      {/* Today's Lessons Dialog */}
+      <Dialog open={todayLessonsDialog.open} onClose={() => setTodayLessonsDialog({ open: false })} maxWidth="md" fullWidth>
+        <DialogTitle>Bugunku Dersler ({todayLessons.length})</DialogTitle>
+        <DialogContent>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Saat</TableCell>
+                  <TableCell>Ders</TableCell>
+                  <TableCell>Egitmen</TableCell>
                   <TableCell>Durum</TableCell>
-                  <TableCell>İndirim/Burs</TableCell>
-                  {canSeePayments && <TableCell>Bakiye</TableCell>}
-                  <TableCell align="right">İşlem</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {todayLessons.map((lesson) => (
+                  <TableRow key={lesson._id} hover>
+                    <TableCell>{lesson.startTime}-{lesson.endTime}</TableCell>
+                    <TableCell>{lesson.course?.name}{lesson.notes && ` - ${lesson.notes}`}</TableCell>
+                    <TableCell>{lesson.instructor ? `${lesson.instructor.firstName} ${lesson.instructor.lastName}` : '-'}</TableCell>
+                    <TableCell><Chip size="small" color={lesson.status === 'completed' ? 'success' : 'default'} label={lesson.status === 'completed' ? 'Tamamlandi' : 'Planlandi'} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setTodayLessonsDialog({ open: false })}>Kapat</Button></DialogActions>
+      </Dialog>
+
+      {/* Trial Lessons Dialog */}
+      <Dialog open={trialLessonsDialog.open} onClose={() => setTrialLessonsDialog({ open: false })} maxWidth="md" fullWidth>
+        <DialogTitle>Bekleyen Deneme Dersleri ({trialLessons.length})</DialogTitle>
+        <DialogContent>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Tarih/Saat</TableCell>
+                  <TableCell>Ogrenci</TableCell>
+                  <TableCell>Ders</TableCell>
+                  <TableCell>Telefon</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {trialLessons.map((trial) => (
+                  <TableRow key={trial._id} hover>
+                    <TableCell>{new Date(trial.scheduledDate).toLocaleDateString('tr-TR')} {trial.scheduledTime}</TableCell>
+                    <TableCell>{trial.firstName} {trial.lastName}</TableCell>
+                    <TableCell>{trial.course?.name}</TableCell>
+                    <TableCell>{trial.phone}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setTrialLessonsDialog({ open: false })}>Kapat</Button></DialogActions>
+      </Dialog>
+
+      {/* Instructor Debts Dialog */}
+      <Dialog open={instructorDebtsDialog.open} onClose={() => setInstructorDebtsDialog({ open: false })} maxWidth="sm" fullWidth>
+        <DialogTitle>Egitmen Borclari</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2, p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
+            <Typography variant="h5" color="warning.dark">Toplam Borc: {instructorDebts.total.toLocaleString('tr-TR')} TL</Typography>
+          </Box>
+          <List>
+            {instructorDebts.instructors.map((inst) => (
+              <ListItem key={inst._id} button onClick={() => { setInstructorDebtsDialog({ open: false }); navigate(`/instructors/${inst._id}`); }}>
+                <ListItemText primary={`${inst.firstName} ${inst.lastName}`} secondary={inst.phone} />
+                <Typography variant="h6" color="warning.main">{(inst.balance || 0).toLocaleString('tr-TR')} TL</Typography>
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setInstructorDebtsDialog({ open: false })}>Kapat</Button></DialogActions>
+      </Dialog>
+
+      {/* Students Dialog */}
+      <Dialog open={studentsDialog.open} onClose={() => setStudentsDialog({ open: false, students: [] })} maxWidth="md" fullWidth>
+        <DialogTitle>Ogrenci Listesi ({studentsDialog.students.length})</DialogTitle>
+        <DialogContent>
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Ogrenci</TableCell>
+                  <TableCell>Telefon</TableCell>
+                  <TableCell>Durum</TableCell>
+                  <TableCell align="right">Islem</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {studentsDialog.students.map((student) => (
                   <TableRow key={student._id} hover>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {student.firstName} {student.lastName}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {student.phone || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {student.status === 'active' ? (
-                        <Chip label="Kayıtlı" color="success" size="small" />
-                      ) : student.status === 'passive' ? (
-                        <Chip label="Pasif" color="default" size="small" />
-                      ) : (
-                        <Chip label="Deneme" color="info" size="small" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {getDiscountBadge(student) || <Typography variant="caption" color="text.secondary">-</Typography>}
-                    </TableCell>
-                    {canSeePayments && (
-                      <TableCell>
-                        <Typography
-                          variant="body2"
-                          color={student.balance > 0 ? 'error.main' : 'success.main'}
-                        >
-                          {student.balance > 0 ? '-' : ''}₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
-                        </Typography>
-                      </TableCell>
-                    )}
+                    <TableCell>{student.firstName} {student.lastName}</TableCell>
+                    <TableCell>{student.phone || '-'}</TableCell>
+                    <TableCell><Chip size="small" color={student.status === 'active' ? 'success' : 'default'} label={student.status === 'active' ? 'Aktif' : 'Pasif'} /></TableCell>
                     <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          setStudentsDialog({ open: false, students: [] });
-                          navigate(`/students/${student._id}`);
-                        }}
-                        color="primary"
-                      >
-                        <Visibility />
-                      </IconButton>
+                      <IconButton size="small" onClick={() => { setStudentsDialog({ open: false, students: [] }); navigate(`/students/${student._id}`); }}><Visibility /></IconButton>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1020,91 +967,42 @@ const Dashboard = () => {
             </Table>
           </TableContainer>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setStudentsDialog({ open: false, students: [] })}>Kapat</Button>
-          <Button
-            variant="contained"
-            onClick={() => {
-              setStudentsDialog({ open: false, students: [] });
-              navigate('/students');
-            }}
-          >
-            Tüm Öğrencileri Gör
-          </Button>
-        </DialogActions>
+        <DialogActions><Button onClick={() => setStudentsDialog({ open: false, students: [] })}>Kapat</Button></DialogActions>
       </Dialog>
 
-      {/* Expected Payments Detail Dialog */}
-      <Dialog
-        open={paymentsDetailDialog.open}
-        onClose={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">{paymentsDetailDialog.title} ({paymentsDetailDialog.payments.length})</Typography>
-          <IconButton onClick={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}>
-            <Close />
-          </IconButton>
-        </DialogTitle>
+      {/* Payments Detail Dialog */}
+      <Dialog open={paymentsDetailDialog.open} onClose={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })} maxWidth="md" fullWidth>
+        <DialogTitle>{paymentsDetailDialog.title} ({paymentsDetailDialog.payments.length})</DialogTitle>
         <DialogContent>
           <Box sx={{ mb: 2, p: 2, bgcolor: paymentsDetailDialog.type === 'overdue' ? 'error.light' : 'info.light', borderRadius: 1 }}>
-            <Typography variant="h6">
-              Toplam: ₺{paymentsDetailDialog.payments.reduce((sum, p) => sum + p.amount, 0).toLocaleString('tr-TR')}
-            </Typography>
+            <Typography variant="h6">Toplam: {paymentsDetailDialog.payments.reduce((s, p) => s + p.amount, 0).toLocaleString('tr-TR')} TL</Typography>
           </Box>
-
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Öğrenci</TableCell>
+                  <TableCell>Ogrenci</TableCell>
                   <TableCell>Ders</TableCell>
-                  <TableCell>Taksit No</TableCell>
-                  <TableCell>Vade Tarihi</TableCell>
+                  <TableCell>Taksit</TableCell>
+                  <TableCell>Vade</TableCell>
                   <TableCell align="right">Tutar</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {paymentsDetailDialog.payments.map((payment, index) => (
-                  <TableRow key={index} hover>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {payment.student?.firstName} {payment.student?.lastName}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {payment.course?.name || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={`${payment.installmentNumber}. Taksit`} size="small" />
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color={paymentsDetailDialog.type === 'overdue' ? 'error.main' : 'text.primary'}
-                      >
-                        {payment.dueDate ? new Date(payment.dueDate).toLocaleDateString('tr-TR') : '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Typography variant="body2" fontWeight="bold">
-                        ₺{payment.amount?.toLocaleString('tr-TR')}
-                      </Typography>
-                    </TableCell>
+                {paymentsDetailDialog.payments.map((payment, idx) => (
+                  <TableRow key={idx} hover>
+                    <TableCell>{payment.student?.firstName} {payment.student?.lastName}</TableCell>
+                    <TableCell>{payment.course?.name}</TableCell>
+                    <TableCell><Chip size="small" label={`${payment.installmentNumber}. Taksit`} /></TableCell>
+                    <TableCell>{new Date(payment.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                    <TableCell align="right">{payment.amount?.toLocaleString('tr-TR')} TL</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}>
-            Kapat
-          </Button>
-        </DialogActions>
+        <DialogActions><Button onClick={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}>Kapat</Button></DialogActions>
       </Dialog>
     </Box>
   );
