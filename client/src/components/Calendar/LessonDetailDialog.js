@@ -34,6 +34,9 @@ import {
   CheckCircle,
   Cancel,
   Schedule,
+  Add,
+  PersonAdd,
+  RemoveCircle,
 } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import api from '../../api';
@@ -48,6 +51,8 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   const [instructors, setInstructors] = useState([]);
   const [selectedInstructor, setSelectedInstructor] = useState('');
   const [instructorConfirmed, setInstructorConfirmed] = useState(false);
+  // Additional instructors (max 2)
+  const [additionalInstructors, setAdditionalInstructors] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [status, setStatus] = useState('scheduled');
   const [saving, setSaving] = useState(false);
@@ -69,6 +74,8 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       setStatus(lessonRes.data.status);
       setSelectedInstructor(lessonRes.data.instructor?._id || '');
       setInstructorConfirmed(lessonRes.data.instructorConfirmed || false);
+      // Load additional instructors
+      setAdditionalInstructors(lessonRes.data.additionalInstructors || []);
 
       // Get enrolled students for this course
       const enrollmentsRes = await api.get('/enrollments', {
@@ -112,8 +119,12 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   const handleStatusChange = async (newStatus) => {
     // If completing lesson, check instructor confirmation first
     if (newStatus === 'completed') {
+      if (!selectedInstructor) {
+        alert('Dersi tamamlamak için bir eğitmen seçmelisiniz!');
+        return;
+      }
       if (!instructorConfirmed) {
-        alert('Dersi tamamlamak için önce eğitmen onayı vermelisiniz!');
+        alert('Dersi tamamlamak için ana eğitmenin derse girdiğini onaylamalısınız!');
         return;
       }
 
@@ -162,32 +173,147 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     }
   };
 
+  // Additional instructors management
+  const handleAddAdditionalInstructor = async () => {
+    if (additionalInstructors.length >= 2) {
+      alert('En fazla 2 ek eğitmen ekleyebilirsiniz!');
+      return;
+    }
+    // Add empty slot
+    const newAdditional = {
+      instructor: '',
+      confirmed: false,
+      paymentCalculated: false,
+      paymentAmount: 0
+    };
+    setAdditionalInstructors([...additionalInstructors, newAdditional]);
+  };
+
+  const handleRemoveAdditionalInstructor = async (index) => {
+    const updated = additionalInstructors.filter((_, i) => i !== index);
+    try {
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        additionalInstructors: updated.filter(a => a.instructor), // Only save ones with instructor set
+        updatedBy: user?.username
+      });
+      setAdditionalInstructors(updated);
+      loadLessonDetails();
+      onUpdated();
+    } catch (error) {
+      alert('Ek eğitmen silinirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleAdditionalInstructorChange = async (index, instructorId) => {
+    const updated = [...additionalInstructors];
+    updated[index] = {
+      ...updated[index],
+      instructor: instructorId
+    };
+
+    // Only save if instructor is selected
+    if (instructorId) {
+      try {
+        await api.put(`/scheduled-lessons/${lesson._id}`, {
+          additionalInstructors: updated.filter(a => a.instructor),
+          updatedBy: user?.username
+        });
+        loadLessonDetails();
+        onUpdated();
+      } catch (error) {
+        alert('Ek eğitmen güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+      }
+    }
+    setAdditionalInstructors(updated);
+  };
+
+  const handleAdditionalInstructorConfirmation = async (index, confirmed) => {
+    const updated = [...additionalInstructors];
+    updated[index] = {
+      ...updated[index],
+      confirmed: confirmed
+    };
+
+    try {
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        additionalInstructors: updated.filter(a => a.instructor),
+        updatedBy: user?.username
+      });
+      setAdditionalInstructors(updated);
+      onUpdated();
+    } catch (error) {
+      alert('Ek eğitmen onayı güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Get available instructors (exclude already selected ones)
+  const getAvailableInstructors = (currentIndex = -1) => {
+    const selectedIds = [selectedInstructor];
+    additionalInstructors.forEach((ai, idx) => {
+      if (idx !== currentIndex && ai.instructor) {
+        const instructorId = typeof ai.instructor === 'object' ? ai.instructor._id : ai.instructor;
+        selectedIds.push(instructorId);
+      }
+    });
+    return instructors.filter(i => !selectedIds.includes(i._id));
+  };
+
   const handleCompleteLesson = async (completionData) => {
     try {
+      // Prepare additional instructors data with payments
+      const updatedAdditionalInstructors = (completionData.additionalInstructorPayments || []).map((payment, index) => ({
+        instructor: additionalInstructors[index]?.instructor?._id || additionalInstructors[index]?.instructor,
+        confirmed: additionalInstructors[index]?.confirmed || false,
+        paymentCalculated: true,
+        paymentAmount: payment,
+        paymentPaid: false
+      })).filter(ai => ai.instructor);
+
       // Update lesson status and actual duration
       await api.put(`/scheduled-lessons/${lesson._id}`, {
         status: 'completed',
         actualDuration: completionData.actualDuration,
         instructorPaymentCalculated: true,
         instructorPaymentAmount: completionData.paymentAmount,
+        additionalInstructors: updatedAdditionalInstructors,
         updatedBy: user?.username
       });
 
-      // Get instructor details for balance update
+      // Update primary instructor balance (add unpaid debt)
       const currentInstructor = instructors.find(i => i._id === selectedInstructor);
       if (currentInstructor) {
-        // Update instructor balance (add unpaid debt)
         await api.put(`/instructors/${selectedInstructor}`, {
-          balance: currentInstructor.balance + completionData.paymentAmount,
+          balance: (currentInstructor.balance || 0) + completionData.paymentAmount,
           updatedBy: user?.username
         });
+      }
+
+      // Update additional instructors' balances
+      let totalAdditionalPayment = 0;
+      for (let i = 0; i < (completionData.additionalInstructorPayments || []).length; i++) {
+        const payment = completionData.additionalInstructorPayments[i];
+        if (payment > 0 && additionalInstructors[i]?.instructor) {
+          const instructorId = additionalInstructors[i].instructor._id || additionalInstructors[i].instructor;
+          const instructor = instructors.find(inst => inst._id === instructorId);
+          if (instructor) {
+            await api.put(`/instructors/${instructorId}`, {
+              balance: (instructor.balance || 0) + payment,
+              updatedBy: user?.username
+            });
+            totalAdditionalPayment += payment;
+          }
+        }
       }
 
       // NOTE: Expense record will be created when payment is made from InstructorDetail page
       // This keeps lessons as unpaid until manually paid
 
       setStatus('completed');
-      alert(`Ders tamamlandı! Eğitmene ₺${completionData.paymentAmount.toFixed(2)} borç olarak kaydedildi.\nÖdeme yapmak için eğitmen detay sayfasına gidin.`);
+      const totalPayment = completionData.paymentAmount + totalAdditionalPayment;
+      const additionalInfo = totalAdditionalPayment > 0
+        ? `\n(Ana eğitmen: ₺${completionData.paymentAmount.toFixed(2)}, Ek eğitmenler: ₺${totalAdditionalPayment.toFixed(2)})`
+        : '';
+      alert(`Ders tamamlandı! Toplam ₺${totalPayment.toFixed(2)} borç olarak kaydedildi.${additionalInfo}\nÖdeme yapmak için eğitmen detay sayfasına gidin.`);
       loadLessonDetails();
       onUpdated();
     } catch (error) {
@@ -423,7 +549,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
                   </Grid>
                   <Grid item xs={12}>
                     <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Eğitmen
+                      Ana Eğitmen
                     </Typography>
                     <FormControl fullWidth size="small">
                       <Select
@@ -450,12 +576,93 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
                           disabled={!selectedInstructor}
                         />
                       }
-                      label="Eğitmen derse girdi (onaylandı)"
+                      label="Ana eğitmen derse girdi (onaylandı)"
                     />
-                    {!instructorConfirmed && (
+                    {!instructorConfirmed && selectedInstructor && (
                       <Alert severity="warning" sx={{ mt: 1 }}>
-                        Dersi tamamlamak için eğitmen onayı gereklidir
+                        Dersi tamamlamak için ana eğitmen onayı gereklidir
                       </Alert>
+                    )}
+                  </Grid>
+
+                  {/* Additional Instructors Section */}
+                  <Grid item xs={12}>
+                    <Divider sx={{ my: 1 }} />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        Ek Eğitmenler (Opsiyonel)
+                      </Typography>
+                      {additionalInstructors.length < 2 && (
+                        <Button
+                          size="small"
+                          startIcon={<PersonAdd />}
+                          onClick={handleAddAdditionalInstructor}
+                          disabled={!selectedInstructor}
+                        >
+                          Ek Eğitmen Ekle
+                        </Button>
+                      )}
+                    </Box>
+
+                    {additionalInstructors.map((ai, index) => {
+                      const instructorId = ai.instructor?._id || ai.instructor;
+                      return (
+                        <Box key={index} sx={{ mb: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                            <Typography variant="subtitle2" color="primary">
+                              {index + 2}. Eğitmen
+                            </Typography>
+                            <Box sx={{ flex: 1 }} />
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => handleRemoveAdditionalInstructor(index)}
+                            >
+                              <RemoveCircle fontSize="small" />
+                            </IconButton>
+                          </Box>
+                          <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+                            <Select
+                              value={instructorId || ''}
+                              onChange={(e) => handleAdditionalInstructorChange(index, e.target.value)}
+                              displayEmpty
+                            >
+                              <MenuItem value="">
+                                <em>Eğitmen Seçin</em>
+                              </MenuItem>
+                              {getAvailableInstructors(index).map((instructor) => (
+                                <MenuItem key={instructor._id} value={instructor._id}>
+                                  {instructor.firstName} {instructor.lastName}
+                                </MenuItem>
+                              ))}
+                              {/* Also show current selection if any */}
+                              {instructorId && !getAvailableInstructors(index).find(i => i._id === instructorId) && (
+                                <MenuItem value={instructorId}>
+                                  {ai.instructor?.firstName} {ai.instructor?.lastName}
+                                </MenuItem>
+                              )}
+                            </Select>
+                          </FormControl>
+                          {instructorId && (
+                            <FormControlLabel
+                              control={
+                                <Checkbox
+                                  checked={ai.confirmed || false}
+                                  onChange={(e) => handleAdditionalInstructorConfirmation(index, e.target.checked)}
+                                  size="small"
+                                />
+                              }
+                              label="Bu eğitmen derse girdi"
+                            />
+                          )}
+                        </Box>
+                      );
+                    })}
+
+                    {additionalInstructors.length === 0 && selectedInstructor && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', py: 1 }}>
+                        Bu derse ek eğitmen atanmadı. Gerekirse yukarıdaki butona tıklayarak ekleyebilirsiniz.
+                      </Typography>
                     )}
                   </Grid>
                   <Grid item xs={12} sm={6}>
@@ -662,6 +869,10 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
         onClose={() => setCompleteLessonOpen(false)}
         lesson={lessonData}
         instructor={instructors.find(i => i._id === selectedInstructor)}
+        additionalInstructors={additionalInstructors.filter(ai => ai.instructor && ai.confirmed).map(ai => {
+          const instructorId = ai.instructor?._id || ai.instructor;
+          return instructors.find(i => i._id === instructorId);
+        }).filter(Boolean)}
         onComplete={handleCompleteLesson}
       />
     </Dialog>

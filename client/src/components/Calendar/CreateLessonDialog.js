@@ -244,16 +244,15 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
             />
           </Grid>
 
-          {/* Notes */}
+          {/* Description - shown in calendar */}
           <Grid item xs={12}>
             <TextField
               fullWidth
-              multiline
-              rows={2}
-              label="Notlar (Opsiyonel)"
+              label="Açıklama (Takvimde Görünür)"
               value={formData.notes}
               onChange={(e) => handleChange('notes', e.target.value)}
-              placeholder="Bu dersle ilgili notlar..."
+              placeholder="Örn: Ahmet Yılmaz - Birebir Ders"
+              helperText="Bu açıklama takvimde ders kutucuğunda görünecektir (ör: öğrenci adı)"
             />
           </Grid>
         </Grid>

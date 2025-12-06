@@ -34,6 +34,7 @@ const PUBLIC_HOLIDAYS = [
  * @param {String} params.seasonId - Season ID
  * @param {String} params.institutionId - Institution ID
  * @param {Boolean} params.skipHolidays - Skip public holidays (default: true)
+ * @param {String} params.notes - Description/notes for all generated lessons (shown in calendar)
  * @param {String} params.createdBy - User who created the schedule
  */
 const generateSchedule = async (params) => {
@@ -49,6 +50,7 @@ const generateSchedule = async (params) => {
     seasonId,
     institutionId,
     skipHolidays = true,
+    notes,
     createdBy
   } = params;
 
@@ -144,7 +146,7 @@ const generateSchedule = async (params) => {
       season: seasonId,
       institution: institutionId,
       createdBy: createdBy,
-      notes: 'Otomatik program ile oluşturuldu'
+      notes: notes || ''
     });
 
     await lesson.save();

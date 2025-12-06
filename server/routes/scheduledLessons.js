@@ -42,6 +42,7 @@ router.get('/', async (req, res) => {
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
       .populate('instructor', 'firstName lastName')
+      .populate('additionalInstructors.instructor', 'firstName lastName')
       .sort({ date: 1, startTime: 1 });
 
     res.json(scheduledLessons);
@@ -57,7 +58,8 @@ router.get('/:id', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
-      .populate('instructor', 'firstName lastName email phone');
+      .populate('instructor', 'firstName lastName email phone paymentType paymentAmount')
+      .populate('additionalInstructors.instructor', 'firstName lastName email phone paymentType paymentAmount');
 
     if (!scheduledLesson) {
       return res.status(404).json({ message: 'Planlanmış ders bulunamadı' });
@@ -89,7 +91,8 @@ router.post('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
-      .populate('instructor', 'firstName lastName');
+      .populate('instructor', 'firstName lastName')
+      .populate('additionalInstructors.instructor', 'firstName lastName');
 
     res.status(201).json(populatedScheduledLesson);
   } catch (error) {
@@ -107,7 +110,8 @@ router.put('/:id', async (req, res) => {
     ).populate('institution', 'name')
      .populate('season', 'name startDate endDate')
      .populate('course', 'name')
-     .populate('instructor', 'firstName lastName');
+     .populate('instructor', 'firstName lastName paymentType paymentAmount')
+     .populate('additionalInstructors.instructor', 'firstName lastName paymentType paymentAmount');
 
     if (!scheduledLesson) {
       return res.status(404).json({ message: 'Planlanmış ders bulunamadı' });
