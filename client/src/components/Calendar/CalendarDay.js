@@ -170,7 +170,7 @@ const CalendarDay = ({
                 },
                 transition: 'all 0.2s',
               }}
-              title={`${event.startTime}-${event.endTime} ${event.course?.name || 'Ders'}`}
+              title={`${event.startTime}-${event.endTime} ${event.course?.name || 'Ders'}${event.notes ? ` - ${event.notes}` : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (onLessonClick) onLessonClick(event);
@@ -180,7 +180,7 @@ const CalendarDay = ({
                 {event.startTime}-{event.endTime}
               </Box>
               <Box sx={{ fontSize: '0.65rem', mt: 0.3 }}>
-                {event.course?.name || 'Ders'}
+                {event.notes ? `${event.course?.name || 'Ders'} - ${event.notes}` : (event.course?.name || 'Ders')}
               </Box>
             </Box>
           )

@@ -140,6 +140,9 @@ const DayScheduleView = ({
       ? event.course?.name
       : null;
 
+    // For regular lessons, show notes/description if available
+    const lessonDescription = !event.isTrialLesson && event.notes ? event.notes : null;
+
     return (
       <Tooltip
         key={event._id || `${event.time}-${index}`}
@@ -151,6 +154,11 @@ const DayScheduleView = ({
             {courseName && (
               <Typography variant="caption" display="block">
                 {courseName}
+              </Typography>
+            )}
+            {lessonDescription && (
+              <Typography variant="caption" display="block" sx={{ fontStyle: 'italic' }}>
+                {lessonDescription}
               </Typography>
             )}
             <Typography variant="caption" display="block">
@@ -212,6 +220,21 @@ const DayScheduleView = ({
           >
             {event.isTrialLesson && '★ '}{eventName}
           </Typography>
+          {lessonDescription && !compact && height > 40 && (
+            <Typography
+              variant="caption"
+              sx={{
+                fontSize: '9px',
+                opacity: 0.9,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontStyle: 'italic',
+              }}
+            >
+              {lessonDescription}
+            </Typography>
+          )}
           {!compact && height > 30 && (
             <Typography
               variant="caption"

@@ -55,7 +55,8 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
     startTime: '10:00',
     endTime: '12:00',
     frequency: 'weekly',
-    skipHolidays: true
+    skipHolidays: true,
+    notes: ''
   });
   const [error, setError] = useState('');
   const [conflicts, setConflicts] = useState(null);
@@ -205,6 +206,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
         seasonId: season._id,
         institutionId: institution._id,
         skipHolidays: formData.skipHolidays,
+        notes: formData.notes,
         createdBy: currentUser?.username || user || 'System'
       });
 
@@ -232,7 +234,8 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
       startTime: '10:00',
       endTime: '12:00',
       frequency: 'weekly',
-      skipHolidays: true
+      skipHolidays: true,
+      notes: ''
     });
     setError('');
     setConflicts(null);
@@ -386,6 +389,18 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
                 />
               }
               label="Resmi tatilleri atla"
+            />
+          </Grid>
+
+          {/* Description - shown in calendar */}
+          <Grid item xs={12}>
+            <TextField
+              fullWidth
+              label="Açıklama (Takvimde Görünür)"
+              value={formData.notes}
+              onChange={(e) => handleChange('notes', e.target.value)}
+              placeholder="Örn: Ahmet Yılmaz - Birebir Diksiyon"
+              helperText="Bu açıklama oluşturulan tüm derslerin takvim kutucuğunda görünecektir (ör: öğrenci adı)"
             />
           </Grid>
 
