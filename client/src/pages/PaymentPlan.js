@@ -346,7 +346,19 @@ const PaymentPlan = () => {
   // Handle installment invoiced change
   const handleInstallmentInvoicedChange = (index, isInvoiced) => {
     const updated = [...installmentDetails];
-    updated[index] = { ...updated[index], isInvoiced };
+    updated[index] = {
+      ...updated[index],
+      isInvoiced,
+      // Set default VAT rate from settings when invoiced is enabled
+      customVatRate: isInvoiced ? (updated[index].customVatRate || settings?.vatRate || 10) : undefined
+    };
+    setInstallmentDetails(updated);
+  };
+
+  // Handle installment VAT rate change
+  const handleInstallmentVatRateChange = (index, rate) => {
+    const updated = [...installmentDetails];
+    updated[index] = { ...updated[index], customVatRate: parseFloat(rate) || 0 };
     setInstallmentDetails(updated);
   };
 
@@ -401,7 +413,8 @@ const PaymentPlan = () => {
       const total = inst.amount + commission;
 
       // VAT is calculated for expense tracking only, not added to student's payment
-      const vatRate = getVatRate();
+      // Use custom VAT rate if set, otherwise use settings rate
+      const vatRate = inst.customVatRate !== undefined ? inst.customVatRate : getVatRate();
       const vat = inst.isInvoiced ? (total * vatRate) / 100 : 0;
 
       return {
@@ -986,7 +999,7 @@ const PaymentPlan = () => {
                         )}
 
                         {/* Faturalı Checkbox */}
-                        <Grid item xs={inst.paymentMethod === 'creditCard' ? 12 : 6}>
+                        <Grid item xs={inst.paymentMethod === 'creditCard' ? 6 : 6}>
                           <FormControlLabel
                             control={
                               <Checkbox
@@ -998,6 +1011,23 @@ const PaymentPlan = () => {
                             label={<Typography variant="body2">Faturalı</Typography>}
                           />
                         </Grid>
+
+                        {/* KDV Rate Input - only show when invoiced */}
+                        {inst.isInvoiced && (
+                          <Grid item xs={6}>
+                            <TextField
+                              fullWidth
+                              size="small"
+                              label="KDV (%)"
+                              type="number"
+                              value={inst.customVatRate !== undefined ? inst.customVatRate : (settings?.vatRate || 10)}
+                              onChange={(e) => handleInstallmentVatRateChange(index, e.target.value)}
+                              inputProps={{ min: 0, max: 100, step: 0.1 }}
+                              sx={{ '& input': { fontSize: '0.85rem' } }}
+                              helperText={`Varsayılan: %${settings?.vatRate || 10}`}
+                            />
+                          </Grid>
+                        )}
                       </Grid>
 
                       {/* Komisyon Detayı */}
