@@ -37,9 +37,8 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
     cashRegisterId: '',
     isInvoiced: false,
     paymentDate: new Date(),
+    customVatRate: '', // Custom VAT rate input
   });
-  const [vatRate, setVatRate] = useState(null);
-  const [rateDialog, setRateDialog] = useState(false);
   const [error, setError] = useState('');
   const [overpaymentOption, setOverpaymentOption] = useState('next'); // 'next' or 'distribute'
 
@@ -54,10 +53,11 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
         cashRegisterId: cashRegisters.length > 0 ? cashRegisters[0]._id : '',
         isInvoiced: installment.isInvoiced || false,
         paymentDate: new Date(),
+        customVatRate: settings?.vatRate?.toString() || '10', // Default from settings
       });
       setOverpaymentOption('next');
     }
-  }, [installment, cashRegisters]);
+  }, [installment, cashRegisters, settings]);
 
   // Calculate overpayment and remaining installments
   const overpaymentInfo = useMemo(() => {
@@ -117,16 +117,16 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
       return;
     }
 
-    // Check for VAT rate if invoiced and NOT pre-configured
+    // Validate VAT rate if invoiced and NOT pre-configured
     if (formData.isInvoiced && !hasPreConfiguredVat) {
-      const rate = settings?.vatRate;
-      if (rate === undefined || rate === null) {
-        setRateDialog(true);
+      const rate = parseFloat(formData.customVatRate);
+      if (isNaN(rate) || rate < 0 || rate > 100) {
+        setError('Lütfen geçerli bir KDV oranı girin (0-100 arası)');
         return;
       }
     }
 
-    const finalVatRate = vatRate !== null ? vatRate : (settings?.vatRate || 10);
+    const finalVatRate = parseFloat(formData.customVatRate) || 10;
 
     onSubmit({
       installmentNumber: installment.installmentNumber,
@@ -150,21 +150,11 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
     setError('');
   };
 
-  const handleRateDialogSubmit = () => {
-    const rate = parseFloat(vatRate);
-    if (isNaN(rate) || rate < 0 || rate > 100) {
-      setError('Lütfen geçerli bir KDV oranı girin (0-100 arası)');
-      return;
-    }
-    setRateDialog(false);
-    // Submit after rate is set
-    setTimeout(() => handleSubmit(), 100);
-  };
-
   const amount = parseFloat(formData.amount) || 0;
+  const currentVatRate = parseFloat(formData.customVatRate) || 10;
   // Only calculate new VAT if not pre-configured
   const calculatedVat = (formData.isInvoiced && !hasPreConfiguredVat)
-    ? (amount * (vatRate !== null ? vatRate : (settings?.vatRate || 10))) / 100
+    ? (amount * currentVatRate) / 100
     : 0;
 
   return (
@@ -232,10 +222,26 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
                 }
                 label={hasPreConfiguredVat
                   ? `Faturalı (KDV dahil: ₺${installment?.vat?.toLocaleString('tr-TR')})`
-                  : `Faturalı (KDV %${vatRate !== null ? vatRate : (settings?.vatRate || 10)})`
+                  : 'Faturalı'
                 }
               />
             </Grid>
+
+            {/* Editable VAT Rate - only show when invoiced and not pre-configured */}
+            {formData.isInvoiced && !hasPreConfiguredVat && (
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="KDV Oranı (%)"
+                  type="number"
+                  value={formData.customVatRate}
+                  onChange={(e) => setFormData({ ...formData, customVatRate: e.target.value })}
+                  inputProps={{ min: 0, max: 100, step: 0.1 }}
+                  helperText={`Varsayılan: %${settings?.vatRate || 10}`}
+                  size="small"
+                />
+              </Grid>
+            )}
 
             {/* Show pre-configured payment info if exists */}
             {(hasPreConfiguredVat || hasPreConfiguredCommission) && (
@@ -280,7 +286,7 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
                     Ödeme: ₺{amount.toLocaleString('tr-TR')}
                   </Typography>
                   <Typography variant="body2" color="error.main">
-                    KDV (%{vatRate !== null ? vatRate : (settings?.vatRate || 10)}): ₺{calculatedVat.toLocaleString('tr-TR')}
+                    KDV (%{currentVatRate}): ₺{calculatedVat.toLocaleString('tr-TR')}
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
                     (KDV gider olarak kaydedilecek ve kasadan düşülecektir)
@@ -399,31 +405,6 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
         </DialogActions>
       </Dialog>
 
-      {/* VAT Rate Dialog */}
-      <Dialog open={rateDialog} onClose={() => setRateDialog(false)}>
-        <DialogTitle>KDV Oranı Tanımlı Değil</DialogTitle>
-        <DialogContent>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            KDV oranı ayarlarda tanımlanmamış. Lütfen bu ödeme için kullanılacak KDV oranını girin.
-          </Alert>
-          <TextField
-            autoFocus
-            fullWidth
-            label="KDV Oranı (%)"
-            type="number"
-            value={vatRate || ''}
-            onChange={(e) => setVatRate(e.target.value)}
-            inputProps={{ min: 0, max: 100, step: 0.1 }}
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRateDialog(false)}>İptal</Button>
-          <Button onClick={handleRateDialogSubmit} variant="contained">
-            Devam Et
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   );
 };
