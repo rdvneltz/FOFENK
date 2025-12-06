@@ -3,14 +3,21 @@ import {
   Box,
   Paper,
   Typography,
-  IconButton,
   Chip,
 } from '@mui/material';
-import { ChevronLeft, ChevronRight, Today } from '@mui/icons-material';
 import DayScheduleView from './DayScheduleView';
 import DayDetailDialog from './DayDetailDialog';
 import CreateTrialLessonDialog from './CreateTrialLessonDialog';
 import TrialLessonDetailDialog from './TrialLessonDetailDialog';
+
+// Helper to get local date string (YYYY-MM-DD) without timezone issues
+const getLocalDateStr = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const WeeklyCalendarView = ({
   currentDate,
@@ -28,13 +35,16 @@ const WeeklyCalendarView = ({
   // Get the week's dates (Monday to Sunday)
   const weekDates = useMemo(() => {
     const date = new Date(currentDate);
+    date.setHours(12, 0, 0, 0); // Normalize to noon to avoid DST issues
     const day = date.getDay();
     const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Monday start
-    const monday = new Date(date.setDate(diff));
+    const monday = new Date(date);
+    monday.setDate(diff);
 
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
       d.setDate(monday.getDate() + i);
+      d.setHours(12, 0, 0, 0);
       return d;
     });
   }, [currentDate]);
@@ -44,7 +54,7 @@ const WeeklyCalendarView = ({
     const result = {};
 
     weekDates.forEach(date => {
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = getLocalDateStr(date);
       result[dateStr] = {
         lessons: [],
         trialLessons: [],
@@ -52,16 +62,14 @@ const WeeklyCalendarView = ({
     });
 
     lessons.forEach(lesson => {
-      const lessonDate = new Date(lesson.date);
-      const dateStr = lessonDate.toISOString().split('T')[0];
+      const dateStr = getLocalDateStr(lesson.date);
       if (result[dateStr]) {
         result[dateStr].lessons.push(lesson);
       }
     });
 
     trialLessons.forEach(trial => {
-      const trialDate = new Date(trial.scheduledDate);
-      const dateStr = trialDate.toISOString().split('T')[0];
+      const dateStr = getLocalDateStr(trial.scheduledDate);
       if (result[dateStr]) {
         result[dateStr].trialLessons.push(trial);
       }
@@ -69,22 +77,6 @@ const WeeklyCalendarView = ({
 
     return result;
   }, [weekDates, lessons, trialLessons]);
-
-  const handlePrevWeek = () => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() - 7);
-    onWeekChange?.(newDate);
-  };
-
-  const handleNextWeek = () => {
-    const newDate = new Date(currentDate);
-    newDate.setDate(newDate.getDate() + 7);
-    onWeekChange?.(newDate);
-  };
-
-  const handleToday = () => {
-    onWeekChange?.(new Date());
-  };
 
   const handleDayClick = (date) => {
     setSelectedDay(date);
@@ -119,66 +111,30 @@ const WeeklyCalendarView = ({
     );
   };
 
-  const formatWeekRange = () => {
-    const start = weekDates[0];
-    const end = weekDates[6];
-    const startStr = start.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
-    const endStr = end.toLocaleDateString('tr-TR', { day: 'numeric', month: 'short', year: 'numeric' });
-    return `${startStr} - ${endStr}`;
-  };
-
-  const getDayName = (date) => {
-    return date.toLocaleDateString('tr-TR', { weekday: 'short' });
+  const getDayNameShort = (date) => {
+    const days = ['Paz', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt'];
+    return days[date.getDay()];
   };
 
   return (
     <>
       <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        {/* Header */}
-        <Paper sx={{ p: 2, mb: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <IconButton onClick={handlePrevWeek}>
-                <ChevronLeft />
-              </IconButton>
-              <Typography variant="h6" sx={{ minWidth: '220px', textAlign: 'center' }}>
-                {formatWeekRange()}
-              </Typography>
-              <IconButton onClick={handleNextWeek}>
-                <ChevronRight />
-              </IconButton>
-              <IconButton onClick={handleToday} color="primary" title="Bugün">
-                <Today />
-              </IconButton>
-            </Box>
-
-            {/* Legend */}
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <Typography variant="caption" color="text.secondary">Renk:</Typography>
-              <Chip size="small" label="Ders" sx={{ bgcolor: '#2196f3', color: 'white', height: 20, fontSize: 10 }} />
-              <Chip size="small" label="Deneme" sx={{ bgcolor: '#ff9800', color: 'white', height: 20, fontSize: 10 }} />
-              <Chip size="small" label="Tamamlandı" sx={{ bgcolor: '#4caf50', color: 'white', height: 20, fontSize: 10 }} />
-              <Chip size="small" label="Kayıt" sx={{ bgcolor: '#9c27b0', color: 'white', height: 20, fontSize: 10 }} />
-            </Box>
-          </Box>
-        </Paper>
-
-        {/* Week Grid */}
+        {/* Week Grid - No separate header, uses parent's header */}
         <Paper sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           {/* Time column */}
           <Box
             sx={{
-              width: '60px',
+              width: '50px',
               flexShrink: 0,
               borderRight: '1px solid',
               borderColor: 'divider',
               bgcolor: 'grey.50',
             }}
           >
-            {/* Empty header cell */}
+            {/* Empty header cell - matches day header height */}
             <Box
               sx={{
-                height: '48px',
+                height: '40px',
                 borderBottom: '1px solid',
                 borderColor: 'divider',
               }}
@@ -189,7 +145,7 @@ const WeeklyCalendarView = ({
           {/* Days */}
           <Box sx={{ flex: 1, display: 'flex', overflow: 'auto' }}>
             {weekDates.map((date, index) => {
-              const dateStr = date.toISOString().split('T')[0];
+              const dateStr = getLocalDateStr(date);
               const dayEvents = eventsByDay[dateStr] || { lessons: [], trialLessons: [] };
               const eventCount = dayEvents.lessons.length + dayEvents.trialLessons.length;
 
@@ -198,18 +154,18 @@ const WeeklyCalendarView = ({
                   key={dateStr}
                   sx={{
                     flex: 1,
-                    minWidth: '120px',
+                    minWidth: '100px',
                     borderRight: index < 6 ? '1px solid' : 'none',
                     borderColor: 'divider',
                     display: 'flex',
                     flexDirection: 'column',
                   }}
                 >
-                  {/* Day header */}
+                  {/* Day header - compact layout */}
                   <Box
                     onClick={() => handleDayClick(date)}
                     sx={{
-                      height: '48px',
+                      height: '40px',
                       borderBottom: '1px solid',
                       borderColor: 'divider',
                       display: 'flex',
@@ -217,40 +173,37 @@ const WeeklyCalendarView = ({
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
-                      bgcolor: isToday(date) ? 'primary.light' : 'grey.50',
+                      bgcolor: isToday(date) ? 'primary.main' : 'grey.50',
                       color: isToday(date) ? 'white' : 'inherit',
                       '&:hover': {
-                        bgcolor: isToday(date) ? 'primary.main' : 'grey.200',
+                        bgcolor: isToday(date) ? 'primary.dark' : 'grey.200',
                       },
+                      py: 0.5,
                     }}
                   >
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        fontWeight: isToday(date) ? 'bold' : 'normal',
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {getDayName(date)}
-                    </Typography>
+                    {/* Day name and date on same line: "Per. 4" */}
                     <Typography
                       variant="body2"
-                      sx={{ fontWeight: isToday(date) ? 'bold' : 'normal' }}
+                      sx={{
+                        fontWeight: isToday(date) ? 'bold' : 500,
+                        fontSize: '0.85rem',
+                      }}
                     >
-                      {date.getDate()}
+                      {getDayNameShort(date)}. {date.getDate()}
                     </Typography>
+                    {/* Event count below */}
                     {eventCount > 0 && (
-                      <Chip
-                        label={eventCount}
-                        size="small"
+                      <Typography
+                        variant="caption"
                         sx={{
-                          height: 16,
-                          fontSize: 10,
-                          mt: 0.5,
-                          bgcolor: isToday(date) ? 'white' : 'primary.main',
-                          color: isToday(date) ? 'primary.main' : 'white',
+                          fontSize: '0.7rem',
+                          opacity: 0.85,
+                          color: isToday(date) ? 'white' : 'primary.main',
+                          fontWeight: 500,
                         }}
-                      />
+                      >
+                        {eventCount} ders
+                      </Typography>
                     )}
                   </Box>
 
@@ -277,8 +230,8 @@ const WeeklyCalendarView = ({
           open={dayDetailOpen}
           onClose={handleDayDetailClose}
           date={selectedDay}
-          lessons={eventsByDay[selectedDay.toISOString().split('T')[0]]?.lessons || []}
-          trialLessons={eventsByDay[selectedDay.toISOString().split('T')[0]]?.trialLessons || []}
+          lessons={eventsByDay[getLocalDateStr(selectedDay)]?.lessons || []}
+          trialLessons={eventsByDay[getLocalDateStr(selectedDay)]?.trialLessons || []}
           onDateChange={(newDate) => setSelectedDay(newDate)}
           onUpdated={handleUpdated}
         />
