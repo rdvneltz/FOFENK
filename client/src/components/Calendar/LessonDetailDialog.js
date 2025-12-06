@@ -42,6 +42,7 @@ import { useApp } from '../../context/AppContext';
 import api from '../../api';
 import LoadingSpinner from '../Common/LoadingSpinner';
 import CompleteLessonDialog from './CompleteLessonDialog';
+import EditLessonDialog from './EditLessonDialog';
 
 const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => {
   const { user, institution, season } = useApp();
@@ -57,6 +58,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   const [status, setStatus] = useState('scheduled');
   const [saving, setSaving] = useState(false);
   const [completeLessonOpen, setCompleteLessonOpen] = useState(false);
+  const [editLessonOpen, setEditLessonOpen] = useState(false);
 
   useEffect(() => {
     if (open && lesson) {
@@ -854,10 +856,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
         <Button
           startIcon={<Edit />}
           variant="outlined"
-          onClick={() => {
-            // TODO: Open edit dialog
-            alert('Düzenleme özelliği yakında eklenecek');
-          }}
+          onClick={() => setEditLessonOpen(true)}
         >
           Düzenle
         </Button>
@@ -874,6 +873,17 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
           return instructors.find(i => i._id === instructorId);
         }).filter(Boolean)}
         onComplete={handleCompleteLesson}
+      />
+
+      {/* Edit Lesson Dialog */}
+      <EditLessonDialog
+        open={editLessonOpen}
+        onClose={() => setEditLessonOpen(false)}
+        lesson={lessonData}
+        onSuccess={() => {
+          loadLessonDetails();
+          onUpdated();
+        }}
       />
     </Dialog>
   );

@@ -134,6 +134,87 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// Bulk update future lessons
+router.put('/bulk-update-future', async (req, res) => {
+  try {
+    const {
+      lessonId,
+      courseId,
+      fromDate,
+      originalDayOfWeek,
+      originalStartTime,
+      updates,
+      newDayOfWeek,
+      updatedBy
+    } = req.body;
+
+    // Find all future lessons for this course on the same day and time
+    const query = {
+      course: courseId,
+      date: { $gte: new Date(fromDate) },
+      status: 'scheduled'
+    };
+
+    // If originalStartTime is provided, filter by it
+    if (originalStartTime) {
+      query.startTime = originalStartTime;
+    }
+
+    let lessons = await ScheduledLesson.find(query);
+
+    // Filter by day of week if provided
+    if (originalDayOfWeek !== undefined && originalDayOfWeek !== null) {
+      lessons = lessons.filter(lesson => {
+        const lessonDate = new Date(lesson.date);
+        return lessonDate.getDay() === originalDayOfWeek;
+      });
+    }
+
+    // Update each lesson
+    let updatedCount = 0;
+    for (const lesson of lessons) {
+      const updateData = { ...updates, updatedBy };
+
+      // If changing day of week, calculate new date
+      if (newDayOfWeek !== null && newDayOfWeek !== undefined) {
+        const currentDate = new Date(lesson.date);
+        const currentDayOfWeek = currentDate.getDay();
+        let dayDiff = newDayOfWeek - currentDayOfWeek;
+
+        // Adjust for same week
+        if (dayDiff < 0) {
+          dayDiff += 7;
+        }
+
+        const newDate = new Date(currentDate);
+        newDate.setDate(currentDate.getDate() + dayDiff);
+        updateData.date = newDate;
+      }
+
+      await ScheduledLesson.findByIdAndUpdate(lesson._id, updateData);
+      updatedCount++;
+    }
+
+    // Log activity
+    await ActivityLog.create({
+      user: updatedBy || 'System',
+      action: 'bulk_update',
+      entity: 'ScheduledLesson',
+      description: `${updatedCount} planlanmış ders toplu güncellendi`,
+      details: { courseId, fromDate, updates }
+    });
+
+    res.json({
+      success: true,
+      message: `${updatedCount} ders başarıyla güncellendi`,
+      updatedCount
+    });
+  } catch (error) {
+    console.error('Bulk update error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Delete scheduled lesson
 router.delete('/:id', async (req, res) => {
   try {
