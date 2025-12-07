@@ -4,6 +4,7 @@ import { ThemeProvider, CssBaseline, Box, CircularProgress } from '@mui/material
 import { AppProvider, useApp } from './context/AppContext';
 import theme from './theme';
 import api from './api';
+import StartupScreen from './components/Common/StartupScreen';
 
 // Layout Components
 import Sidebar from './components/Layout/Sidebar';
@@ -154,8 +155,9 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AppProvider>
-        <Router>
+      <StartupScreen>
+        <AppProvider>
+          <Router>
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
@@ -203,8 +205,9 @@ function App() {
               }
             />
           </Routes>
-        </Router>
-      </AppProvider>
+          </Router>
+        </AppProvider>
+      </StartupScreen>
     </ThemeProvider>
   );
 }
