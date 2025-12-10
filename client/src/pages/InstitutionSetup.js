@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Container,
   Paper,
@@ -8,7 +8,11 @@ import {
   Grid,
   Alert,
   Box,
+  Avatar,
+  IconButton,
+  Divider,
 } from '@mui/material';
+import { CloudUpload, Delete, Business } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -17,8 +21,11 @@ import { formatPhoneNumber, unformatPhoneNumber } from '../utils/phoneFormatter'
 const InstitutionSetup = () => {
   const { institution, loadInitialData, currentUser } = useApp();
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const fileInputRef = useRef(null);
+  const [logoPreview, setLogoPreview] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     address: '',
@@ -40,8 +47,68 @@ const InstitutionSetup = () => {
         taxOffice: institution.taxOffice || '',
         website: institution.website || '',
       });
+      // Set logo preview if exists
+      if (institution.logo) {
+        const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+        setLogoPreview(`${baseUrl}/${institution.logo}`);
+      }
     }
   }, [institution]);
+
+  const handleLogoUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError('Lütfen bir resim dosyası seçin');
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Dosya boyutu 2MB\'dan küçük olmalıdır');
+      return;
+    }
+
+    setUploading(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+
+      const response = await api.post(`/institutions/${institution._id}/upload-logo`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      setLogoPreview(`${baseUrl}/${response.data.logo}`);
+      setSuccess('Logo başarıyla yüklendi');
+      await loadInitialData();
+    } catch (error) {
+      setError('Logo yüklenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!window.confirm('Logoyu silmek istediğinizden emin misiniz?')) return;
+
+    try {
+      await api.put(`/institutions/${institution._id}`, {
+        ...formData,
+        logo: '',
+        updatedBy: currentUser?.username,
+      });
+      setLogoPreview('');
+      setSuccess('Logo silindi');
+      await loadInitialData();
+    } catch (error) {
+      setError('Logo silinirken hata oluştu');
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -107,6 +174,78 @@ const InstitutionSetup = () => {
 
         <form onSubmit={handleSubmit}>
           <Grid container spacing={3}>
+            {/* Logo Upload Section */}
+            <Grid item xs={12}>
+              <Paper variant="outlined" sx={{ p: 3, textAlign: 'center', bgcolor: 'grey.50' }}>
+                <Typography variant="subtitle1" gutterBottom fontWeight="bold">
+                  Kurum Logosu
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Bu logo sol menüde kurum adı yerine görünecektir
+                </Typography>
+
+                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2 }}>
+                  {logoPreview ? (
+                    <Box sx={{ position: 'relative' }}>
+                      <Avatar
+                        src={logoPreview}
+                        variant="rounded"
+                        sx={{ width: 120, height: 120, border: '2px solid', borderColor: 'primary.main' }}
+                      />
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={handleRemoveLogo}
+                        sx={{
+                          position: 'absolute',
+                          top: -8,
+                          right: -8,
+                          bgcolor: 'white',
+                          boxShadow: 1,
+                          '&:hover': { bgcolor: 'error.light', color: 'white' }
+                        }}
+                      >
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ) : (
+                    <Avatar
+                      variant="rounded"
+                      sx={{ width: 120, height: 120, bgcolor: 'grey.300' }}
+                    >
+                      <Business sx={{ fontSize: 60, color: 'grey.500' }} />
+                    </Avatar>
+                  )}
+                </Box>
+
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleLogoUpload}
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                />
+
+                <Button
+                  variant="outlined"
+                  startIcon={<CloudUpload />}
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading || !institution}
+                  sx={{ mt: 2 }}
+                >
+                  {uploading ? 'Yükleniyor...' : 'Logo Yükle'}
+                </Button>
+
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
+                  PNG, JPG veya GIF - Maks. 2MB
+                </Typography>
+              </Paper>
+            </Grid>
+
+            <Grid item xs={12}>
+              <Divider sx={{ my: 1 }} />
+            </Grid>
+
             <Grid item xs={12}>
               <TextField
                 fullWidth

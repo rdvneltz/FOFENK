@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Drawer,
@@ -59,8 +59,17 @@ const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { status, lastChecked } = useServerHealth();
-  const { currentUser } = useApp();
+  const { currentUser, institution } = useApp();
   const [currentDateTime, setCurrentDateTime] = useState(new Date());
+
+  // Get logo URL if institution has logo
+  const logoUrl = useMemo(() => {
+    if (institution?.logo) {
+      const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      return `${baseUrl}/${institution.logo}`;
+    }
+    return null;
+  }, [institution]);
 
   // Check if user has permission (only superadmin bypasses permission checks)
   const hasPermission = (permission) => {
@@ -109,9 +118,26 @@ const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Toolbar>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-          <Typography variant="h6" noWrap component="div" sx={{ color: 'white', flexGrow: 1 }}>
-            FOFENK
-          </Typography>
+          {logoUrl ? (
+            <Box
+              component="img"
+              src={logoUrl}
+              alt={institution?.name || 'Logo'}
+              sx={{
+                height: 40,
+                maxWidth: 180,
+                objectFit: 'contain',
+                flexGrow: 1,
+              }}
+              onError={(e) => {
+                e.target.style.display = 'none';
+              }}
+            />
+          ) : (
+            <Typography variant="h6" noWrap component="div" sx={{ color: 'white', flexGrow: 1 }}>
+              {institution?.name || 'FOFENK'}
+            </Typography>
+          )}
           <ServerStatusIndicator status={status} lastChecked={lastChecked} />
         </Box>
       </Toolbar>
