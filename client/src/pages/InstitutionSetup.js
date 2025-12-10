@@ -49,7 +49,9 @@ const InstitutionSetup = () => {
       });
       // Set logo preview if exists
       if (institution.logo) {
-        const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+        // Remove /api from the URL since uploads are served from root
+        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+        const baseUrl = apiUrl.replace('/api', '');
         setLogoPreview(`${baseUrl}/${institution.logo}`);
       }
     }
@@ -82,7 +84,9 @@ const InstitutionSetup = () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      const baseUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+      // Remove /api from the URL since uploads are served from root
+      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+      const baseUrl = apiUrl.replace('/api', '');
       setLogoPreview(`${baseUrl}/${response.data.logo}`);
       setSuccess('Logo başarıyla yüklendi');
       await loadInitialData();

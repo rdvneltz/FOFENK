@@ -30,10 +30,16 @@ router.get('/', async (req, res) => {
         $lte: endOfMonth
       };
     } else if (startDate && endDate) {
-      // Date range filter
+      // Date range filter - parse dates as local dates with full day range
+      const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
+      const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
+
+      const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+      const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+
       filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
+        $gte: start,
+        $lte: end
       };
     }
 
