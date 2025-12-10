@@ -432,7 +432,7 @@ const Dashboard = () => {
   };
 
   // Send payment reminder via WhatsApp
-  const handleSendPaymentReminder = (payment) => {
+  const handleSendPaymentReminder = (payment, isOverdue = false) => {
     const student = payment.student;
     if (!student) return;
 
@@ -470,6 +470,11 @@ const Dashboard = () => {
 
     const studentName = `${student.firstName} ${student.lastName}`;
 
+    // Calculate overdue days if applicable
+    const dueDate = new Date(payment.dueDate);
+    const today = new Date();
+    const overdueDays = isOverdue ? Math.ceil((today - dueDate) / (1000 * 60 * 60 * 24)) : 0;
+
     // Prepare data for template variable replacement
     const templateData = {
       recipientName,
@@ -480,10 +485,13 @@ const Dashboard = () => {
       installmentNumber: payment.installmentNumber,
       totalInstallments: payment.totalInstallments || '?',
       institutionName: institution?.name || 'Kurum',
+      overdueDays,
     };
 
-    // Use paymentDueReminder template with variable replacement
-    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentDueReminder;
+    // Use paymentOverdue for overdue payments, paymentDueReminder for upcoming
+    const template = isOverdue
+      ? DEFAULT_WHATSAPP_TEMPLATES.paymentOverdue
+      : DEFAULT_WHATSAPP_TEMPLATES.paymentDueReminder;
     const message = replaceTemplateVariables(template, templateData);
 
     sendWhatsAppMessage(phone, message, {});
@@ -1121,8 +1129,8 @@ const Dashboard = () => {
                       <IconButton
                         size="small"
                         color="success"
-                        onClick={() => handleSendPaymentReminder(payment)}
-                        title="WhatsApp ile hatırlat"
+                        onClick={() => handleSendPaymentReminder(payment, paymentsDetailDialog.type === 'overdue')}
+                        title={paymentsDetailDialog.type === 'overdue' ? 'Gecikmiş ödeme bildirimi' : 'Ödeme hatırlatması'}
                       >
                         <Send fontSize="small" />
                       </IconButton>
