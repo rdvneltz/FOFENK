@@ -34,7 +34,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/material';
-import { ArrowBack, ExpandMore, ExpandLess, Edit, CreditCard, Money, Receipt } from '@mui/icons-material';
+import { ArrowBack, ExpandMore, ExpandLess, Edit, CreditCard, Money, Receipt, WhatsApp, Email } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -43,6 +43,8 @@ import { format, addMonths, addDays, addWeeks } from 'date-fns';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
+import EmailDialog from '../components/Email/EmailDialog';
 
 const PaymentPlan = () => {
   const { studentId } = useParams();
@@ -77,6 +79,13 @@ const PaymentPlan = () => {
   const [showLessonDetails, setShowLessonDetails] = useState(true);
   const [showPartialPricingDialog, setShowPartialPricingDialog] = useState(false);
   const [showInstallmentDetails, setShowInstallmentDetails] = useState(true);
+
+  // Notification dialog state after plan creation
+  const [successDialog, setSuccessDialog] = useState({
+    open: false,
+    planData: null
+  });
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
 
   // Installment details state - each installment can have custom settings
   const [installmentDetails, setInstallmentDetails] = useState([]);
@@ -499,14 +508,144 @@ const PaymentPlan = () => {
         cashRegister: hasCreditCard ? selectedCashRegister : undefined
       };
 
-      await api.post('/payment-plans', paymentPlanData);
-      navigate(`/students/${studentId}`);
+      const response = await api.post('/payment-plans', paymentPlanData);
+
+      // Prepare plan data for notification
+      const planData = {
+        studentName: `${student.firstName} ${student.lastName}`,
+        courseName: selectedEnrollment.course?.name || '',
+        totalAmount: grandTotals.total,
+        installmentCount: installments.length,
+        installments: installments.map(inst => ({
+          installmentNumber: inst.installmentNumber,
+          amount: inst.amount,
+          dueDate: inst.dueDate
+        })),
+        phone: student.phone,
+        email: student.email,
+        parentContacts: student.parentContacts,
+        defaultNotificationRecipient: student.defaultNotificationRecipient
+      };
+
+      // Show success dialog instead of navigating
+      setSuccessDialog({
+        open: true,
+        planData
+      });
     } catch (error) {
       setError(error.response?.data?.message || 'Bir hata oluştu');
       console.error(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Get notification recipient based on student preferences
+  const getNotificationRecipient = () => {
+    if (!successDialog.planData) return { phone: null, recipientName: '', email: null };
+
+    const { studentName, phone, email, parentContacts, defaultNotificationRecipient } = successDialog.planData;
+    const recipient = defaultNotificationRecipient || 'student';
+    const mother = parentContacts?.find(p => p.relationship === 'Anne');
+    const father = parentContacts?.find(p => p.relationship === 'Baba');
+
+    let selectedPhone = null;
+    let selectedEmail = null;
+    let recipientName = studentName;
+    let isParent = false;
+
+    switch (recipient) {
+      case 'mother':
+        selectedPhone = mother?.phone;
+        selectedEmail = mother?.email;
+        if (mother?.name) {
+          recipientName = mother.name;
+          isParent = true;
+        }
+        break;
+      case 'father':
+        selectedPhone = father?.phone;
+        selectedEmail = father?.email;
+        if (father?.name) {
+          recipientName = father.name;
+          isParent = true;
+        }
+        break;
+      default:
+        selectedPhone = phone;
+        selectedEmail = email;
+        break;
+    }
+
+    // Fallback
+    if (!selectedPhone) {
+      selectedPhone = phone || mother?.phone || father?.phone;
+    }
+    if (!selectedEmail) {
+      selectedEmail = email || mother?.email || father?.email;
+    }
+
+    return { phone: selectedPhone, email: selectedEmail, recipientName, isParent, studentName };
+  };
+
+  // Handle WhatsApp notification after plan creation
+  const handleWhatsAppNotification = () => {
+    const { phone, recipientName, isParent, studentName } = getNotificationRecipient();
+    const planData = successDialog.planData;
+
+    if (!phone) {
+      alert('Telefon numarası bulunamadı');
+      return;
+    }
+
+    // Build installment list
+    const installmentsList = planData.installments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
+    ).join('\n');
+
+    const templateData = {
+      recipientName,
+      studentName: isParent ? studentName : recipientName,
+      courseName: planData.courseName,
+      totalAmount: planData.totalAmount,
+      installmentCount: planData.installmentCount,
+      installmentsList,
+      institutionName: institution?.name || 'Kurum'
+    };
+
+    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentPlanCreated;
+    const message = replaceTemplateVariables(template, templateData);
+
+    sendWhatsAppMessage(phone, message, {});
+    setSuccessDialog({ open: false, planData: null });
+    navigate(`/students/${studentId}`);
+  };
+
+  // Handle Email notification after plan creation
+  const handleEmailNotification = () => {
+    setEmailDialogOpen(true);
+    setSuccessDialog({ open: false, planData: null });
+  };
+
+  // Get email template data
+  const getEmailTemplateData = () => {
+    if (!successDialog.planData) return {};
+    const { recipientName, isParent, studentName } = getNotificationRecipient();
+    const planData = successDialog.planData;
+
+    const installmentsList = planData.installments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
+    ).join('\n');
+
+    return {
+      recipientName,
+      studentName: isParent ? studentName : recipientName,
+      courseName: planData.courseName,
+      totalAmount: planData.totalAmount,
+      installmentCount: planData.installmentCount,
+      installmentsList,
+      institutionName: institution?.name || 'Kurum'
+    };
   };
 
   if (loading && !student) {
@@ -1234,6 +1373,108 @@ const PaymentPlan = () => {
           <Button onClick={() => setShowPartialPricingDialog(false)} variant="contained">Onayla</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success Dialog - Ask to send notification */}
+      <Dialog
+        open={successDialog.open}
+        onClose={() => {
+          setSuccessDialog({ open: false, planData: null });
+          navigate(`/students/${studentId}`);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: 'success.light', color: 'success.contrastText' }}>
+          ✓ Ödeme Planı Oluşturuldu
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Alert severity="success" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>{successDialog.planData?.studentName}</strong> için{' '}
+                <strong>{successDialog.planData?.courseName}</strong> dersi ödeme planı başarıyla oluşturuldu.
+              </Typography>
+            </Alert>
+
+            <Typography variant="body1" sx={{ mb: 2, textAlign: 'center' }}>
+              Detayları mesaj olarak göndermek ister misiniz?
+            </Typography>
+
+            <Paper sx={{ p: 2, bgcolor: 'grey.50', mb: 2 }}>
+              <Grid container spacing={1}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Toplam Tutar</Typography>
+                  <Typography variant="body1" fontWeight="bold">
+                    ₺{successDialog.planData?.totalAmount?.toLocaleString('tr-TR')}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Taksit Sayısı</Typography>
+                  <Typography variant="body1">{successDialog.planData?.installmentCount} taksit</Typography>
+                </Grid>
+              </Grid>
+            </Paper>
+
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<WhatsApp />}
+                onClick={handleWhatsAppNotification}
+                sx={{
+                  bgcolor: '#25D366',
+                  '&:hover': { bgcolor: '#128C7E' },
+                  flex: 1
+                }}
+              >
+                WhatsApp
+              </Button>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<Email />}
+                onClick={handleEmailNotification}
+                color="info"
+                sx={{ flex: 1 }}
+              >
+                Email
+              </Button>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setSuccessDialog({ open: false, planData: null });
+              navigate(`/students/${studentId}`);
+            }}
+            color="inherit"
+          >
+            Hayır, Kapat
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Email Dialog */}
+      <EmailDialog
+        open={emailDialogOpen}
+        onClose={() => {
+          setEmailDialogOpen(false);
+          navigate(`/students/${studentId}`);
+        }}
+        recipients={(() => {
+          const { email, recipientName } = getNotificationRecipient();
+          return email ? [{ email, name: recipientName }] : [];
+        })()}
+        defaultSubject={`Ödeme Planı Detayları - ${successDialog.planData?.studentName || ''}`}
+        defaultMessage=""
+        templateData={getEmailTemplateData()}
+        onSuccess={() => {
+          alert('Email başarıyla gönderildi!');
+          setEmailDialogOpen(false);
+          navigate(`/students/${studentId}`);
+        }}
+      />
     </Container>
   );
 };

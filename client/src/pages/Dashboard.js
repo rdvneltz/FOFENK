@@ -70,6 +70,8 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
+import NotificationMenu from '../components/Common/NotificationMenu';
+import EmailDialog from '../components/Email/EmailDialog';
 
 ChartJS.register(
   CategoryScale,
@@ -144,6 +146,12 @@ const Dashboard = () => {
   const [todayLessonsDialog, setTodayLessonsDialog] = useState({ open: false });
   const [trialLessonsDialog, setTrialLessonsDialog] = useState({ open: false });
   const [instructorDebtsDialog, setInstructorDebtsDialog] = useState({ open: false });
+  // State for showing students in today's lessons dialog
+  const [selectedLessonStudents, setSelectedLessonStudents] = useState({ lessonId: null, students: [] });
+  const [allEnrollments, setAllEnrollments] = useState([]);
+  // State for notification menu in lessons dialog
+  const [lessonNotificationMenu, setLessonNotificationMenu] = useState({ anchorEl: null, student: null });
+  const [lessonEmailDialog, setLessonEmailDialog] = useState({ open: false, recipients: [], subject: '', message: '', templateData: {} });
 
   useEffect(() => {
     if (institution && season) {
@@ -165,11 +173,23 @@ const Dashboard = () => {
         loadPlannedInvestments(),
         loadUpcomingPayments(),
         loadChartData(),
+        loadEnrollments(),
       ]);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadEnrollments = async () => {
+    try {
+      const response = await api.get('/enrollments', {
+        params: { seasonId: season._id, isActive: true }
+      });
+      setAllEnrollments(response.data);
+    } catch (error) {
+      console.error('Error loading enrollments:', error);
     }
   };
 
@@ -495,6 +515,39 @@ const Dashboard = () => {
     const message = replaceTemplateVariables(template, templateData);
 
     sendWhatsAppMessage(phone, message, {});
+  };
+
+  // Get students enrolled in a specific course
+  const getLessonStudents = (courseId) => {
+    if (!courseId) return [];
+    return allEnrollments
+      .filter(e => e.course?._id === courseId && e.student)
+      .map(e => e.student);
+  };
+
+  // Handle clicking on a lesson row to show students
+  const handleLessonClick = (lesson) => {
+    if (selectedLessonStudents.lessonId === lesson._id) {
+      // Toggle off if clicking same lesson
+      setSelectedLessonStudents({ lessonId: null, students: [] });
+    } else {
+      const students = getLessonStudents(lesson.course?._id);
+      setSelectedLessonStudents({ lessonId: lesson._id, students });
+    }
+  };
+
+  // Notification menu handlers for lesson students
+  const handleLessonNotificationClick = (event, student) => {
+    setLessonNotificationMenu({ anchorEl: event.currentTarget, student });
+  };
+
+  const handleLessonNotificationClose = () => {
+    setLessonNotificationMenu({ anchorEl: null, student: null });
+  };
+
+  const handleLessonEmailFromNotification = (recipients, subject, message, templateData) => {
+    setLessonEmailDialog({ open: true, recipients, subject, message, templateData });
+    handleLessonNotificationClose();
   };
 
   if (loading) {
@@ -988,9 +1041,12 @@ const Dashboard = () => {
       </Dialog>
 
       {/* Today's Lessons Dialog */}
-      <Dialog open={todayLessonsDialog.open} onClose={() => setTodayLessonsDialog({ open: false })} maxWidth="md" fullWidth>
+      <Dialog open={todayLessonsDialog.open} onClose={() => { setTodayLessonsDialog({ open: false }); setSelectedLessonStudents({ lessonId: null, students: [] }); }} maxWidth="md" fullWidth>
         <DialogTitle>Bugunku Dersler ({todayLessons.length})</DialogTitle>
         <DialogContent>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+            Ogrenci listesini gormek icin ders satirina tiklayin
+          </Typography>
           <TableContainer>
             <Table size="small">
               <TableHead>
@@ -998,24 +1054,127 @@ const Dashboard = () => {
                   <TableCell>Saat</TableCell>
                   <TableCell>Ders</TableCell>
                   <TableCell>Egitmen</TableCell>
+                  <TableCell>Ogrenci</TableCell>
                   <TableCell>Durum</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {todayLessons.map((lesson) => (
-                  <TableRow key={lesson._id} hover>
-                    <TableCell>{lesson.startTime}-{lesson.endTime}</TableCell>
-                    <TableCell>{lesson.course?.name}{lesson.notes && ` - ${lesson.notes}`}</TableCell>
-                    <TableCell>{lesson.instructor ? `${lesson.instructor.firstName} ${lesson.instructor.lastName}` : '-'}</TableCell>
-                    <TableCell><Chip size="small" color={lesson.status === 'completed' ? 'success' : 'default'} label={lesson.status === 'completed' ? 'Tamamlandi' : 'Planlandi'} /></TableCell>
-                  </TableRow>
-                ))}
+                {todayLessons.map((lesson) => {
+                  const lessonStudentCount = getLessonStudents(lesson.course?._id).length;
+                  const isSelected = selectedLessonStudents.lessonId === lesson._id;
+
+                  return (
+                    <React.Fragment key={lesson._id}>
+                      <TableRow
+                        hover
+                        onClick={() => handleLessonClick(lesson)}
+                        sx={{
+                          cursor: 'pointer',
+                          bgcolor: isSelected ? 'primary.light' : 'inherit',
+                          '&:hover': { bgcolor: isSelected ? 'primary.light' : 'action.hover' }
+                        }}
+                      >
+                        <TableCell>{lesson.startTime}-{lesson.endTime}</TableCell>
+                        <TableCell>{lesson.course?.name}{lesson.notes && ` - ${lesson.notes}`}</TableCell>
+                        <TableCell>{lesson.instructor ? `${lesson.instructor.firstName} ${lesson.instructor.lastName}` : '-'}</TableCell>
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            icon={<Group sx={{ fontSize: 14 }} />}
+                            label={`${lessonStudentCount} ogrenci`}
+                            color={isSelected ? 'primary' : 'default'}
+                            variant={isSelected ? 'filled' : 'outlined'}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip size="small" color={lesson.status === 'completed' ? 'success' : 'default'} label={lesson.status === 'completed' ? 'Tamamlandi' : 'Planlandi'} />
+                        </TableCell>
+                      </TableRow>
+                      {/* Show students when lesson is selected */}
+                      {isSelected && selectedLessonStudents.students.length > 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} sx={{ py: 2, bgcolor: 'grey.50' }}>
+                            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                              <Group sx={{ fontSize: 16, mr: 1, verticalAlign: 'middle' }} />
+                              Kayitli Ogrenciler ({selectedLessonStudents.students.length})
+                            </Typography>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                              {selectedLessonStudents.students.map((student) => (
+                                <Chip
+                                  key={student._id}
+                                  label={`${student.firstName} ${student.lastName}`}
+                                  size="small"
+                                  variant="outlined"
+                                  icon={<Person sx={{ fontSize: 14 }} />}
+                                  onClick={(e) => handleLessonNotificationClick(e, student)}
+                                  onDelete={(e) => {
+                                    e.stopPropagation();
+                                    handleLessonNotificationClick(e, student);
+                                  }}
+                                  deleteIcon={<Send sx={{ fontSize: 14, color: '#25D366 !important' }} />}
+                                  sx={{
+                                    cursor: 'pointer',
+                                    '&:hover': { bgcolor: 'primary.light' }
+                                  }}
+                                />
+                              ))}
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {isSelected && selectedLessonStudents.students.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={5} sx={{ py: 2, bgcolor: 'grey.50' }}>
+                            <Typography variant="body2" color="text.secondary" align="center">
+                              Bu derse kayitli ogrenci bulunamadi
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>
         </DialogContent>
-        <DialogActions><Button onClick={() => setTodayLessonsDialog({ open: false })}>Kapat</Button></DialogActions>
+        <DialogActions><Button onClick={() => { setTodayLessonsDialog({ open: false }); setSelectedLessonStudents({ lessonId: null, students: [] }); }}>Kapat</Button></DialogActions>
       </Dialog>
+
+      {/* Notification Menu for Lesson Students */}
+      <NotificationMenu
+        anchorEl={lessonNotificationMenu.anchorEl}
+        open={Boolean(lessonNotificationMenu.anchorEl)}
+        onClose={handleLessonNotificationClose}
+        recipientData={lessonNotificationMenu.student ? {
+          name: `${lessonNotificationMenu.student.firstName} ${lessonNotificationMenu.student.lastName}`,
+          phone: lessonNotificationMenu.student.phone,
+          email: lessonNotificationMenu.student.email,
+          parentContacts: lessonNotificationMenu.student.parentContacts,
+          defaultNotificationRecipient: lessonNotificationMenu.student.defaultNotificationRecipient
+        } : {}}
+        templateData={lessonNotificationMenu.student ? {
+          recipientName: `${lessonNotificationMenu.student.firstName} ${lessonNotificationMenu.student.lastName}`,
+          studentName: `${lessonNotificationMenu.student.firstName} ${lessonNotificationMenu.student.lastName}`,
+          courseName: todayLessons.find(l => l._id === selectedLessonStudents.lessonId)?.course?.name || '',
+          institutionName: institution?.name || ''
+        } : {}}
+        onEmailClick={handleLessonEmailFromNotification}
+      />
+
+      {/* Email Dialog for Lesson Students */}
+      <EmailDialog
+        open={lessonEmailDialog.open}
+        onClose={() => setLessonEmailDialog({ open: false, recipients: [], subject: '', message: '', templateData: {} })}
+        recipients={lessonEmailDialog.recipients}
+        defaultSubject={lessonEmailDialog.subject}
+        defaultMessage={lessonEmailDialog.message}
+        templateData={lessonEmailDialog.templateData}
+        onSuccess={() => {
+          alert('Email basariyla gonderildi!');
+          setLessonEmailDialog({ open: false, recipients: [], subject: '', message: '', templateData: {} });
+        }}
+      />
 
       {/* Trial Lessons Dialog */}
       <Dialog open={trialLessonsDialog.open} onClose={() => setTrialLessonsDialog({ open: false })} maxWidth="md" fullWidth>
