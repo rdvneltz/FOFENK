@@ -118,9 +118,16 @@ const Dashboard = () => {
   const [courseStats, setCourseStats] = useState([]);
   const [instructorDebts, setInstructorDebts] = useState({ total: 0, instructors: [] });
   const [plannedInvestments, setPlannedInvestments] = useState({ total: 0, count: 0, items: [] });
-  const [upcomingIncome, setUpcomingIncome] = useState({ total: 0, thisMonth: 0, nextThreeMonths: 0, items: [] });
-  const [expectedPayments, setExpectedPayments] = useState({
-    today: [], thisWeek: [], thisMonth: [], nextMonth: [], overdue: []
+  // Unified upcoming payments state
+  const [upcomingPayments, setUpcomingPayments] = useState({
+    overdue: { items: [], total: 0 },
+    today: { items: [], total: 0 },
+    thisWeek: { items: [], total: 0 },
+    thisMonth: { items: [], total: 0 },
+    nextMonth: { items: [], total: 0 },
+    nextThreeMonths: { items: [], total: 0 },
+    season: { items: [], total: 0 },
+    all: []
   });
   const [incomeExpenseData, setIncomeExpenseData] = useState([]);
 
@@ -131,7 +138,7 @@ const Dashboard = () => {
   const [investmentForm, setInvestmentForm] = useState({
     title: '', description: '', estimatedAmount: '', category: 'other', priority: 'medium', targetDate: ''
   });
-  const [upcomingIncomeDialog, setUpcomingIncomeDialog] = useState({ open: false });
+  const [upcomingPaymentsDialog, setUpcomingPaymentsDialog] = useState({ open: false });
   const [todayLessonsDialog, setTodayLessonsDialog] = useState({ open: false });
   const [trialLessonsDialog, setTrialLessonsDialog] = useState({ open: false });
   const [instructorDebtsDialog, setInstructorDebtsDialog] = useState({ open: false });
@@ -154,8 +161,7 @@ const Dashboard = () => {
         loadCourseStats(),
         loadInstructorDebts(),
         loadPlannedInvestments(),
-        loadUpcomingIncome(),
-        loadExpectedPayments(),
+        loadUpcomingPayments(),
         loadChartData(),
       ]);
     } catch (error) {
@@ -261,58 +267,8 @@ const Dashboard = () => {
     }
   };
 
-  const loadUpcomingIncome = async () => {
-    try {
-      const response = await api.get('/payment-plans', {
-        params: { institutionId: institution._id, seasonId: season._id }
-      });
-      const paymentPlans = response.data;
-
-      const now = new Date();
-      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const endOfThreeMonths = new Date(now.getFullYear(), now.getMonth() + 3, 0);
-      const seasonEnd = season.endDate ? new Date(season.endDate) : endOfThreeMonths;
-
-      let thisMonthTotal = 0;
-      let threeMonthsTotal = 0;
-      let seasonTotal = 0;
-      const allUpcoming = [];
-
-      paymentPlans.forEach(plan => {
-        plan.installments?.forEach(inst => {
-          if (!inst.isPaid) {
-            const dueDate = new Date(inst.dueDate);
-            const remaining = inst.amount - (inst.paidAmount || 0);
-
-            if (dueDate >= now) {
-              allUpcoming.push({
-                student: plan.student,
-                course: plan.course,
-                installmentNumber: inst.installmentNumber,
-                amount: remaining,
-                dueDate: dueDate
-              });
-
-              if (dueDate <= endOfMonth) thisMonthTotal += remaining;
-              if (dueDate <= endOfThreeMonths) threeMonthsTotal += remaining;
-              if (dueDate <= seasonEnd) seasonTotal += remaining;
-            }
-          }
-        });
-      });
-
-      setUpcomingIncome({
-        thisMonth: thisMonthTotal,
-        nextThreeMonths: threeMonthsTotal,
-        total: seasonTotal,
-        items: allUpcoming.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate))
-      });
-    } catch (error) {
-      console.error('Error loading upcoming income:', error);
-    }
-  };
-
-  const loadExpectedPayments = async () => {
+  // Unified function to load all upcoming payments
+  const loadUpcomingPayments = async () => {
     try {
       const response = await api.get('/payment-plans', {
         params: { institutionId: institution._id, seasonId: season._id }
@@ -327,14 +283,28 @@ const Dashboard = () => {
       endOfWeek.setDate(endOfWeek.getDate() + 7);
       const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       const endOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+      const endOfThreeMonths = new Date(now.getFullYear(), now.getMonth() + 3, 0);
+      const seasonEnd = season.endDate ? new Date(season.endDate) : endOfThreeMonths;
 
-      const categorized = { today: [], thisWeek: [], thisMonth: [], nextMonth: [], overdue: [] };
+      const categorized = {
+        overdue: { items: [], total: 0 },
+        today: { items: [], total: 0 },
+        thisWeek: { items: [], total: 0 },
+        thisMonth: { items: [], total: 0 },
+        nextMonth: { items: [], total: 0 },
+        nextThreeMonths: { items: [], total: 0 },
+        season: { items: [], total: 0 },
+        all: []
+      };
 
       paymentPlans.forEach(plan => {
         plan.installments?.forEach(inst => {
           if (!inst.isPaid) {
             const dueDate = new Date(inst.dueDate);
             const remaining = inst.amount - (inst.paidAmount || 0);
+
+            if (remaining <= 0) return;
+
             const payment = {
               student: plan.student,
               course: plan.course,
@@ -344,18 +314,51 @@ const Dashboard = () => {
               paymentPlanId: plan._id
             };
 
-            if (dueDate < startOfToday) categorized.overdue.push(payment);
-            else if (dueDate < endOfToday) categorized.today.push(payment);
-            else if (dueDate < endOfWeek) categorized.thisWeek.push(payment);
-            else if (dueDate <= endOfMonth) categorized.thisMonth.push(payment);
-            else if (dueDate <= endOfNextMonth) categorized.nextMonth.push(payment);
+            categorized.all.push(payment);
+
+            // Categorize by time period
+            if (dueDate < startOfToday) {
+              categorized.overdue.items.push(payment);
+              categorized.overdue.total += remaining;
+            } else if (dueDate < endOfToday) {
+              categorized.today.items.push(payment);
+              categorized.today.total += remaining;
+            } else if (dueDate < endOfWeek) {
+              categorized.thisWeek.items.push(payment);
+              categorized.thisWeek.total += remaining;
+            } else if (dueDate <= endOfMonth) {
+              categorized.thisMonth.items.push(payment);
+              categorized.thisMonth.total += remaining;
+            } else if (dueDate <= endOfNextMonth) {
+              categorized.nextMonth.items.push(payment);
+              categorized.nextMonth.total += remaining;
+            }
+
+            // Cumulative totals for 3 months and season
+            if (dueDate <= endOfThreeMonths && dueDate >= startOfToday) {
+              categorized.nextThreeMonths.items.push(payment);
+              categorized.nextThreeMonths.total += remaining;
+            }
+            if (dueDate <= seasonEnd) {
+              categorized.season.items.push(payment);
+              categorized.season.total += remaining;
+            }
           }
         });
       });
 
-      setExpectedPayments(categorized);
+      // Sort all arrays by due date
+      Object.keys(categorized).forEach(key => {
+        if (key === 'all') {
+          categorized.all.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+        } else {
+          categorized[key].items.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+        }
+      });
+
+      setUpcomingPayments(categorized);
     } catch (error) {
-      console.error('Error loading expected payments:', error);
+      console.error('Error loading upcoming payments:', error);
     }
   };
 
@@ -646,61 +649,76 @@ const Dashboard = () => {
           </Paper>
         </Grid>
 
-        {/* Fourth Row - Payment Tracking */}
+        {/* Fourth Row - Unified Payment Tracking */}
         {canSeePayments && (
-          <>
-            <Grid item xs={12} md={6}>
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="h6" sx={{ mb: 2 }}><PendingActions sx={{ mr: 1, verticalAlign: 'middle' }} />Beklenen Odemeler</Typography>
-                <Grid container spacing={1}>
-                  {[
-                    { key: 'overdue', label: 'Gecikmis', color: 'error.light', textColor: 'error.dark' },
-                    { key: 'today', label: 'Bugun', color: 'warning.light', textColor: 'warning.dark' },
-                    { key: 'thisWeek', label: 'Bu Hafta', color: 'info.light', textColor: 'info.dark' },
-                    { key: 'thisMonth', label: 'Bu Ay', color: 'success.light', textColor: 'success.dark' },
-                    { key: 'nextMonth', label: 'Gelecek Ay', color: 'grey.200', textColor: 'text.primary' }
-                  ].map(({ key, label, color, textColor }) => (
-                    <Grid item xs={4} sm={2.4} key={key}>
-                      <Box
-                        sx={{ p: 1.5, bgcolor: color, borderRadius: 1, textAlign: 'center', cursor: expectedPayments[key].length > 0 ? 'pointer' : 'default', '&:hover': expectedPayments[key].length > 0 ? { opacity: 0.9 } : {} }}
-                        onClick={() => expectedPayments[key].length > 0 && handlePaymentsBoxClick(key, label, expectedPayments[key])}
-                      >
-                        <Typography variant="caption" color={textColor}>{label}</Typography>
-                        <Typography variant="h6" color={textColor}>{expectedPayments[key].length}</Typography>
-                        <Typography variant="caption" color={textColor}>{expectedPayments[key].reduce((s, p) => s + p.amount, 0).toLocaleString('tr-TR')} TL</Typography>
-                      </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-              </Paper>
-            </Grid>
+          <Grid item xs={12}>
+            <Paper sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6"><PendingActions sx={{ mr: 1, verticalAlign: 'middle' }} />Gelecek Odemeler (Alacaklar)</Typography>
+                <Button size="small" endIcon={<ArrowForward />} onClick={() => setUpcomingPaymentsDialog({ open: true })}>Tum Detaylar</Button>
+              </Box>
 
-            <Grid item xs={12} md={6}>
-              <Paper sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setUpcomingIncomeDialog({ open: true })}>
-                <Typography variant="h6" sx={{ mb: 2 }}><TrendingUp sx={{ mr: 1, verticalAlign: 'middle' }} />Gelecek Gelirler (Alacaklar)</Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={4}>
-                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'success.light', borderRadius: 1 }}>
-                      <Typography variant="caption" color="success.dark">Bu Ay</Typography>
-                      <Typography variant="h6" color="success.dark">{upcomingIncome.thisMonth.toLocaleString('tr-TR')} TL</Typography>
+              {/* Time-based breakdown */}
+              <Grid container spacing={1}>
+                {[
+                  { key: 'overdue', label: 'Gecikmis', color: 'error.main', textColor: 'white', icon: '⚠️' },
+                  { key: 'today', label: 'Bugun', color: 'warning.main', textColor: 'white', icon: '📅' },
+                  { key: 'thisWeek', label: 'Bu Hafta', color: 'info.main', textColor: 'white', icon: '📆' },
+                  { key: 'thisMonth', label: 'Bu Ay', color: 'success.main', textColor: 'white', icon: '🗓️' },
+                  { key: 'nextMonth', label: 'Gelecek Ay', color: 'grey.600', textColor: 'white', icon: '➡️' },
+                ].map(({ key, label, color, textColor, icon }) => (
+                  <Grid item xs={6} sm={2.4} key={key}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        bgcolor: color,
+                        borderRadius: 2,
+                        textAlign: 'center',
+                        cursor: upcomingPayments[key].items.length > 0 ? 'pointer' : 'default',
+                        transition: 'transform 0.2s',
+                        '&:hover': upcomingPayments[key].items.length > 0 ? { transform: 'scale(1.02)' } : {}
+                      }}
+                      onClick={() => upcomingPayments[key].items.length > 0 && handlePaymentsBoxClick(key, label, upcomingPayments[key].items)}
+                    >
+                      <Typography variant="body2" color={textColor} fontWeight="bold">{label}</Typography>
+                      <Typography variant="h5" color={textColor} fontWeight="bold">{upcomingPayments[key].items.length}</Typography>
+                      <Typography variant="body2" color={textColor}>{upcomingPayments[key].total.toLocaleString('tr-TR')} TL</Typography>
                     </Box>
                   </Grid>
-                  <Grid item xs={4}>
-                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'info.light', borderRadius: 1 }}>
-                      <Typography variant="caption" color="info.dark">3 Ay</Typography>
-                      <Typography variant="h6" color="info.dark">{upcomingIncome.nextThreeMonths.toLocaleString('tr-TR')} TL</Typography>
+                ))}
+              </Grid>
+
+              {/* Summary totals */}
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 2 }}>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} sm={4}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Toplam Alacak (3 Ay)</Typography>
+                      <Typography variant="h5" color="info.main" fontWeight="bold">
+                        {upcomingPayments.nextThreeMonths.total.toLocaleString('tr-TR')} TL
+                      </Typography>
                     </Box>
                   </Grid>
-                  <Grid item xs={4}>
-                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'primary.light', borderRadius: 1 }}>
-                      <Typography variant="caption" color="primary.contrastText">Sezon</Typography>
-                      <Typography variant="h6" color="primary.contrastText">{upcomingIncome.total.toLocaleString('tr-TR')} TL</Typography>
+                  <Grid item xs={12} sm={4}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Toplam Alacak (Sezon)</Typography>
+                      <Typography variant="h5" color="primary.main" fontWeight="bold">
+                        {upcomingPayments.season.total.toLocaleString('tr-TR')} TL
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} sm={4}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">Gecikmis + Bugun</Typography>
+                      <Typography variant="h5" color="error.main" fontWeight="bold">
+                        {(upcomingPayments.overdue.total + upcomingPayments.today.total).toLocaleString('tr-TR')} TL
+                      </Typography>
                     </Box>
                   </Grid>
                 </Grid>
-              </Paper>
-            </Grid>
-          </>
+              </Box>
+            </Paper>
+          </Grid>
         )}
 
         {/* Charts */}
@@ -826,37 +844,79 @@ const Dashboard = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Upcoming Income Dialog */}
-      <Dialog open={upcomingIncomeDialog.open} onClose={() => setUpcomingIncomeDialog({ open: false })} maxWidth="md" fullWidth>
-        <DialogTitle>Gelecek Gelirler (Alacaklar)</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mb: 2, p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
-            <Typography variant="h5" color="success.dark">Toplam Alacak: {upcomingIncome.total.toLocaleString('tr-TR')} TL</Typography>
+      {/* Upcoming Payments Full Detail Dialog */}
+      <Dialog open={upcomingPaymentsDialog.open} onClose={() => setUpcomingPaymentsDialog({ open: false })} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">Gelecek Odemeler - Detayli Gorunum</Typography>
+            <IconButton onClick={() => setUpcomingPaymentsDialog({ open: false })}><Close /></IconButton>
           </Box>
-          <TableContainer>
-            <Table size="small">
+        </DialogTitle>
+        <DialogContent>
+          {/* Summary Cards */}
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            {[
+              { key: 'overdue', label: 'Gecikmis', color: 'error' },
+              { key: 'today', label: 'Bugun', color: 'warning' },
+              { key: 'thisWeek', label: 'Bu Hafta', color: 'info' },
+              { key: 'thisMonth', label: 'Bu Ay', color: 'success' },
+              { key: 'nextMonth', label: 'Gelecek Ay', color: 'secondary' },
+              { key: 'season', label: 'Tum Sezon', color: 'primary' },
+            ].map(({ key, label, color }) => (
+              <Grid item xs={6} sm={4} md={2} key={key}>
+                <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: `${color}.light` }}>
+                  <Typography variant="caption" color={`${color}.dark`}>{label}</Typography>
+                  <Typography variant="h6" color={`${color}.dark`} fontWeight="bold">{upcomingPayments[key]?.items?.length || 0}</Typography>
+                  <Typography variant="body2" color={`${color}.dark`}>{(upcomingPayments[key]?.total || 0).toLocaleString('tr-TR')} TL</Typography>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+
+          {/* All Payments Table */}
+          <Typography variant="subtitle1" gutterBottom fontWeight="bold">Tum Beklenen Odemeler ({upcomingPayments.all?.length || 0})</Typography>
+          <TableContainer sx={{ maxHeight: 400 }}>
+            <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
                   <TableCell>Ogrenci</TableCell>
                   <TableCell>Ders</TableCell>
-                  <TableCell>Vade</TableCell>
+                  <TableCell>Taksit</TableCell>
+                  <TableCell>Vade Tarihi</TableCell>
+                  <TableCell>Durum</TableCell>
                   <TableCell align="right">Tutar</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {upcomingIncome.items.slice(0, 50).map((item, idx) => (
-                  <TableRow key={idx} hover>
-                    <TableCell>{item.student?.firstName} {item.student?.lastName}</TableCell>
-                    <TableCell>{item.course?.name}</TableCell>
-                    <TableCell>{new Date(item.dueDate).toLocaleDateString('tr-TR')}</TableCell>
-                    <TableCell align="right">{item.amount?.toLocaleString('tr-TR')} TL</TableCell>
-                  </TableRow>
-                ))}
+                {(upcomingPayments.all || []).map((item, idx) => {
+                  const dueDate = new Date(item.dueDate);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const isOverdue = dueDate < today;
+                  const isToday = dueDate.toDateString() === today.toDateString();
+
+                  return (
+                    <TableRow key={idx} hover sx={{ bgcolor: isOverdue ? 'error.lighter' : isToday ? 'warning.lighter' : 'inherit' }}>
+                      <TableCell>{item.student?.firstName} {item.student?.lastName}</TableCell>
+                      <TableCell>{item.course?.name}</TableCell>
+                      <TableCell>{item.installmentNumber}. Taksit</TableCell>
+                      <TableCell>{dueDate.toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          color={isOverdue ? 'error' : isToday ? 'warning' : 'default'}
+                          label={isOverdue ? 'Gecikmis' : isToday ? 'Bugun' : 'Bekliyor'}
+                        />
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{item.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>
         </DialogContent>
-        <DialogActions><Button onClick={() => setUpcomingIncomeDialog({ open: false })}>Kapat</Button></DialogActions>
+        <DialogActions><Button onClick={() => setUpcomingPaymentsDialog({ open: false })}>Kapat</Button></DialogActions>
       </Dialog>
 
       {/* Today's Lessons Dialog */}
