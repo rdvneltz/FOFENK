@@ -37,14 +37,17 @@ import {
   Delete,
   Phone,
   CalendarMonth,
-  WhatsApp,
+  Send,
+  Email,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import TrialLessonDetailDialog from '../components/Calendar/TrialLessonDetailDialog';
 import ConvertToStudentDialog from '../components/Calendar/ConvertToStudentDialog';
-import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
+import NotificationMenu from '../components/Common/NotificationMenu';
+import EmailDialog from '../components/Email/EmailDialog';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
 
 const TrialLessons = () => {
   const { institution, season, user } = useApp();
@@ -59,6 +62,9 @@ const TrialLessons = () => {
   const [error, setError] = useState('');
   const [tabValue, setTabValue] = useState(0);
   const [courseFilter, setCourseFilter] = useState('');
+  // Notification state
+  const [notificationMenu, setNotificationMenu] = useState({ anchorEl: null, trial: null });
+  const [emailDialog, setEmailDialog] = useState({ open: false, recipients: [], subject: '', message: '', templateData: {} });
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -285,13 +291,38 @@ const TrialLessons = () => {
     const data = {
       studentName: `${trial.firstName} ${trial.lastName}`,
       name: `${trial.firstName} ${trial.lastName}`,
+      recipientName: `${trial.firstName} ${trial.lastName}`,
       date: trial.scheduledDate,
       time: trial.scheduledTime,
       courseName: trial.course?.name || '',
+      institutionName: institution?.name || 'Kurum',
     };
 
-    sendWhatsAppMessage(phone, DEFAULT_WHATSAPP_TEMPLATES.trialLessonReminder, data);
+    const message = replaceTemplateVariables(DEFAULT_WHATSAPP_TEMPLATES.trialLessonReminder, data);
+    sendWhatsAppMessage(phone, message, {});
   };
+
+  // Notification menu handlers
+  const handleNotificationClick = (event, trial) => {
+    setNotificationMenu({ anchorEl: event.currentTarget, trial });
+  };
+
+  const handleNotificationClose = () => {
+    setNotificationMenu({ anchorEl: null, trial: null });
+  };
+
+  const handleEmailFromNotification = (recipients, subject, message, templateData) => {
+    setEmailDialog({ open: true, recipients, subject, message, templateData });
+    handleNotificationClose();
+  };
+
+  const getTrialTemplateData = (trial) => ({
+    studentName: `${trial.firstName} ${trial.lastName}`,
+    recipientName: `${trial.firstName} ${trial.lastName}`,
+    courseName: trial.course?.name || '',
+    date: trial.scheduledDate,
+    time: trial.scheduledTime,
+  });
 
   const getStatusChip = (status) => {
     switch (status) {
@@ -513,6 +544,16 @@ const TrialLessons = () => {
                   </TableCell>
                   <TableCell align="right">
                     <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                      <Tooltip title="Bildirim Gönder">
+                        <IconButton
+                          size="small"
+                          onClick={(e) => handleNotificationClick(e, trial)}
+                          sx={{ color: '#25D366' }}
+                        >
+                          <Send fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+
                       <Tooltip title="Detay">
                         <IconButton
                           size="small"
@@ -524,15 +565,6 @@ const TrialLessons = () => {
 
                       {trial.status === 'pending' && (
                         <>
-                          <Tooltip title="WhatsApp Hatırlatma">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleSendWhatsAppReminder(trial)}
-                              sx={{ color: '#25D366' }}
-                            >
-                              <WhatsApp fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
                           <Tooltip title="Tamamlandı">
                             <IconButton
                               size="small"
@@ -859,6 +891,35 @@ const TrialLessons = () => {
           onSuccess={handleConvertSuccess}
         />
       )}
+
+      {/* Notification Menu */}
+      <NotificationMenu
+        anchorEl={notificationMenu.anchorEl}
+        open={Boolean(notificationMenu.anchorEl)}
+        onClose={handleNotificationClose}
+        recipientData={notificationMenu.trial ? {
+          name: `${notificationMenu.trial.firstName} ${notificationMenu.trial.lastName}`,
+          phone: notificationMenu.trial.phone || notificationMenu.trial.parentContacts?.[0]?.phone,
+          email: notificationMenu.trial.email,
+        } : {}}
+        templateData={notificationMenu.trial ? getTrialTemplateData(notificationMenu.trial) : {}}
+        defaultTemplate="trialLessonReminder"
+        onEmailClick={handleEmailFromNotification}
+      />
+
+      {/* Email Dialog */}
+      <EmailDialog
+        open={emailDialog.open}
+        onClose={() => setEmailDialog({ open: false, recipients: [], subject: '', message: '', templateData: {} })}
+        recipients={emailDialog.recipients}
+        defaultSubject={emailDialog.subject}
+        defaultMessage={emailDialog.message}
+        templateData={emailDialog.templateData}
+        onSuccess={() => {
+          alert('Email başarıyla gönderildi!');
+          setEmailDialog({ open: false, recipients: [], subject: '', message: '', templateData: {} });
+        }}
+      />
     </Box>
   );
 };
