@@ -40,7 +40,7 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import PaymentDialog from '../components/Payment/PaymentDialog';
 import EmailDialog from '../components/Email/EmailDialog';
-import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
 
 const PaymentPlanDetail = () => {
   const { id } = useParams();
@@ -270,6 +270,20 @@ const PaymentPlanDetail = () => {
   // Generate notification message with payment plan data
   const getNotificationData = () => {
     const student = paymentPlan.student;
+    const paidInstallments = paymentPlan.installments?.filter(i => i.isPaid) || [];
+    const unpaidInstallments = paymentPlan.installments?.filter(i => !i.isPaid) || [];
+    const nextInstallment = unpaidInstallments[0];
+
+    // Build remaining installments list
+    const remainingInstallmentsList = unpaidInstallments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
+    ).join('\n');
+
+    // Build paid installments list
+    const paidInstallmentsList = paidInstallments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.paidAt || inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL ✓`
+    ).join('\n');
+
     return {
       studentName: `${student.firstName} ${student.lastName}`,
       name: `${student.firstName} ${student.lastName}`,
@@ -277,12 +291,17 @@ const PaymentPlanDetail = () => {
       paidAmount: paymentPlan.paidAmount || 0,
       remainingAmount: paymentPlan.remainingAmount || 0,
       courseName: paymentPlan.course?.name || '',
-      // Find next unpaid installment
-      ...(paymentPlan.installments?.find(i => !i.isPaid) && {
-        amount: paymentPlan.installments.find(i => !i.isPaid).amount,
-        dueDate: paymentPlan.installments.find(i => !i.isPaid).dueDate,
-        installmentNumber: paymentPlan.installments.find(i => !i.isPaid).installmentNumber,
-        totalInstallments: paymentPlan.installments.length
+      institutionName: paymentPlan.institution?.name || 'Kurum',
+      totalInstallments: paymentPlan.installments?.length || 0,
+      paidInstallments: paidInstallments.length,
+      remainingInstallments: unpaidInstallments.length,
+      remainingInstallmentsList: remainingInstallmentsList || 'Kalan taksit yok',
+      paidInstallmentsList: paidInstallmentsList || 'Henüz ödeme yapılmadı',
+      // Next installment details
+      ...(nextInstallment && {
+        amount: nextInstallment.amount,
+        dueDate: nextInstallment.dueDate,
+        installmentNumber: nextInstallment.installmentNumber,
       })
     };
   };
@@ -347,7 +366,12 @@ const PaymentPlanDetail = () => {
       isParent,
       studentName
     };
-    sendWhatsAppMessage(phone, DEFAULT_WHATSAPP_TEMPLATES.paymentPlanStatus, data);
+
+    // Use balanceSummary template and replace variables
+    const template = DEFAULT_WHATSAPP_TEMPLATES.balanceSummary;
+    const message = replaceTemplateVariables(template, data);
+
+    sendWhatsAppMessage(phone, message, {});
     setNotificationDialog(false);
     setSuccess('WhatsApp mesajı açıldı');
   };
@@ -940,6 +964,7 @@ Fofora Tiyatro`;
         }] : []}
         defaultSubject={emailDialog.subject}
         defaultMessage={emailDialog.message}
+        templateData={getNotificationData()}
         onSuccess={() => setSuccess('Email başarıyla gönderildi')}
       />
     </Container>

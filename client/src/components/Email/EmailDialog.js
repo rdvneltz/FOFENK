@@ -20,6 +20,7 @@ import {
 import { Close, AttachFile, Delete } from '@mui/icons-material';
 import api from '../../api';
 import { useApp } from '../../context/AppContext';
+import { replaceTemplateVariables } from '../../utils/whatsappHelper';
 
 // Default template for custom messages
 const DEFAULT_TEMPLATE = {
@@ -29,7 +30,7 @@ const DEFAULT_TEMPLATE = {
   type: 'general',
 };
 
-const EmailDialog = ({ open, onClose, recipients = [], onSuccess, defaultSubject = '', defaultMessage = '' }) => {
+const EmailDialog = ({ open, onClose, recipients = [], onSuccess, defaultSubject = '', defaultMessage = '', templateData = {} }) => {
   const { institution } = useApp();
   const [templates, setTemplates] = useState([DEFAULT_TEMPLATE]);
   const [formData, setFormData] = useState({
@@ -77,10 +78,30 @@ const EmailDialog = ({ open, onClose, recipients = [], onSuccess, defaultSubject
 
   const handleTemplateChange = (templateId) => {
     const selectedTemplate = templates.find(t => t._id === templateId) || DEFAULT_TEMPLATE;
+
+    // Get first recipient for preview data
+    const firstRecipient = recipients[0] || {};
+
+    // Combine template data with recipient info for variable replacement
+    const dataForReplacement = {
+      ...templateData,
+      studentName: firstRecipient.name || templateData.studentName || '',
+      recipientName: firstRecipient.name || templateData.recipientName || '',
+      name: firstRecipient.name || templateData.name || '',
+      email: firstRecipient.email || templateData.email || '',
+      phone: firstRecipient.phone || templateData.phone || '',
+      institutionName: institution?.name || templateData.institutionName || '',
+    };
+
+    // Replace variables in template
+    const messageWithVariables = selectedTemplate.template
+      ? replaceTemplateVariables(selectedTemplate.template, dataForReplacement)
+      : '';
+
     setFormData({
       templateId,
       subject: selectedTemplate.name !== 'Özel Mesaj' ? selectedTemplate.name : '',
-      message: selectedTemplate.template || '',
+      message: messageWithVariables,
     });
   };
 
@@ -192,13 +213,21 @@ const EmailDialog = ({ open, onClose, recipients = [], onSuccess, defaultSubject
 
   // Get type label for template display
   const getTypeLabel = (type) => {
-    switch (type) {
-      case 'paymentPlan': return 'Ödeme Planı';
-      case 'paymentReminder': return 'Ödeme Hatırlatma';
-      case 'trialLessonReminder': return 'Deneme Dersi';
-      case 'lessonReminder': return 'Ders Hatırlatma';
-      default: return 'Genel';
-    }
+    const labels = {
+      paymentPlanCreated: 'Ödeme Planı Oluşturuldu',
+      paymentReceived: 'Ödeme Alındı',
+      paymentDueReminder: 'Vadesi Yaklaşan Ödeme',
+      paymentOverdue: 'Vadesi Geçmiş Ödeme',
+      balanceSummary: 'Bakiye Özeti',
+      registrationConfirm: 'Kayıt Onayı',
+      trialLessonReminder: 'Deneme Dersi',
+      lessonReminder: 'Ders Hatırlatma',
+      general: 'Genel',
+      // Legacy types
+      paymentPlan: 'Ödeme Planı',
+      paymentReminder: 'Ödeme Hatırlatma',
+    };
+    return labels[type] || 'Genel';
   };
 
   return (

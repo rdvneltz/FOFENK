@@ -69,7 +69,7 @@ import {
   Legend
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
-import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
 
 ChartJS.register(
   CategoryScale,
@@ -437,22 +437,21 @@ const Dashboard = () => {
     if (!student) return;
 
     // Get phone based on defaultNotificationRecipient
-    const recipient = student.defaultNotificationRecipient || 'student';
+    const recipientType = student.defaultNotificationRecipient || 'student';
     const mother = student.parentContacts?.find(p => p.relationship === 'Anne');
     const father = student.parentContacts?.find(p => p.relationship === 'Baba');
 
     let phone = null;
     let recipientName = `${student.firstName} ${student.lastName}`;
-    let isParent = false;
 
-    switch (recipient) {
+    switch (recipientType) {
       case 'mother':
         phone = mother?.phone;
-        if (mother?.name) { recipientName = mother.name; isParent = true; }
+        if (mother?.name) { recipientName = mother.name; }
         break;
       case 'father':
         phone = father?.phone;
-        if (father?.name) { recipientName = father.name; isParent = true; }
+        if (father?.name) { recipientName = father.name; }
         break;
       default:
         phone = student.phone;
@@ -470,21 +469,22 @@ const Dashboard = () => {
     }
 
     const studentName = `${student.firstName} ${student.lastName}`;
-    const greeting = isParent
-      ? `Sayın ${recipientName},\n\nÖğrenciniz ${studentName} için ödeme hatırlatması:`
-      : `Sayın ${studentName},\n\nÖdeme hatırlatması:`;
 
-    const message = `${greeting}
+    // Prepare data for template variable replacement
+    const templateData = {
+      recipientName,
+      studentName,
+      courseName: payment.course?.name || '',
+      amount: payment.amount,
+      dueDate: payment.dueDate,
+      installmentNumber: payment.installmentNumber,
+      totalInstallments: payment.totalInstallments || '?',
+      institutionName: institution?.name || 'Kurum',
+    };
 
-Ders: ${payment.course?.name || ''}
-Taksit: ${payment.installmentNumber}. Taksit
-Tutar: ${payment.amount?.toLocaleString('tr-TR')} TL
-Son Ödeme: ${new Date(payment.dueDate).toLocaleDateString('tr-TR')}
-
-Sorularınız için bizimle iletişime geçebilirsiniz.
-
-Saygılarımızla,
-Fofora Tiyatro`;
+    // Use paymentDueReminder template with variable replacement
+    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentDueReminder;
+    const message = replaceTemplateVariables(template, templateData);
 
     sendWhatsAppMessage(phone, message, {});
   };

@@ -173,56 +173,91 @@ const MessageTemplates = () => {
     setSuccess('Metin kopyalandı');
   };
 
-  // Create default templates for the institution
-  const createDefaultTemplates = async () => {
+  // Default template configurations
+  const defaultTemplateConfigs = [
+    { type: 'paymentPlanCreated', name: 'Ödeme Planı Oluşturuldu' },
+    { type: 'paymentReceived', name: 'Ödeme Alındı' },
+    { type: 'paymentDueReminder', name: 'Vadesi Yaklaşan Ödeme Hatırlatma' },
+    { type: 'paymentOverdue', name: 'Vadesi Geçmiş Ödeme' },
+    { type: 'balanceSummary', name: 'Bakiye Özeti' },
+    { type: 'registrationConfirm', name: 'Kayıt Onayı' },
+    { type: 'trialLessonReminder', name: 'Deneme Dersi Hatırlatma' },
+    { type: 'lessonReminder', name: 'Ders Hatırlatma' },
+    { type: 'general', name: 'Genel Mesaj' },
+  ];
+
+  // Check if all default templates exist
+  const allDefaultsExist = defaultTemplateConfigs.every(
+    config => templates.some(t => t.type === config.type)
+  );
+
+  // Create or reset default templates for the institution
+  const createDefaultTemplates = async (resetMode = false) => {
     try {
       setCreatingDefaults(true);
       setError('');
 
-      const defaultTemplateConfigs = [
-        { type: 'paymentPlanCreated', name: 'Ödeme Planı Oluşturuldu' },
-        { type: 'paymentReceived', name: 'Ödeme Alındı' },
-        { type: 'paymentDueReminder', name: 'Vadesi Yaklaşan Ödeme Hatırlatma' },
-        { type: 'paymentOverdue', name: 'Vadesi Geçmiş Ödeme' },
-        { type: 'balanceSummary', name: 'Bakiye Özeti' },
-        { type: 'registrationConfirm', name: 'Kayıt Onayı' },
-        { type: 'trialLessonReminder', name: 'Deneme Dersi Hatırlatma' },
-        { type: 'lessonReminder', name: 'Ders Hatırlatma' },
-        { type: 'general', name: 'Genel Mesaj' },
-      ];
-
-      // Get existing template types
       const existingTypes = templates.map(t => t.type);
 
-      // Create only missing templates
-      const missingTemplates = defaultTemplateConfigs.filter(
-        config => !existingTypes.includes(config.type)
-      );
+      if (resetMode) {
+        // Reset mode: Update all existing defaults to their original content
+        let resetCount = 0;
+        for (const config of defaultTemplateConfigs) {
+          const existingTemplate = templates.find(t => t.type === config.type);
+          const templateContent = DEFAULT_WHATSAPP_TEMPLATES[config.type] || DEFAULT_WHATSAPP_TEMPLATES.general;
 
-      if (missingTemplates.length === 0) {
-        setSuccess('Tüm varsayılan şablonlar zaten mevcut');
-        return;
+          if (existingTemplate) {
+            await api.put(`/message-templates/${existingTemplate._id}`, {
+              template: templateContent,
+              updatedBy: currentUser?.username,
+            });
+            resetCount++;
+          } else {
+            // Create if doesn't exist
+            await api.post('/message-templates', {
+              name: config.name,
+              type: config.type,
+              template: templateContent,
+              institution: institution._id,
+              isDefault: true,
+              createdBy: currentUser?.username,
+              updatedBy: currentUser?.username,
+            });
+            resetCount++;
+          }
+        }
+        await loadTemplates();
+        setSuccess(`${resetCount} şablon varsayılan içeriğe sıfırlandı`);
+      } else {
+        // Create mode: Only create missing templates
+        const missingTemplates = defaultTemplateConfigs.filter(
+          config => !existingTypes.includes(config.type)
+        );
+
+        if (missingTemplates.length === 0) {
+          setSuccess('Tüm varsayılan şablonlar zaten mevcut. İçerikleri sıfırlamak için "Varsayılanlara Sıfırla" butonunu kullanın.');
+          return;
+        }
+
+        for (const config of missingTemplates) {
+          const templateContent = DEFAULT_WHATSAPP_TEMPLATES[config.type] || DEFAULT_WHATSAPP_TEMPLATES.general;
+          await api.post('/message-templates', {
+            name: config.name,
+            type: config.type,
+            template: templateContent,
+            institution: institution._id,
+            isDefault: true,
+            createdBy: currentUser?.username,
+            updatedBy: currentUser?.username,
+          });
+        }
+
+        await loadTemplates();
+        setSuccess(`${missingTemplates.length} varsayılan şablon oluşturuldu`);
       }
-
-      // Create missing templates
-      for (const config of missingTemplates) {
-        const templateContent = DEFAULT_WHATSAPP_TEMPLATES[config.type] || DEFAULT_WHATSAPP_TEMPLATES.general;
-        await api.post('/message-templates', {
-          name: config.name,
-          type: config.type,
-          template: templateContent,
-          institution: institution._id,
-          isDefault: true,
-          createdBy: currentUser?.username,
-          updatedBy: currentUser?.username,
-        });
-      }
-
-      await loadTemplates();
-      setSuccess(`${missingTemplates.length} varsayılan şablon oluşturuldu`);
     } catch (error) {
-      console.error('Error creating default templates:', error);
-      setError('Varsayılan şablonlar oluşturulurken bir hata oluştu');
+      console.error('Error creating/resetting default templates:', error);
+      setError('Varsayılan şablonlar işlenirken bir hata oluştu');
     } finally {
       setCreatingDefaults(false);
     }
@@ -254,13 +289,28 @@ const MessageTemplates = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Mesaj Şablonları</Typography>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="outlined"
-            onClick={createDefaultTemplates}
-            disabled={creatingDefaults}
-          >
-            {creatingDefaults ? 'Oluşturuluyor...' : 'Varsayılan Şablonları Ekle'}
-          </Button>
+          {allDefaultsExist ? (
+            <Tooltip title="Tüm varsayılan şablonların içeriklerini orijinal varsayılan değerlere geri döndürür">
+              <Button
+                variant="outlined"
+                color="warning"
+                onClick={() => createDefaultTemplates(true)}
+                disabled={creatingDefaults}
+              >
+                {creatingDefaults ? 'Sıfırlanıyor...' : 'Varsayılanlara Sıfırla'}
+              </Button>
+            </Tooltip>
+          ) : (
+            <Tooltip title="Eksik varsayılan şablonları oluşturur">
+              <Button
+                variant="outlined"
+                onClick={() => createDefaultTemplates(false)}
+                disabled={creatingDefaults}
+              >
+                {creatingDefaults ? 'Oluşturuluyor...' : 'Varsayılan Şablonları Ekle'}
+              </Button>
+            </Tooltip>
+          )}
           <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
             Yeni Şablon
           </Button>
