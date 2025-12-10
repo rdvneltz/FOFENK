@@ -557,19 +557,19 @@ const Dashboard = () => {
           <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="h6" sx={{ mb: 2 }}><Warning color="error" sx={{ mr: 1, verticalAlign: 'middle' }} />Acil / Oncelikli</Typography>
             <List dense>
-              {expectedPayments.overdue.length > 0 && (
-                <ListItem button onClick={() => handlePaymentsBoxClick('overdue', 'Gecikmis Odemeler', expectedPayments.overdue)} sx={{ bgcolor: 'error.light', borderRadius: 1, mb: 0.5 }}>
+              {upcomingPayments.overdue.items.length > 0 && (
+                <ListItem button onClick={() => handlePaymentsBoxClick('overdue', 'Gecikmis Odemeler', upcomingPayments.overdue.items)} sx={{ bgcolor: 'error.light', borderRadius: 1, mb: 0.5 }}>
                   <ListItemText
-                    primary={<Typography color="error.dark" fontWeight="bold">{expectedPayments.overdue.length} Gecikmis Odeme</Typography>}
-                    secondary={`${expectedPayments.overdue.reduce((s, p) => s + p.amount, 0).toLocaleString('tr-TR')} TL`}
+                    primary={<Typography color="error.dark" fontWeight="bold">{upcomingPayments.overdue.items.length} Gecikmis Odeme</Typography>}
+                    secondary={`${upcomingPayments.overdue.total.toLocaleString('tr-TR')} TL`}
                   />
                 </ListItem>
               )}
-              {expectedPayments.today.length > 0 && (
-                <ListItem button onClick={() => handlePaymentsBoxClick('today', 'Bugunku Odemeler', expectedPayments.today)} sx={{ bgcolor: 'warning.light', borderRadius: 1, mb: 0.5 }}>
+              {upcomingPayments.today.items.length > 0 && (
+                <ListItem button onClick={() => handlePaymentsBoxClick('today', 'Bugunku Odemeler', upcomingPayments.today.items)} sx={{ bgcolor: 'warning.light', borderRadius: 1, mb: 0.5 }}>
                   <ListItemText
-                    primary={<Typography color="warning.dark" fontWeight="bold">{expectedPayments.today.length} Bugun Vadeli</Typography>}
-                    secondary={`${expectedPayments.today.reduce((s, p) => s + p.amount, 0).toLocaleString('tr-TR')} TL`}
+                    primary={<Typography color="warning.dark" fontWeight="bold">{upcomingPayments.today.items.length} Bugun Vadeli</Typography>}
+                    secondary={`${upcomingPayments.today.total.toLocaleString('tr-TR')} TL`}
                   />
                 </ListItem>
               )}
@@ -591,7 +591,7 @@ const Dashboard = () => {
                   />
                 </ListItem>
               )}
-              {expectedPayments.overdue.length === 0 && expectedPayments.today.length === 0 && trialLessons.length === 0 && instructorDebts.total === 0 && (
+              {upcomingPayments.overdue.items.length === 0 && upcomingPayments.today.items.length === 0 && trialLessons.length === 0 && instructorDebts.total === 0 && (
                 <Typography color="text.secondary" align="center" sx={{ py: 2 }}>Acil durum yok</Typography>
               )}
             </List>
