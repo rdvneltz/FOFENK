@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
     const paymentPlans = await PaymentPlan.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
       .populate('course', 'name')
       .sort({ createdAt: -1 });
 
@@ -40,7 +40,7 @@ router.get('/:id', async (req, res) => {
     const paymentPlan = await PaymentPlan.findById(req.params.id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
       .populate('course', 'name');
 
     if (!paymentPlan) {
@@ -385,7 +385,7 @@ router.post('/', async (req, res) => {
     const populatedPaymentPlan = await PaymentPlan.findById(newPaymentPlan._id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
       .populate('course', 'name');
 
     res.status(201).json(populatedPaymentPlan);
@@ -423,7 +423,7 @@ router.put('/:id', async (req, res) => {
     const populatedPaymentPlan = await PaymentPlan.findById(paymentPlan._id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
       .populate('course', 'name');
 
     // Log activity
@@ -449,7 +449,7 @@ router.post('/:id/process-credit-card-payment', async (req, res) => {
     const { cashRegisterId, createdBy } = req.body;
 
     const paymentPlan = await PaymentPlan.findById(req.params.id)
-      .populate('student', 'firstName lastName');
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient');
 
     if (!paymentPlan) {
       return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
@@ -576,7 +576,7 @@ router.post('/:id/process-credit-card-payment', async (req, res) => {
     const populatedPaymentPlan = await PaymentPlan.findById(paymentPlan._id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
       .populate('course', 'name');
 
     res.json(populatedPaymentPlan);
@@ -606,7 +606,7 @@ router.post('/:id/pay-installment', async (req, res) => {
     } = req.body;
 
     const paymentPlan = await PaymentPlan.findById(req.params.id)
-      .populate('student', 'firstName lastName');
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient');
 
     if (!paymentPlan) {
       return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
@@ -789,7 +789,7 @@ router.post('/:id/pay-installment', async (req, res) => {
     const populatedPaymentPlan = await PaymentPlan.findById(paymentPlan._id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
       .populate('course', 'name');
 
     res.json(populatedPaymentPlan);
@@ -889,7 +889,7 @@ router.post('/:id/refund-installment', async (req, res) => {
     const { installmentNumber, refundReason, createdBy } = req.body;
 
     const paymentPlan = await PaymentPlan.findById(req.params.id)
-      .populate('student', 'firstName lastName');
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient');
 
     if (!paymentPlan) {
       return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
@@ -1019,7 +1019,7 @@ router.post('/:id/refund-installment', async (req, res) => {
     const populatedPaymentPlan = await PaymentPlan.findById(paymentPlan._id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
       .populate('course', 'name');
 
     res.json({

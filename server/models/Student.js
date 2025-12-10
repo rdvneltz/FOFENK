@@ -72,6 +72,12 @@ const studentSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  // Varsayılan bildirim alıcısı: student, mother, father
+  defaultNotificationRecipient: {
+    type: String,
+    enum: ['student', 'mother', 'father'],
+    default: 'student'
+  },
   createdBy: String,
   updatedBy: String
 });

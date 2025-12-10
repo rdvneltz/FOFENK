@@ -19,17 +19,50 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Tooltip,
+  Chip,
+  Divider,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
-import { Add, Edit, Delete, ContentCopy } from '@mui/icons-material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { Add, Edit, Delete, ContentCopy, Info } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
+import { TEMPLATE_VARIABLES, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
+
+// Template type labels (Turkish)
+const TEMPLATE_TYPE_LABELS = {
+  paymentPlanCreated: 'Ödeme Planı Oluşturuldu',
+  paymentReceived: 'Ödeme Alındı',
+  paymentDueReminder: 'Vadesi Yaklaşan Ödeme',
+  paymentOverdue: 'Vadesi Geçmiş Ödeme',
+  balanceSummary: 'Bakiye Özeti',
+  registrationConfirm: 'Kayıt Onayı',
+  trialLessonReminder: 'Deneme Dersi Hatırlatma',
+  lessonReminder: 'Ders Hatırlatma',
+  general: 'Genel',
+};
+
+// Variable category labels (Turkish)
+const CATEGORY_LABELS = {
+  person: 'Kişi Bilgileri',
+  course: 'Kurs/Kurum Bilgileri',
+  date: 'Tarih/Saat Bilgileri',
+  amount: 'Tutar Bilgileri',
+  installment: 'Taksit Bilgileri',
+  payment: 'Ödeme Bilgileri',
+  list: 'Detaylı Listeler',
+};
 
 const MessageTemplates = () => {
   const { institution, currentUser } = useApp();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [creatingDefaults, setCreatingDefaults] = useState(false);
   const [openDialog, setOpenDialog] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
@@ -140,6 +173,61 @@ const MessageTemplates = () => {
     setSuccess('Metin kopyalandı');
   };
 
+  // Create default templates for the institution
+  const createDefaultTemplates = async () => {
+    try {
+      setCreatingDefaults(true);
+      setError('');
+
+      const defaultTemplateConfigs = [
+        { type: 'paymentPlanCreated', name: 'Ödeme Planı Oluşturuldu' },
+        { type: 'paymentReceived', name: 'Ödeme Alındı' },
+        { type: 'paymentDueReminder', name: 'Vadesi Yaklaşan Ödeme Hatırlatma' },
+        { type: 'paymentOverdue', name: 'Vadesi Geçmiş Ödeme' },
+        { type: 'balanceSummary', name: 'Bakiye Özeti' },
+        { type: 'registrationConfirm', name: 'Kayıt Onayı' },
+        { type: 'trialLessonReminder', name: 'Deneme Dersi Hatırlatma' },
+        { type: 'lessonReminder', name: 'Ders Hatırlatma' },
+        { type: 'general', name: 'Genel Mesaj' },
+      ];
+
+      // Get existing template types
+      const existingTypes = templates.map(t => t.type);
+
+      // Create only missing templates
+      const missingTemplates = defaultTemplateConfigs.filter(
+        config => !existingTypes.includes(config.type)
+      );
+
+      if (missingTemplates.length === 0) {
+        setSuccess('Tüm varsayılan şablonlar zaten mevcut');
+        return;
+      }
+
+      // Create missing templates
+      for (const config of missingTemplates) {
+        const templateContent = DEFAULT_WHATSAPP_TEMPLATES[config.type] || DEFAULT_WHATSAPP_TEMPLATES.general;
+        await api.post('/message-templates', {
+          name: config.name,
+          type: config.type,
+          template: templateContent,
+          institution: institution._id,
+          isDefault: true,
+          createdBy: currentUser?.username,
+          updatedBy: currentUser?.username,
+        });
+      }
+
+      await loadTemplates();
+      setSuccess(`${missingTemplates.length} varsayılan şablon oluşturuldu`);
+    } catch (error) {
+      console.error('Error creating default templates:', error);
+      setError('Varsayılan şablonlar oluşturulurken bir hata oluştu');
+    } finally {
+      setCreatingDefaults(false);
+    }
+  };
+
   const insertVariable = (variable) => {
     setFormData(prev => ({
       ...prev,
@@ -165,9 +253,18 @@ const MessageTemplates = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Mesaj Şablonları</Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
-          Yeni Şablon
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            onClick={createDefaultTemplates}
+            disabled={creatingDefaults}
+          >
+            {creatingDefaults ? 'Oluşturuluyor...' : 'Varsayılan Şablonları Ekle'}
+          </Button>
+          <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
+            Yeni Şablon
+          </Button>
+        </Box>
       </Box>
 
       {error && (
@@ -197,13 +294,13 @@ const MessageTemplates = () => {
                   <Typography variant="h6" gutterBottom>
                     {template.name}
                   </Typography>
-                  <Typography variant="caption" color="primary" sx={{ mb: 1, display: 'block' }}>
-                    {template.type === 'general' ? 'Genel' :
-                     template.type === 'paymentPlan' ? 'Ödeme Planı' :
-                     template.type === 'paymentReminder' ? 'Ödeme Hatırlatma' :
-                     template.type === 'trialLessonReminder' ? 'Deneme Dersi Hatırlatma' :
-                     template.type === 'lessonReminder' ? 'Ders Hatırlatma' : 'Genel'}
-                  </Typography>
+                  <Chip
+                    label={TEMPLATE_TYPE_LABELS[template.type] || 'Genel'}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                    sx={{ mb: 1 }}
+                  />
                   <Typography
                     variant="body2"
                     color="text.secondary"
@@ -272,49 +369,88 @@ const MessageTemplates = () => {
                 />
               </Grid>
               <Grid item xs={12}>
-                <FormControl fullWidth required>
-                  <InputLabel>Tip</InputLabel>
-                  <Select
-                    name="type"
-                    value={formData.type}
-                    onChange={handleChange}
-                    label="Tip"
-                  >
-                    <MenuItem value="general">Genel</MenuItem>
-                    <MenuItem value="paymentPlan">Ödeme Planı</MenuItem>
-                    <MenuItem value="paymentReminder">Ödeme Hatırlatma</MenuItem>
-                    <MenuItem value="trialLessonReminder">Deneme Dersi Hatırlatma</MenuItem>
-                    <MenuItem value="lessonReminder">Ders Hatırlatma</MenuItem>
-                  </Select>
-                </FormControl>
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+                  <FormControl fullWidth required>
+                    <InputLabel>Tip</InputLabel>
+                    <Select
+                      name="type"
+                      value={formData.type}
+                      onChange={handleChange}
+                      label="Tip"
+                    >
+                      {Object.entries(TEMPLATE_TYPE_LABELS).map(([value, label]) => (
+                        <MenuItem key={value} value={value}>{label}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  <Tooltip title="Seçili tip için varsayılan şablon içeriğini yükle">
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      sx={{ mt: 1, minWidth: 'auto', whiteSpace: 'nowrap' }}
+                      onClick={() => {
+                        const defaultContent = DEFAULT_WHATSAPP_TEMPLATES[formData.type];
+                        if (defaultContent) {
+                          setFormData(prev => ({
+                            ...prev,
+                            template: defaultContent,
+                            name: prev.name || TEMPLATE_TYPE_LABELS[formData.type]
+                          }));
+                        }
+                      }}
+                    >
+                      Varsayılan Yükle
+                    </Button>
+                  </Tooltip>
+                </Box>
               </Grid>
               <Grid item xs={12}>
-                <Box sx={{ mb: 2 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    Kullanılabilir Değişkenler (Tıklayın):
+                <Box sx={{ mb: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Info fontSize="small" color="primary" />
+                    Kullanılabilir Değişkenler (Tıklayarak ekleyin)
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-                    {[
-                      { key: '{studentName}', label: 'Öğrenci Adı' },
-                      { key: '{parentName}', label: 'Veli Adı' },
-                      { key: '{courseName}', label: 'Kurs Adı' },
-                      { key: '{amount}', label: 'Tutar' },
-                      { key: '{date}', label: 'Tarih' },
-                      { key: '{time}', label: 'Saat' },
-                      { key: '{phone}', label: 'Telefon' },
-                      { key: '{email}', label: 'Email' },
-                    ].map((variable) => (
-                      <Button
-                        key={variable.key}
-                        size="small"
-                        variant="outlined"
-                        onClick={() => insertVariable(variable.key)}
-                      >
-                        {variable.label}
-                      </Button>
-                    ))}
-                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                    Değişkenler mesaj gönderilirken otomatik olarak gerçek değerlerle değiştirilir
+                  </Typography>
+
+                  {Object.entries(CATEGORY_LABELS).map(([category, categoryLabel]) => {
+                    const categoryVariables = TEMPLATE_VARIABLES.filter(v => v.category === category);
+                    if (categoryVariables.length === 0) return null;
+
+                    return (
+                      <Accordion key={category} defaultExpanded={category === 'person' || category === 'amount'} sx={{ mb: 1, boxShadow: 'none', border: '1px solid', borderColor: 'divider', '&:before': { display: 'none' } }}>
+                        <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 40, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
+                          <Typography variant="body2" fontWeight="medium">{categoryLabel}</Typography>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ pt: 0, pb: 1 }}>
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                            {categoryVariables.map((variable) => (
+                              <Tooltip
+                                key={variable.key}
+                                title={
+                                  <Box>
+                                    <Typography variant="body2" fontWeight="bold">{variable.key}</Typography>
+                                    <Typography variant="caption">{variable.description}</Typography>
+                                  </Box>
+                                }
+                                arrow
+                              >
+                                <Chip
+                                  label={variable.label}
+                                  size="small"
+                                  onClick={() => insertVariable(variable.key)}
+                                  sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'primary.light', color: 'primary.contrastText' } }}
+                                />
+                              </Tooltip>
+                            ))}
+                          </Box>
+                        </AccordionDetails>
+                      </Accordion>
+                    );
+                  })}
                 </Box>
+
                 <TextField
                   fullWidth
                   label="Mesaj Şablonu"
@@ -322,8 +458,10 @@ const MessageTemplates = () => {
                   value={formData.template}
                   onChange={handleChange}
                   multiline
-                  rows={4}
+                  rows={6}
                   required
+                  placeholder="Mesaj şablonunuzu buraya yazın. Değişkenleri eklemek için yukarıdaki butonlara tıklayın."
+                  helperText="Değişkenler {süslü parantez} içinde yazılır ve mesaj gönderilirken otomatik olarak değiştirilir"
                 />
               </Grid>
             </Grid>

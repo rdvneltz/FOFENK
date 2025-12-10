@@ -61,6 +61,7 @@ const StudentForm = () => {
     healthNotes: '',
     notes: '',
     status: 'trial',
+    defaultNotificationRecipient: 'student',
   });
 
   useEffect(() => {
@@ -101,6 +102,7 @@ const StudentForm = () => {
         healthNotes: student.healthNotes || '',
         notes: student.notes || '',
         status: student.status || 'trial',
+        defaultNotificationRecipient: student.defaultNotificationRecipient || 'student',
       });
     } catch (error) {
       setError('Öğrenci bilgileri yüklenirken bir hata oluştu');
@@ -174,6 +176,7 @@ const StudentForm = () => {
         healthNotes: formData.healthNotes,
         notes: formData.notes,
         status: formData.status,
+        defaultNotificationRecipient: formData.defaultNotificationRecipient,
         institution: institution._id,
         season: season._id,
         createdBy: currentUser?.username,
@@ -471,6 +474,31 @@ const StudentForm = () => {
                 multiline
                 rows={3}
               />
+            </Grid>
+          </Grid>
+
+          <Typography variant="h6" sx={{ mt: 4, mb: 2 }}>
+            Bildirim Ayarları
+          </Typography>
+
+          <Grid container spacing={3}>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Varsayılan Bildirim Alıcısı</InputLabel>
+                <Select
+                  name="defaultNotificationRecipient"
+                  value={formData.defaultNotificationRecipient}
+                  onChange={handleChange}
+                  label="Varsayılan Bildirim Alıcısı"
+                >
+                  <MenuItem value="student">Öğrenci</MenuItem>
+                  <MenuItem value="mother">Anne</MenuItem>
+                  <MenuItem value="father">Baba</MenuItem>
+                </Select>
+              </FormControl>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                Ödeme hatırlatması ve diğer bildirimler bu kişiye gönderilecek
+              </Typography>
             </Grid>
           </Grid>
 

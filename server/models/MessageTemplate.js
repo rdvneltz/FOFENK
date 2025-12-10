@@ -13,7 +13,17 @@ const messageTemplateSchema = new mongoose.Schema({
   // Şablon tipi
   type: {
     type: String,
-    enum: ['paymentPlan', 'paymentReminder', 'trialLessonReminder', 'lessonReminder', 'general'],
+    enum: [
+      'paymentPlanCreated',    // Ödeme planı oluşturuldu
+      'paymentReceived',       // Ödeme alındı
+      'paymentDueReminder',    // Vadesi yaklaşan ödeme hatırlatması
+      'paymentOverdue',        // Vadesi geçmiş ödeme
+      'balanceSummary',        // Bakiye özeti
+      'registrationConfirm',   // Kayıt onayı
+      'trialLessonReminder',   // Deneme dersi hatırlatma
+      'lessonReminder',        // Ders hatırlatma
+      'general'                // Genel
+    ],
     required: true
   },
   institution: {

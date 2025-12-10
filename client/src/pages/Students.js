@@ -315,7 +315,7 @@ const Students = () => {
                           {getDiscountBadge(student)}
                         </Box>
                         <Typography variant="caption" color="text.secondary">
-                          TC: {student.tcNumber || '-'}
+                          TC: {student.tcNo || '-'}
                         </Typography>
                       </Box>
                     </Box>
