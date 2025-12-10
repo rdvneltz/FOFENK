@@ -60,18 +60,10 @@ const PaymentPlanDetail = () => {
     installment: null
   });
   const [deleteDialog, setDeleteDialog] = useState(false);
-  const [editPlanDialog, setEditPlanDialog] = useState(false);
   const [refundDialog, setRefundDialog] = useState({
     open: false,
     installment: null,
     reason: ''
-  });
-  const [editFormData, setEditFormData] = useState({
-    totalAmount: '',
-    discountType: 'none',
-    discountValue: 0,
-    isInvoiced: false,
-    notes: ''
   });
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
@@ -295,16 +287,66 @@ const PaymentPlanDetail = () => {
     };
   };
 
-  const handleWhatsAppNotification = () => {
+  // Helper to get phone and recipient name based on defaultNotificationRecipient
+  const getNotificationRecipient = () => {
     const student = paymentPlan.student;
-    const phone = student.phone || student.parentPhone;
+    const recipient = student.defaultNotificationRecipient || 'student';
+    const mother = student.parentContacts?.find(p => p.relationship === 'Anne');
+    const father = student.parentContacts?.find(p => p.relationship === 'Baba');
+
+    let phone = null;
+    let recipientName = `${student.firstName} ${student.lastName}`;
+    let isParent = false;
+
+    switch (recipient) {
+      case 'mother':
+        phone = mother?.phone;
+        if (mother?.name) {
+          recipientName = mother.name;
+          isParent = true;
+        }
+        break;
+      case 'father':
+        phone = father?.phone;
+        if (father?.name) {
+          recipientName = father.name;
+          isParent = true;
+        }
+        break;
+      default: // 'student'
+        phone = student.phone;
+        break;
+    }
+
+    // Fallback to other numbers if preferred not available
+    if (!phone) {
+      phone = student.phone || mother?.phone || father?.phone;
+      if (phone === mother?.phone && mother?.name) {
+        recipientName = mother.name;
+        isParent = true;
+      } else if (phone === father?.phone && father?.name) {
+        recipientName = father.name;
+        isParent = true;
+      }
+    }
+
+    return { phone, recipientName, isParent, studentName: `${student.firstName} ${student.lastName}` };
+  };
+
+  const handleWhatsAppNotification = () => {
+    const { phone, recipientName, isParent, studentName } = getNotificationRecipient();
 
     if (!phone) {
       setError('Öğrenci veya velinin telefon numarası bulunamadı');
       return;
     }
 
-    const data = getNotificationData();
+    const data = {
+      ...getNotificationData(),
+      recipientName,
+      isParent,
+      studentName
+    };
     sendWhatsAppMessage(phone, DEFAULT_WHATSAPP_TEMPLATES.paymentPlanStatus, data);
     setNotificationDialog(false);
     setSuccess('WhatsApp mesajı açıldı');
@@ -312,10 +354,13 @@ const PaymentPlanDetail = () => {
 
   const handleEmailNotification = () => {
     const data = getNotificationData();
+    const { recipientName, isParent, studentName } = getNotificationRecipient();
 
-    const message = `Sayın ${data.studentName},
+    const greeting = isParent
+      ? `Sayın ${recipientName},\n\nÖğrenciniz ${studentName} için ödeme planı durumu:`
+      : `Sayın ${studentName},\n\nÖdeme Planı Durumunuz:`;
 
-Ödeme Planı Durumunuz:
+    const message = `${greeting}
 
 Kurs: ${data.courseName}
 Toplam Tutar: ${data.totalAmount?.toLocaleString('tr-TR')} TL
@@ -331,62 +376,10 @@ Fofora Tiyatro`;
 
     setEmailDialog({
       open: true,
-      subject: 'Ödeme Planı Durumu - Fofora Tiyatro',
+      subject: `Ödeme Planı Durumu - ${studentName}`,
       message
     });
     setNotificationDialog(false);
-  };
-
-  const openEditDialog = () => {
-    setEditFormData({
-      totalAmount: paymentPlan.totalAmount || '',
-      discountType: paymentPlan.discountType || 'none',
-      discountValue: paymentPlan.discountValue || 0,
-      isInvoiced: paymentPlan.isInvoiced || false,
-      notes: paymentPlan.notes || ''
-    });
-    setEditPlanDialog(true);
-  };
-
-  const handleEditPlan = async () => {
-    try {
-      const totalAmount = parseFloat(editFormData.totalAmount);
-
-      let discountAmount = 0;
-      if (editFormData.discountType === 'percentage') {
-        discountAmount = (totalAmount * parseFloat(editFormData.discountValue)) / 100;
-      } else if (editFormData.discountType === 'fixed') {
-        discountAmount = parseFloat(editFormData.discountValue) || 0;
-      } else if (editFormData.discountType === 'fullScholarship') {
-        discountAmount = totalAmount;
-      }
-
-      let discountedAmount = totalAmount - discountAmount;
-
-      const installmentCount = paymentPlan.installments.length;
-      const installmentAmount = discountedAmount / installmentCount;
-
-      const updatedInstallments = paymentPlan.installments.map((inst) => ({
-        ...inst,
-        amount: installmentAmount,
-        baseAmount: installmentAmount
-      }));
-
-      await api.put(`/payment-plans/${id}`, {
-        totalAmount: totalAmount,
-        discountedAmount: discountedAmount,
-        installments: updatedInstallments,
-        isInvoiced: editFormData.isInvoiced,
-        notes: editFormData.notes,
-        updatedBy: user?.username
-      });
-
-      setSuccess('Ödeme planı güncellendi');
-      setEditPlanDialog(false);
-      loadPaymentPlan();
-    } catch (error) {
-      setError('Ödeme planı güncellenirken hata oluştu');
-    }
   };
 
   if (loading) {
@@ -422,13 +415,6 @@ Fofora Tiyatro`;
             onClick={() => setNotificationDialog(true)}
           >
             Bildirim Gönder
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<Edit />}
-            onClick={openEditDialog}
-          >
-            Planı Düzenle
           </Button>
           <Button
             variant="outlined"
@@ -807,70 +793,6 @@ Fofora Tiyatro`;
           <Button onClick={handleEditInstallment} variant="contained">
             Kaydet
           </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Edit Plan Dialog */}
-      <Dialog open={editPlanDialog} onClose={() => setEditPlanDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Ödeme Planını Düzenle</DialogTitle>
-        <DialogContent>
-          <Box sx={{ mt: 2 }}>
-            <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Toplam Tutar (₺)"
-                  type="number"
-                  value={editFormData.totalAmount}
-                  onChange={(e) => setEditFormData({ ...editFormData, totalAmount: e.target.value })}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth>
-                  <InputLabel>İndirim Tipi</InputLabel>
-                  <Select
-                    value={editFormData.discountType}
-                    onChange={(e) => setEditFormData({
-                      ...editFormData,
-                      discountType: e.target.value,
-                      discountValue: e.target.value === 'fullScholarship' ? 100 : editFormData.discountValue
-                    })}
-                    label="İndirim Tipi"
-                  >
-                    <MenuItem value="none">İndirimsiz</MenuItem>
-                    <MenuItem value="percentage">Yüzde (%)</MenuItem>
-                    <MenuItem value="fixed">Tutar (₺)</MenuItem>
-                    <MenuItem value="fullScholarship">%100 Burslu</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              {editFormData.discountType !== 'none' && editFormData.discountType !== 'fullScholarship' && (
-                <Grid item xs={12} sm={6}>
-                  <TextField
-                    fullWidth
-                    label={editFormData.discountType === 'percentage' ? 'İndirim (%)' : 'İndirim (₺)'}
-                    type="number"
-                    value={editFormData.discountValue}
-                    onChange={(e) => setEditFormData({ ...editFormData, discountValue: e.target.value })}
-                  />
-                </Grid>
-              )}
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Notlar"
-                  multiline
-                  rows={3}
-                  value={editFormData.notes}
-                  onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
-                />
-              </Grid>
-            </Grid>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditPlanDialog(false)}>İptal</Button>
-          <Button onClick={handleEditPlan} variant="contained">Kaydet</Button>
         </DialogActions>
       </Dialog>
 

@@ -303,15 +303,15 @@ const StudentDetail = () => {
               <ListItem>
                 <ListItemText
                   primary="TC Kimlik No"
-                  secondary={student.tcNumber || '-'}
+                  secondary={student.tcNo || '-'}
                 />
               </ListItem>
               <ListItem>
                 <ListItemText
                   primary="Doğum Tarihi"
                   secondary={
-                    student.birthDate
-                      ? new Date(student.birthDate).toLocaleDateString('tr-TR')
+                    student.dateOfBirth
+                      ? new Date(student.dateOfBirth).toLocaleDateString('tr-TR')
                       : '-'
                   }
                 />

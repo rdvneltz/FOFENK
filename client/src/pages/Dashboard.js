@@ -49,6 +49,7 @@ import {
   ArrowForward,
   CheckCircle,
   PendingActions,
+  Send,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -68,6 +69,7 @@ import {
   Legend
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
 
 ChartJS.register(
   CategoryScale,
@@ -427,6 +429,64 @@ const Dashboard = () => {
 
   const handlePaymentsBoxClick = (type, title, payments) => {
     setPaymentsDetailDialog({ open: true, title, payments, type });
+  };
+
+  // Send payment reminder via WhatsApp
+  const handleSendPaymentReminder = (payment) => {
+    const student = payment.student;
+    if (!student) return;
+
+    // Get phone based on defaultNotificationRecipient
+    const recipient = student.defaultNotificationRecipient || 'student';
+    const mother = student.parentContacts?.find(p => p.relationship === 'Anne');
+    const father = student.parentContacts?.find(p => p.relationship === 'Baba');
+
+    let phone = null;
+    let recipientName = `${student.firstName} ${student.lastName}`;
+    let isParent = false;
+
+    switch (recipient) {
+      case 'mother':
+        phone = mother?.phone;
+        if (mother?.name) { recipientName = mother.name; isParent = true; }
+        break;
+      case 'father':
+        phone = father?.phone;
+        if (father?.name) { recipientName = father.name; isParent = true; }
+        break;
+      default:
+        phone = student.phone;
+        break;
+    }
+
+    // Fallback
+    if (!phone) {
+      phone = student.phone || mother?.phone || father?.phone;
+    }
+
+    if (!phone) {
+      alert('Telefon numarası bulunamadı');
+      return;
+    }
+
+    const studentName = `${student.firstName} ${student.lastName}`;
+    const greeting = isParent
+      ? `Sayın ${recipientName},\n\nÖğrenciniz ${studentName} için ödeme hatırlatması:`
+      : `Sayın ${studentName},\n\nÖdeme hatırlatması:`;
+
+    const message = `${greeting}
+
+Ders: ${payment.course?.name || ''}
+Taksit: ${payment.installmentNumber}. Taksit
+Tutar: ${payment.amount?.toLocaleString('tr-TR')} TL
+Son Ödeme: ${new Date(payment.dueDate).toLocaleDateString('tr-TR')}
+
+Sorularınız için bizimle iletişime geçebilirsiniz.
+
+Saygılarımızla,
+Fofora Tiyatro`;
+
+    sendWhatsAppMessage(phone, message, {});
   };
 
   if (loading) {
@@ -1046,6 +1106,7 @@ const Dashboard = () => {
                   <TableCell>Taksit</TableCell>
                   <TableCell>Vade</TableCell>
                   <TableCell align="right">Tutar</TableCell>
+                  <TableCell align="center">Hatırlat</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1056,6 +1117,16 @@ const Dashboard = () => {
                     <TableCell><Chip size="small" label={`${payment.installmentNumber}. Taksit`} /></TableCell>
                     <TableCell>{new Date(payment.dueDate).toLocaleDateString('tr-TR')}</TableCell>
                     <TableCell align="right">{payment.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    <TableCell align="center">
+                      <IconButton
+                        size="small"
+                        color="success"
+                        onClick={() => handleSendPaymentReminder(payment)}
+                        title="WhatsApp ile hatırlat"
+                      >
+                        <Send fontSize="small" />
+                      </IconButton>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
