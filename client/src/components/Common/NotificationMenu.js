@@ -39,6 +39,7 @@ const TEMPLATE_TYPE_LABELS = {
  * - defaultTemplate: Optional default template type to use
  * - onEmailClick: Function called when email is selected, receives (recipients, subject, message, templateData)
  * - mode: 'full' (show all options) | 'whatsapp' (only WhatsApp) | 'email' (only email)
+ * - allowedTemplates: Array of template types to show (if not provided, shows 'general' only for student context)
  */
 const NotificationMenu = ({
   anchorEl,
@@ -49,6 +50,7 @@ const NotificationMenu = ({
   defaultTemplate = null,
   onEmailClick,
   mode = 'full',
+  allowedTemplates = ['general'], // Default to only general template
 }) => {
   const { institution } = useApp();
   const [templates, setTemplates] = useState([]);
@@ -191,10 +193,12 @@ const NotificationMenu = ({
     }
   };
 
-  // Available templates for display
+  // Available templates for display (filtered by allowedTemplates)
   const availableTemplates = [
     { type: 'custom', label: 'Özel Mesaj (Boş)' },
-    ...Object.entries(TEMPLATE_TYPE_LABELS).map(([type, label]) => ({ type, label })),
+    ...Object.entries(TEMPLATE_TYPE_LABELS)
+      .filter(([type]) => allowedTemplates.includes(type))
+      .map(([type, label]) => ({ type, label })),
   ];
 
   return (

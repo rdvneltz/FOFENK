@@ -21,7 +21,7 @@ router.get('/', async (req, res) => {
     const enrollments = await StudentCourseEnrollment.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName studentId')
+      .populate('student', 'firstName lastName studentId phone email parentContacts defaultNotificationRecipient')
       .populate({
         path: 'course',
         select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth instructor',

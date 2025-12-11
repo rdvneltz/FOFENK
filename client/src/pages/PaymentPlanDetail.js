@@ -282,6 +282,60 @@ const PaymentPlanDetail = () => {
     }
   };
 
+  // Helper: Calculate monthly lesson breakdown
+  const calculateMonthlyBreakdown = () => {
+    if (!paymentPlan.enrollment || !paymentPlan.season) return null;
+
+    const enrollment = paymentPlan.enrollment;
+    const course = enrollment.course || paymentPlan.course;
+    const season = paymentPlan.season;
+
+    if (!course || !season) return null;
+
+    const enrollmentDate = new Date(enrollment.enrollmentDate);
+    const seasonEnd = new Date(season.endDate);
+    const monthlyFee = course.pricePerMonth || 0;
+    const expectedLessons = course.expectedLessonsPerMonth || 4;
+
+    const months = [];
+    const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                        'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+
+    let currentMonth = new Date(enrollmentDate.getFullYear(), enrollmentDate.getMonth(), 1);
+
+    while (currentMonth <= seasonEnd) {
+      const monthName = monthNames[currentMonth.getMonth()];
+      const year = currentMonth.getFullYear();
+      const isFirstMonth = currentMonth.getMonth() === enrollmentDate.getMonth() &&
+                          currentMonth.getFullYear() === enrollmentDate.getFullYear();
+
+      // Calculate lessons and fee for this month
+      let lessonCount = expectedLessons;
+      let fee = monthlyFee;
+
+      // For first month, calculate partial if enrollment is mid-month
+      if (isFirstMonth) {
+        const dayOfMonth = enrollmentDate.getDate();
+        const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+        const remainingDays = daysInMonth - dayOfMonth + 1;
+        const ratio = remainingDays / daysInMonth;
+        lessonCount = Math.ceil(expectedLessons * ratio);
+        fee = Math.round(monthlyFee * ratio);
+      }
+
+      months.push({
+        month: `${monthName} ${year}`,
+        lessonCount,
+        fee
+      });
+
+      // Move to next month
+      currentMonth.setMonth(currentMonth.getMonth() + 1);
+    }
+
+    return months;
+  };
+
   // Generate notification message with payment plan data
   const getNotificationData = () => {
     const student = paymentPlan.student;
@@ -299,6 +353,12 @@ const PaymentPlanDetail = () => {
       `• ${inst.installmentNumber}. Taksit: ${new Date(inst.paidAt || inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL ✓`
     ).join('\n');
 
+    // Calculate monthly breakdown for notification
+    const monthlyBreakdown = calculateMonthlyBreakdown();
+    const monthlyDetailsList = monthlyBreakdown
+      ? monthlyBreakdown.map(m => `• ${m.month}: ${m.lessonCount} ders - ${m.fee.toLocaleString('tr-TR')} TL`).join('\n')
+      : 'Aylık detay bulunamadı';
+
     return {
       studentName: `${student.firstName} ${student.lastName}`,
       name: `${student.firstName} ${student.lastName}`,
@@ -312,6 +372,9 @@ const PaymentPlanDetail = () => {
       remainingInstallments: unpaidInstallments.length,
       remainingInstallmentsList: remainingInstallmentsList || 'Kalan taksit yok',
       paidInstallmentsList: paidInstallmentsList || 'Henüz ödeme yapılmadı',
+      // Monthly lesson breakdown
+      monthlyDetailsList,
+      monthCount: monthlyBreakdown?.length || 0,
       // Next installment details
       ...(nextInstallment && {
         amount: nextInstallment.amount,
@@ -480,6 +543,74 @@ Fofora Tiyatro`;
   const handlePaymentEmailNotification = () => {
     setPaymentEmailDialogOpen(true);
     setPaymentNotificationDialog({ open: false, paidInstallment: null });
+  };
+
+  // Send payment received notification for a specific paid installment
+  const handleSendPaidInstallmentNotification = (installment) => {
+    const { phone, recipientName, isParent, studentName } = getNotificationRecipient();
+
+    if (!phone) {
+      setError('Telefon numarası bulunamadı');
+      return;
+    }
+
+    const unpaidInstallments = paymentPlan.installments?.filter(i => !i.isPaid) || [];
+    const remainingInstallmentsList = unpaidInstallments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
+    ).join('\n');
+
+    const data = {
+      recipientName,
+      studentName: isParent ? studentName : recipientName,
+      courseName: paymentPlan.course?.name || '',
+      institutionName: paymentPlan.institution?.name || 'Kurum',
+      paidAmount: installment.amount,
+      installmentNumber: installment.installmentNumber,
+      paymentDate: installment.paidAt ? new Date(installment.paidAt).toLocaleDateString('tr-TR') : new Date().toLocaleDateString('tr-TR'),
+      remainingAmount: paymentPlan.remainingAmount || 0,
+      remainingInstallments: unpaidInstallments.length,
+      remainingInstallmentsList: remainingInstallmentsList || 'Tüm taksitler ödendi',
+    };
+
+    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentReceived;
+    const message = replaceTemplateVariables(template, data);
+    sendWhatsAppMessage(phone, message, {});
+  };
+
+  // Send payment reminder notification for a specific unpaid installment
+  const handleSendInstallmentReminder = (installment) => {
+    const { phone, recipientName, isParent, studentName } = getNotificationRecipient();
+
+    if (!phone) {
+      setError('Telefon numarası bulunamadı');
+      return;
+    }
+
+    const dueDate = new Date(installment.dueDate);
+    const today = new Date();
+    const isOverdue = dueDate < today;
+    const overdueDays = isOverdue ? Math.ceil((today - dueDate) / (1000 * 60 * 60 * 24)) : 0;
+
+    const data = {
+      recipientName,
+      studentName: isParent ? studentName : recipientName,
+      courseName: paymentPlan.course?.name || '',
+      institutionName: paymentPlan.institution?.name || 'Kurum',
+      amount: installment.amount,
+      dueDate: installment.dueDate,
+      installmentNumber: installment.installmentNumber,
+      totalInstallments: paymentPlan.installments?.length || 0,
+      totalAmount: paymentPlan.discountedAmount || paymentPlan.totalAmount || 0,
+      paidAmount: paymentPlan.paidAmount || 0,
+      remainingAmount: paymentPlan.remainingAmount || 0,
+      overdueDays,
+    };
+
+    const template = isOverdue
+      ? DEFAULT_WHATSAPP_TEMPLATES.paymentOverdue
+      : DEFAULT_WHATSAPP_TEMPLATES.paymentDueReminder;
+    const message = replaceTemplateVariables(template, data);
+    sendWhatsAppMessage(phone, message, {});
   };
 
   if (loading) {
@@ -711,29 +842,51 @@ Fofora Tiyatro`;
                           </Tooltip>
                         )}
                         {!installment.isPaid ? (
-                          <Tooltip title="Ödeme Al">
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              onClick={() => handleOpenPaymentDialog(installment)}
-                            >
-                              <Payment fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          <>
+                            <Tooltip title="Ödeme Al">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => handleOpenPaymentDialog(installment)}
+                              >
+                                <Payment fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Ödeme Hatırlatması Gönder">
+                              <IconButton
+                                size="small"
+                                sx={{ color: '#25D366' }}
+                                onClick={() => handleSendInstallmentReminder(installment)}
+                              >
+                                <Send fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
                         ) : (
-                          <Tooltip title="İade Et">
-                            <IconButton
-                              size="small"
-                              color="warning"
-                              onClick={() => setRefundDialog({
-                                open: true,
-                                installment: installment,
-                                reason: ''
-                              })}
-                            >
-                              <Undo fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          <>
+                            <Tooltip title="Ödeme Bildirimi Gönder">
+                              <IconButton
+                                size="small"
+                                sx={{ color: '#25D366' }}
+                                onClick={() => handleSendPaidInstallmentNotification(installment)}
+                              >
+                                <Send fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="İade Et">
+                              <IconButton
+                                size="small"
+                                color="warning"
+                                onClick={() => setRefundDialog({
+                                  open: true,
+                                  installment: installment,
+                                  reason: ''
+                                })}
+                              >
+                                <Undo fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </>
                         )}
                       </TableCell>
                     </TableRow>
