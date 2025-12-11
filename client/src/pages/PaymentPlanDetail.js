@@ -40,7 +40,7 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import PaymentDialog from '../components/Payment/PaymentDialog';
 import EmailDialog from '../components/Email/EmailDialog';
-import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES } from '../utils/whatsappHelper';
+import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
 
 const PaymentPlanDetail = () => {
   const { id } = useParams();
@@ -73,6 +73,12 @@ const PaymentPlanDetail = () => {
     subject: '',
     message: ''
   });
+  // Payment notification state - ask after payment received
+  const [paymentNotificationDialog, setPaymentNotificationDialog] = useState({
+    open: false,
+    paidInstallment: null
+  });
+  const [paymentEmailDialogOpen, setPaymentEmailDialogOpen] = useState(false);
 
   useEffect(() => {
     loadPaymentPlan();
@@ -219,9 +225,18 @@ const PaymentPlanDetail = () => {
         createdBy: user?.username
       });
 
-      setSuccess(`${data.installmentNumber}. taksit başarıyla ödendi`);
       setPaymentDialog({ open: false, installment: null });
-      loadPaymentPlan();
+      await loadPaymentPlan();
+
+      // Show payment notification dialog
+      setPaymentNotificationDialog({
+        open: true,
+        paidInstallment: {
+          installmentNumber: data.installmentNumber,
+          amount: data.amount,
+          paidAt: new Date()
+        }
+      });
     } catch (error) {
       setError(error.response?.data?.message || 'Ödeme kaydedilirken hata oluştu');
     }
@@ -270,6 +285,20 @@ const PaymentPlanDetail = () => {
   // Generate notification message with payment plan data
   const getNotificationData = () => {
     const student = paymentPlan.student;
+    const paidInstallments = paymentPlan.installments?.filter(i => i.isPaid) || [];
+    const unpaidInstallments = paymentPlan.installments?.filter(i => !i.isPaid) || [];
+    const nextInstallment = unpaidInstallments[0];
+
+    // Build remaining installments list
+    const remainingInstallmentsList = unpaidInstallments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
+    ).join('\n');
+
+    // Build paid installments list
+    const paidInstallmentsList = paidInstallments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.paidAt || inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL ✓`
+    ).join('\n');
+
     return {
       studentName: `${student.firstName} ${student.lastName}`,
       name: `${student.firstName} ${student.lastName}`,
@@ -277,12 +306,17 @@ const PaymentPlanDetail = () => {
       paidAmount: paymentPlan.paidAmount || 0,
       remainingAmount: paymentPlan.remainingAmount || 0,
       courseName: paymentPlan.course?.name || '',
-      // Find next unpaid installment
-      ...(paymentPlan.installments?.find(i => !i.isPaid) && {
-        amount: paymentPlan.installments.find(i => !i.isPaid).amount,
-        dueDate: paymentPlan.installments.find(i => !i.isPaid).dueDate,
-        installmentNumber: paymentPlan.installments.find(i => !i.isPaid).installmentNumber,
-        totalInstallments: paymentPlan.installments.length
+      institutionName: paymentPlan.institution?.name || 'Kurum',
+      totalInstallments: paymentPlan.installments?.length || 0,
+      paidInstallments: paidInstallments.length,
+      remainingInstallments: unpaidInstallments.length,
+      remainingInstallmentsList: remainingInstallmentsList || 'Kalan taksit yok',
+      paidInstallmentsList: paidInstallmentsList || 'Henüz ödeme yapılmadı',
+      // Next installment details
+      ...(nextInstallment && {
+        amount: nextInstallment.amount,
+        dueDate: nextInstallment.dueDate,
+        installmentNumber: nextInstallment.installmentNumber,
       })
     };
   };
@@ -347,7 +381,12 @@ const PaymentPlanDetail = () => {
       isParent,
       studentName
     };
-    sendWhatsAppMessage(phone, DEFAULT_WHATSAPP_TEMPLATES.paymentPlanStatus, data);
+
+    // Use balanceSummary template and replace variables
+    const template = DEFAULT_WHATSAPP_TEMPLATES.balanceSummary;
+    const message = replaceTemplateVariables(template, data);
+
+    sendWhatsAppMessage(phone, message, {});
     setNotificationDialog(false);
     setSuccess('WhatsApp mesajı açıldı');
   };
@@ -380,6 +419,67 @@ Fofora Tiyatro`;
       message
     });
     setNotificationDialog(false);
+  };
+
+  // Payment Received Notification Handlers
+  const getPaymentReceivedData = () => {
+    if (!paymentNotificationDialog.paidInstallment || !paymentPlan) return {};
+
+    const { recipientName, isParent, studentName } = getNotificationRecipient();
+    const paidInst = paymentNotificationDialog.paidInstallment;
+
+    // Calculate remaining after this payment
+    const paidInstallments = paymentPlan.installments?.filter(i => i.isPaid) || [];
+    const unpaidInstallments = paymentPlan.installments?.filter(i => !i.isPaid) || [];
+    const nextInstallment = unpaidInstallments[0];
+
+    // Build remaining installments list
+    const remainingInstallmentsList = unpaidInstallments.map(inst =>
+      `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
+    ).join('\n');
+
+    return {
+      recipientName,
+      studentName: isParent ? studentName : recipientName,
+      courseName: paymentPlan.course?.name || '',
+      institutionName: paymentPlan.institution?.name || 'Kurum',
+      // Payment details
+      paidAmount: paidInst.amount,
+      installmentNumber: paidInst.installmentNumber,
+      paymentDate: new Date(paidInst.paidAt).toLocaleDateString('tr-TR'),
+      // Remaining details
+      remainingAmount: paymentPlan.remainingAmount || 0,
+      remainingInstallments: unpaidInstallments.length,
+      remainingInstallmentsList: remainingInstallmentsList || 'Tüm taksitler ödendi',
+      // Next installment
+      ...(nextInstallment && {
+        nextDueDate: new Date(nextInstallment.dueDate).toLocaleDateString('tr-TR'),
+        nextAmount: nextInstallment.amount
+      })
+    };
+  };
+
+  const handlePaymentWhatsAppNotification = () => {
+    const { phone } = getNotificationRecipient();
+
+    if (!phone) {
+      setError('Telefon numarası bulunamadı');
+      setPaymentNotificationDialog({ open: false, paidInstallment: null });
+      return;
+    }
+
+    const data = getPaymentReceivedData();
+    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentReceived;
+    const message = replaceTemplateVariables(template, data);
+
+    sendWhatsAppMessage(phone, message, {});
+    setPaymentNotificationDialog({ open: false, paidInstallment: null });
+    setSuccess(`${paymentNotificationDialog.paidInstallment?.installmentNumber}. taksit başarıyla ödendi`);
+  };
+
+  const handlePaymentEmailNotification = () => {
+    setPaymentEmailDialogOpen(true);
+    setPaymentNotificationDialog({ open: false, paidInstallment: null });
   };
 
   if (loading) {
@@ -940,7 +1040,116 @@ Fofora Tiyatro`;
         }] : []}
         defaultSubject={emailDialog.subject}
         defaultMessage={emailDialog.message}
+        templateData={getNotificationData()}
         onSuccess={() => setSuccess('Email başarıyla gönderildi')}
+      />
+
+      {/* Payment Received Notification Dialog */}
+      <Dialog
+        open={paymentNotificationDialog.open}
+        onClose={() => {
+          setPaymentNotificationDialog({ open: false, paidInstallment: null });
+          setSuccess(`${paymentNotificationDialog.paidInstallment?.installmentNumber}. taksit başarıyla ödendi`);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: 'success.light', color: 'success.contrastText' }}>
+          ✓ Ödeme Alındı
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Alert severity="success" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>{paymentNotificationDialog.paidInstallment?.installmentNumber}. taksit</strong> için{' '}
+                <strong>₺{paymentNotificationDialog.paidInstallment?.amount?.toLocaleString('tr-TR')}</strong> ödeme alındı.
+              </Typography>
+            </Alert>
+
+            <Typography variant="body1" sx={{ mb: 2, textAlign: 'center' }}>
+              Ödeme bildirimini göndermek ister misiniz?
+            </Typography>
+
+            <Paper sx={{ p: 2, bgcolor: 'grey.50', mb: 2 }}>
+              <Grid container spacing={1}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Alınan Ödeme</Typography>
+                  <Typography variant="body1" fontWeight="bold" color="success.main">
+                    ₺{paymentNotificationDialog.paidInstallment?.amount?.toLocaleString('tr-TR')}
+                  </Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" color="text.secondary">Kalan Tutar</Typography>
+                  <Typography variant="body1" fontWeight="bold" color="error.main">
+                    ₺{paymentPlan?.remainingAmount?.toLocaleString('tr-TR') || 0}
+                  </Typography>
+                </Grid>
+              </Grid>
+            </Paper>
+
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<WhatsApp />}
+                onClick={handlePaymentWhatsAppNotification}
+                sx={{
+                  bgcolor: '#25D366',
+                  '&:hover': { bgcolor: '#128C7E' },
+                  flex: 1
+                }}
+              >
+                WhatsApp
+              </Button>
+              <Button
+                variant="contained"
+                size="large"
+                startIcon={<Email />}
+                onClick={handlePaymentEmailNotification}
+                color="info"
+                sx={{ flex: 1 }}
+              >
+                Email
+              </Button>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setPaymentNotificationDialog({ open: false, paidInstallment: null });
+              setSuccess(`${paymentNotificationDialog.paidInstallment?.installmentNumber}. taksit başarıyla ödendi`);
+            }}
+            color="inherit"
+          >
+            Hayır, Kapat
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Payment Received Email Dialog */}
+      <EmailDialog
+        open={paymentEmailDialogOpen}
+        onClose={() => {
+          setPaymentEmailDialogOpen(false);
+          setSuccess('Ödeme başarıyla kaydedildi');
+        }}
+        recipients={(() => {
+          const { email } = getNotificationRecipient();
+          const student = paymentPlan.student;
+          const recipientEmail = email || student?.email;
+          return recipientEmail ? [{
+            email: recipientEmail,
+            name: `${student?.firstName} ${student?.lastName}`
+          }] : [];
+        })()}
+        defaultSubject={`Ödeme Alındı - ${paymentPlan?.student?.firstName} ${paymentPlan?.student?.lastName}`}
+        defaultMessage=""
+        templateData={getPaymentReceivedData()}
+        onSuccess={() => {
+          setSuccess('Email başarıyla gönderildi');
+          setPaymentEmailDialogOpen(false);
+        }}
       />
     </Container>
   );
