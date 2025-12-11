@@ -70,8 +70,6 @@ import {
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
-import NotificationMenu from '../components/Common/NotificationMenu';
-import EmailDialog from '../components/Email/EmailDialog';
 
 ChartJS.register(
   CategoryScale,
@@ -149,9 +147,6 @@ const Dashboard = () => {
   // State for showing students in today's lessons dialog
   const [selectedLessonStudents, setSelectedLessonStudents] = useState({ lessonId: null, students: [] });
   const [allEnrollments, setAllEnrollments] = useState([]);
-  // State for notification menu in lessons dialog
-  const [lessonNotificationMenu, setLessonNotificationMenu] = useState({ anchorEl: null, student: null });
-  const [lessonEmailDialog, setLessonEmailDialog] = useState({ open: false, recipients: [], subject: '', message: '', templateData: {} });
 
   useEffect(() => {
     if (institution && season) {
@@ -185,7 +180,7 @@ const Dashboard = () => {
   const loadEnrollments = async () => {
     try {
       const response = await api.get('/enrollments', {
-        params: { seasonId: season._id, isActive: true }
+        params: { seasonId: season._id, isActive: true, populate: 'student' }
       });
       setAllEnrollments(response.data);
     } catch (error) {
@@ -333,7 +328,12 @@ const Dashboard = () => {
               installmentNumber: inst.installmentNumber,
               amount: remaining,
               dueDate: dueDate,
-              paymentPlanId: plan._id
+              paymentPlanId: plan._id,
+              // Include plan totals for template
+              totalInstallments: plan.installments?.length || 0,
+              totalAmount: plan.discountedAmount || plan.totalAmount || 0,
+              paidAmount: plan.paidAmount || 0,
+              remainingAmount: plan.remainingAmount || 0
             };
 
             categorized.all.push(payment);
@@ -503,7 +503,10 @@ const Dashboard = () => {
       amount: payment.amount,
       dueDate: payment.dueDate,
       installmentNumber: payment.installmentNumber,
-      totalInstallments: payment.totalInstallments || '?',
+      totalInstallments: payment.totalInstallments || 0,
+      totalAmount: payment.totalAmount || 0,
+      paidAmount: payment.paidAmount || 0,
+      remainingAmount: payment.remainingAmount || 0,
       institutionName: institution?.name || 'Kurum',
       overdueDays,
     };
@@ -536,18 +539,70 @@ const Dashboard = () => {
     }
   };
 
-  // Notification menu handlers for lesson students
-  const handleLessonNotificationClick = (event, student) => {
-    setLessonNotificationMenu({ anchorEl: event.currentTarget, student });
-  };
+  // Direct lesson reminder WhatsApp send for students
+  const handleLessonReminderClick = (event, student, lesson) => {
+    event.stopPropagation();
 
-  const handleLessonNotificationClose = () => {
-    setLessonNotificationMenu({ anchorEl: null, student: null });
-  };
+    if (!student) {
+      alert('Öğrenci bilgisi bulunamadı');
+      return;
+    }
 
-  const handleLessonEmailFromNotification = (recipients, subject, message, templateData) => {
-    setLessonEmailDialog({ open: true, recipients, subject, message, templateData });
-    handleLessonNotificationClose();
+    // Get phone based on defaultNotificationRecipient
+    const recipientType = student.defaultNotificationRecipient || 'student';
+    const mother = student.parentContacts?.find(p => p.relationship === 'Anne');
+    const father = student.parentContacts?.find(p => p.relationship === 'Baba');
+
+    let phone = null;
+    let recipientName = `${student.firstName} ${student.lastName}`;
+    let isParent = false;
+
+    switch (recipientType) {
+      case 'mother':
+        phone = mother?.phone;
+        if (mother?.name) { recipientName = mother.name; isParent = true; }
+        break;
+      case 'father':
+        phone = father?.phone;
+        if (father?.name) { recipientName = father.name; isParent = true; }
+        break;
+      default:
+        phone = student.phone;
+        break;
+    }
+
+    // Fallback to any available phone
+    if (!phone) {
+      phone = student.phone || mother?.phone || father?.phone;
+      if (!phone) {
+        alert('Telefon numarası bulunamadı');
+        return;
+      }
+    }
+
+    const studentName = `${student.firstName} ${student.lastName}`;
+    const courseName = lesson?.course?.name || '';
+    const lessonTime = lesson ? `${lesson.startTime}-${lesson.endTime}` : '';
+    const today = new Date().toLocaleDateString('tr-TR');
+
+    // Build lesson reminder message
+    const message = `Sayın ${recipientName},
+
+${isParent ? `Öğrenciniz ${studentName} için ders hatırlatması:` : 'Ders hatırlatması:'}
+
+📚 *BUGÜNKÜ DERS*
+Ders: ${courseName}
+Tarih: ${today}
+Saat: ${lessonTime}
+
+Lütfen dersinize zamanında katılınız.
+
+Sorularınız için bizimle iletişime geçebilirsiniz.
+
+Saygılarımızla,
+${institution?.name || 'FOFORA TİYATRO'}`;
+
+    sendWhatsAppMessage(phone, message, {});
   };
 
   if (loading) {
@@ -1106,11 +1161,8 @@ const Dashboard = () => {
                                   size="small"
                                   variant="outlined"
                                   icon={<Person sx={{ fontSize: 14 }} />}
-                                  onClick={(e) => handleLessonNotificationClick(e, student)}
-                                  onDelete={(e) => {
-                                    e.stopPropagation();
-                                    handleLessonNotificationClick(e, student);
-                                  }}
+                                  onClick={(e) => handleLessonReminderClick(e, student, lesson)}
+                                  onDelete={(e) => handleLessonReminderClick(e, student, lesson)}
                                   deleteIcon={<Send sx={{ fontSize: 14, color: '#25D366 !important' }} />}
                                   sx={{
                                     cursor: 'pointer',
@@ -1140,41 +1192,6 @@ const Dashboard = () => {
         </DialogContent>
         <DialogActions><Button onClick={() => { setTodayLessonsDialog({ open: false }); setSelectedLessonStudents({ lessonId: null, students: [] }); }}>Kapat</Button></DialogActions>
       </Dialog>
-
-      {/* Notification Menu for Lesson Students */}
-      <NotificationMenu
-        anchorEl={lessonNotificationMenu.anchorEl}
-        open={Boolean(lessonNotificationMenu.anchorEl)}
-        onClose={handleLessonNotificationClose}
-        recipientData={lessonNotificationMenu.student ? {
-          name: `${lessonNotificationMenu.student.firstName} ${lessonNotificationMenu.student.lastName}`,
-          phone: lessonNotificationMenu.student.phone,
-          email: lessonNotificationMenu.student.email,
-          parentContacts: lessonNotificationMenu.student.parentContacts,
-          defaultNotificationRecipient: lessonNotificationMenu.student.defaultNotificationRecipient
-        } : {}}
-        templateData={lessonNotificationMenu.student ? {
-          recipientName: `${lessonNotificationMenu.student.firstName} ${lessonNotificationMenu.student.lastName}`,
-          studentName: `${lessonNotificationMenu.student.firstName} ${lessonNotificationMenu.student.lastName}`,
-          courseName: todayLessons.find(l => l._id === selectedLessonStudents.lessonId)?.course?.name || '',
-          institutionName: institution?.name || ''
-        } : {}}
-        onEmailClick={handleLessonEmailFromNotification}
-      />
-
-      {/* Email Dialog for Lesson Students */}
-      <EmailDialog
-        open={lessonEmailDialog.open}
-        onClose={() => setLessonEmailDialog({ open: false, recipients: [], subject: '', message: '', templateData: {} })}
-        recipients={lessonEmailDialog.recipients}
-        defaultSubject={lessonEmailDialog.subject}
-        defaultMessage={lessonEmailDialog.message}
-        templateData={lessonEmailDialog.templateData}
-        onSuccess={() => {
-          alert('Email basariyla gonderildi!');
-          setLessonEmailDialog({ open: false, recipients: [], subject: '', message: '', templateData: {} });
-        }}
-      />
 
       {/* Trial Lessons Dialog */}
       <Dialog open={trialLessonsDialog.open} onClose={() => setTrialLessonsDialog({ open: false })} maxWidth="md" fullWidth>
