@@ -35,6 +35,7 @@ import {
   Archive,
   Delete,
   AccountBalance,
+  Refresh,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -76,6 +77,13 @@ const StudentDetail = () => {
     reason: '',
     password: '',
     error: ''
+  });
+  const [recalculateDialog, setRecalculateDialog] = useState({
+    open: false,
+    password: '',
+    error: '',
+    loading: false,
+    result: null
   });
 
   useEffect(() => {
@@ -218,6 +226,39 @@ const StudentDetail = () => {
     }
   };
 
+  const handleRecalculateBalance = async () => {
+    try {
+      if (!recalculateDialog.password) {
+        setRecalculateDialog(prev => ({ ...prev, error: 'Şifre gereklidir' }));
+        return;
+      }
+
+      setRecalculateDialog(prev => ({ ...prev, loading: true, error: '' }));
+
+      const response = await api.post(`/students/${id}/recalculate-balance`, {
+        password: recalculateDialog.password,
+        username: user?.username,
+        updatedBy: user?.username
+      });
+
+      setRecalculateDialog(prev => ({
+        ...prev,
+        loading: false,
+        result: response.data.recalculationDetails
+      }));
+
+      // Reload student data
+      loadStudent();
+
+    } catch (error) {
+      setRecalculateDialog(prev => ({
+        ...prev,
+        loading: false,
+        error: error.response?.data?.message || 'Bakiye hesaplanırken hata oluştu'
+      }));
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Öğrenci bilgileri yükleniyor..." />;
   }
@@ -336,13 +377,23 @@ const StudentDetail = () => {
               <Typography variant="h6">
                 Bakiye Durumu
               </Typography>
-              <Button
-                size="small"
-                startIcon={<AccountBalance />}
-                onClick={() => setBalanceDialog({ ...balanceDialog, open: true })}
-              >
-                Düzenle
-              </Button>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  size="small"
+                  startIcon={<Refresh />}
+                  onClick={() => setRecalculateDialog({ open: true, password: '', error: '', loading: false, result: null })}
+                  color="secondary"
+                >
+                  Yeniden Hesapla
+                </Button>
+                <Button
+                  size="small"
+                  startIcon={<AccountBalance />}
+                  onClick={() => setBalanceDialog({ ...balanceDialog, open: true })}
+                >
+                  Düzenle
+                </Button>
+              </Box>
             </Box>
             <Typography
               variant="h3"
@@ -712,6 +763,103 @@ const StudentDetail = () => {
           >
             Bakiyeyi Güncelle
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Recalculate Balance Dialog */}
+      <Dialog
+        open={recalculateDialog.open}
+        onClose={() => setRecalculateDialog({ open: false, password: '', error: '', loading: false, result: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Refresh color="secondary" />
+            Bakiye Yeniden Hesapla
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Bu işlem, öğrencinin bakiyesini tüm ödeme planlarından yeniden hesaplar.
+              Manuel silme işlemlerinden kaynaklanan tutarsızlıkları düzeltir.
+            </Typography>
+
+            <Typography variant="body2" sx={{ mb: 2, p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
+              ⚠️ <strong>Dikkat:</strong> Bu işlem mevcut bakiyeyi ödeme planlarındaki{' '}
+              (Toplam Tutar - Ödenen Tutar) formülüyle yeniden hesaplar.
+            </Typography>
+
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              Mevcut Bakiye: <strong>{student?.balance > 0 ? '-' : ''}₺{Math.abs(student?.balance || 0).toLocaleString('tr-TR')}</strong>
+              {' '}({student?.balance > 0 ? 'Borç' : 'Alacak'})
+            </Typography>
+
+            {recalculateDialog.error && (
+              <Typography color="error" sx={{ mb: 2 }}>
+                {recalculateDialog.error}
+              </Typography>
+            )}
+
+            {recalculateDialog.result ? (
+              <Box sx={{ p: 2, bgcolor: 'success.light', borderRadius: 1, mb: 2 }}>
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                  ✅ Bakiye Başarıyla Yeniden Hesaplandı
+                </Typography>
+                <Typography variant="body2">
+                  Eski Bakiye: ₺{recalculateDialog.result.oldBalance?.toLocaleString('tr-TR')}
+                </Typography>
+                <Typography variant="body2">
+                  Yeni Bakiye: ₺{recalculateDialog.result.newBalance?.toLocaleString('tr-TR')}
+                </Typography>
+                <Typography variant="body2" fontWeight="bold" color={recalculateDialog.result.difference !== 0 ? 'error.main' : 'success.main'}>
+                  Fark: {recalculateDialog.result.difference > 0 ? '+' : ''}₺{recalculateDialog.result.difference?.toLocaleString('tr-TR')}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 1 }}>
+                  Taranan Ödeme Planı: {recalculateDialog.result.paymentPlansScanned}
+                </Typography>
+                {recalculateDialog.result.planDetails?.length > 0 && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="body2" fontWeight="bold">Plan Detayları:</Typography>
+                    {recalculateDialog.result.planDetails.map((plan, idx) => (
+                      <Typography key={idx} variant="caption" display="block">
+                        • Toplam: ₺{plan.discountedAmount?.toLocaleString('tr-TR')} -
+                        Ödenen: ₺{plan.paidAmount?.toLocaleString('tr-TR')} =
+                        Kalan: ₺{plan.remainingDebt?.toLocaleString('tr-TR')}
+                      </Typography>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            ) : (
+              <TextField
+                fullWidth
+                label="Admin Şifresi"
+                type="password"
+                value={recalculateDialog.password}
+                onChange={(e) => setRecalculateDialog(prev => ({ ...prev, password: e.target.value, error: '' }))}
+                helperText={`Kullanıcı: ${user?.username} (Sadece admin/superadmin yetkisi gerekir)`}
+                required
+                disabled={recalculateDialog.loading}
+              />
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRecalculateDialog({ open: false, password: '', error: '', loading: false, result: null })}>
+            {recalculateDialog.result ? 'Kapat' : 'İptal'}
+          </Button>
+          {!recalculateDialog.result && (
+            <Button
+              onClick={handleRecalculateBalance}
+              variant="contained"
+              color="secondary"
+              disabled={!recalculateDialog.password || recalculateDialog.loading}
+            >
+              {recalculateDialog.loading ? 'Hesaplanıyor...' : 'Yeniden Hesapla'}
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>
