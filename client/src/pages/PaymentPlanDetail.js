@@ -492,26 +492,43 @@ Fofora Tiyatro`;
     const paidInst = paymentNotificationDialog.paidInstallment;
 
     // Calculate remaining after this payment
-    const paidInstallments = paymentPlan.installments?.filter(i => i.isPaid) || [];
+    const paidInstallmentsArr = paymentPlan.installments?.filter(i => i.isPaid) || [];
     const unpaidInstallments = paymentPlan.installments?.filter(i => !i.isPaid) || [];
     const nextInstallment = unpaidInstallments[0];
+    const totalInstallmentsCount = paymentPlan.installments?.length || 0;
 
     // Build remaining installments list
     const remainingInstallmentsList = unpaidInstallments.map(inst =>
       `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
     ).join('\n');
 
+    // Get payment method label
+    const getPaymentMethodLabel = (method) => {
+      switch (method) {
+        case 'cash': return 'Nakit';
+        case 'creditCard': return 'Kredi Kartı';
+        case 'transfer': return 'Havale/EFT';
+        default: return method || 'Nakit';
+      }
+    };
+
     return {
       recipientName,
       studentName: isParent ? studentName : recipientName,
       courseName: paymentPlan.course?.name || '',
       institutionName: paymentPlan.institution?.name || 'Kurum',
-      // Payment details
-      paidAmount: paidInst.amount,
+      // Payment details - use both 'amount' and 'paidAmount' for template compatibility
+      amount: paidInst.amount,
+      paidAmount: paymentPlan.paidAmount || 0,
       installmentNumber: paidInst.installmentNumber,
-      paymentDate: new Date(paidInst.paidAt).toLocaleDateString('tr-TR'),
-      // Remaining details
+      paymentDate: paidInst.paidAt || new Date(),
+      paymentMethod: getPaymentMethodLabel(paidInst.paymentMethod),
+      // Total amounts
+      totalAmount: paymentPlan.discountedAmount || paymentPlan.totalAmount || 0,
       remainingAmount: paymentPlan.remainingAmount || 0,
+      // Installment counts
+      paidInstallments: paidInstallmentsArr.length,
+      totalInstallments: totalInstallmentsCount,
       remainingInstallments: unpaidInstallments.length,
       remainingInstallmentsList: remainingInstallmentsList || 'Tüm taksitler ödendi',
       // Next installment
@@ -554,20 +571,40 @@ Fofora Tiyatro`;
       return;
     }
 
+    const paidInstallmentsArr = paymentPlan.installments?.filter(i => i.isPaid) || [];
     const unpaidInstallments = paymentPlan.installments?.filter(i => !i.isPaid) || [];
+    const totalInstallmentsCount = paymentPlan.installments?.length || 0;
     const remainingInstallmentsList = unpaidInstallments.map(inst =>
       `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
     ).join('\n');
+
+    // Get payment method label
+    const getPaymentMethodLabel = (method) => {
+      switch (method) {
+        case 'cash': return 'Nakit';
+        case 'creditCard': return 'Kredi Kartı';
+        case 'transfer': return 'Havale/EFT';
+        default: return method || 'Nakit';
+      }
+    };
 
     const data = {
       recipientName,
       studentName: isParent ? studentName : recipientName,
       courseName: paymentPlan.course?.name || '',
       institutionName: paymentPlan.institution?.name || 'Kurum',
-      paidAmount: installment.amount,
+      // Payment details
+      amount: installment.amount,
+      paidAmount: paymentPlan.paidAmount || 0,
       installmentNumber: installment.installmentNumber,
-      paymentDate: installment.paidAt ? new Date(installment.paidAt).toLocaleDateString('tr-TR') : new Date().toLocaleDateString('tr-TR'),
+      paymentDate: installment.paidAt || new Date(),
+      paymentMethod: getPaymentMethodLabel(installment.paymentMethod),
+      // Total amounts
+      totalAmount: paymentPlan.discountedAmount || paymentPlan.totalAmount || 0,
       remainingAmount: paymentPlan.remainingAmount || 0,
+      // Installment counts
+      paidInstallments: paidInstallmentsArr.length,
+      totalInstallments: totalInstallmentsCount,
       remainingInstallments: unpaidInstallments.length,
       remainingInstallmentsList: remainingInstallmentsList || 'Tüm taksitler ödendi',
     };

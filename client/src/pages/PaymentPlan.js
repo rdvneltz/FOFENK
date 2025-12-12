@@ -510,12 +510,24 @@ const PaymentPlan = () => {
 
       const response = await api.post('/payment-plans', paymentPlanData);
 
+      // Get payment method label
+      const getPaymentMethodLabel = () => {
+        if (hasCreditCard) return 'Kredi Kartı';
+        if (installments.length === 1) return 'Peşin';
+        return 'Taksitli';
+      };
+
       // Prepare plan data for notification
       const planData = {
         studentName: `${student.firstName} ${student.lastName}`,
         courseName: selectedEnrollment.course?.name || '',
+        seasonName: season?.name || '',
         totalAmount: grandTotals.total,
+        totalInstallments: installments.length,
         installmentCount: installments.length,
+        installmentAmount: installments.length > 0 ? installments[0].amount : 0,
+        paymentMethod: getPaymentMethodLabel(),
+        commissionAmount: grandTotals.commission > 0 ? `Komisyon: ${grandTotals.commission.toLocaleString('tr-TR')} TL` : '',
         installments: installments.map(inst => ({
           installmentNumber: inst.installmentNumber,
           amount: inst.amount,
@@ -598,18 +610,29 @@ const PaymentPlan = () => {
       return;
     }
 
-    // Build installment list
-    const installmentsList = planData.installments.map(inst =>
+    // Build monthly schedule (installment list)
+    const monthlySchedule = planData.installments.map(inst =>
       `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
     ).join('\n');
+
+    // Build lessons per month info from monthlyLessonDetails if available
+    const lessonsPerMonth = monthlyLessonDetails
+      ? monthlyLessonDetails.map(m => `• ${m.month}: ${m.lessonCount} ders - ${m.fee.toLocaleString('tr-TR')} TL`).join('\n')
+      : '';
 
     const templateData = {
       recipientName,
       studentName: isParent ? studentName : recipientName,
       courseName: planData.courseName,
+      seasonName: planData.seasonName,
       totalAmount: planData.totalAmount,
+      totalInstallments: planData.totalInstallments,
       installmentCount: planData.installmentCount,
-      installmentsList,
+      installmentAmount: planData.installmentAmount,
+      paymentMethod: planData.paymentMethod,
+      commissionAmount: planData.commissionAmount,
+      monthlySchedule,
+      lessonsPerMonth,
       institutionName: institution?.name || 'Kurum'
     };
 
@@ -633,17 +656,27 @@ const PaymentPlan = () => {
     const { recipientName, isParent, studentName } = getNotificationRecipient();
     const planData = successDialog.planData;
 
-    const installmentsList = planData.installments.map(inst =>
+    const monthlySchedule = planData.installments.map(inst =>
       `• ${inst.installmentNumber}. Taksit: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')} - ${inst.amount?.toLocaleString('tr-TR')} TL`
     ).join('\n');
+
+    const lessonsPerMonth = monthlyLessonDetails
+      ? monthlyLessonDetails.map(m => `• ${m.month}: ${m.lessonCount} ders - ${m.fee.toLocaleString('tr-TR')} TL`).join('\n')
+      : '';
 
     return {
       recipientName,
       studentName: isParent ? studentName : recipientName,
       courseName: planData.courseName,
+      seasonName: planData.seasonName,
       totalAmount: planData.totalAmount,
+      totalInstallments: planData.totalInstallments,
       installmentCount: planData.installmentCount,
-      installmentsList,
+      installmentAmount: planData.installmentAmount,
+      paymentMethod: planData.paymentMethod,
+      commissionAmount: planData.commissionAmount,
+      monthlySchedule,
+      lessonsPerMonth,
       institutionName: institution?.name || 'Kurum'
     };
   };

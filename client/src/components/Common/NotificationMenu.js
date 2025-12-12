@@ -39,7 +39,8 @@ const TEMPLATE_TYPE_LABELS = {
  * - defaultTemplate: Optional default template type to use
  * - onEmailClick: Function called when email is selected, receives (recipients, subject, message, templateData)
  * - mode: 'full' (show all options) | 'whatsapp' (only WhatsApp) | 'email' (only email)
- * - allowedTemplates: Array of template types to show (if not provided, shows 'general' only for student context)
+ * - pageContext: String identifying which page is using this menu (e.g., 'students', 'paymentPlanDetail')
+ *   Templates are filtered by their showOnPages setting. If 'allPages' is in showOnPages, it shows everywhere.
  */
 const NotificationMenu = ({
   anchorEl,
@@ -50,7 +51,7 @@ const NotificationMenu = ({
   defaultTemplate = null,
   onEmailClick,
   mode = 'full',
-  allowedTemplates = ['general'], // Default to only general template
+  pageContext = null, // Page context for filtering templates
 }) => {
   const { institution } = useApp();
   const [templates, setTemplates] = useState([]);
@@ -193,13 +194,35 @@ const NotificationMenu = ({
     }
   };
 
-  // Available templates for display (filtered by allowedTemplates)
-  const availableTemplates = [
-    { type: 'custom', label: 'Özel Mesaj (Boş)' },
-    ...Object.entries(TEMPLATE_TYPE_LABELS)
-      .filter(([type]) => allowedTemplates.includes(type))
-      .map(([type, label]) => ({ type, label })),
-  ];
+  // Filter templates based on pageContext and showOnPages
+  const getFilteredTemplates = () => {
+    // Filter templates from DB based on showOnPages
+    const dbTemplatesForPage = templates.filter(t => {
+      if (!t.showOnPages || t.showOnPages.length === 0) return true; // No restriction, show everywhere
+      if (t.showOnPages.includes('allPages')) return true; // Show on all pages
+      if (pageContext && t.showOnPages.includes(pageContext)) return true; // Show on this specific page
+      return !pageContext; // If no pageContext provided, show all
+    });
+
+    // Get unique template types from filtered DB templates
+    const dbTemplateTypes = dbTemplatesForPage.map(t => t.type);
+
+    // Build available templates list
+    const result = [
+      { type: 'custom', label: 'Özel Mesaj (Boş)' },
+    ];
+
+    // Add templates that exist in DB and match the page context
+    Object.entries(TEMPLATE_TYPE_LABELS).forEach(([type, label]) => {
+      if (dbTemplateTypes.includes(type)) {
+        result.push({ type, label });
+      }
+    });
+
+    return result;
+  };
+
+  const availableTemplates = getFilteredTemplates();
 
   return (
     <>
