@@ -489,4 +489,98 @@ router.post('/:id/adjust-balance', async (req, res) => {
   }
 });
 
+// Recalculate student balance from payment plans (admin/superadmin only)
+// This fixes balance inconsistencies caused by manual transaction deletions
+router.post('/:id/recalculate-balance', async (req, res) => {
+  try {
+    const { password, username, updatedBy } = req.body;
+    const User = require('../models/User');
+    const PaymentPlan = require('../models/PaymentPlan');
+
+    if (!password || !username) {
+      return res.status(400).json({ message: 'Kullanıcı adı ve şifre gereklidir' });
+    }
+
+    // Verify user credentials and check role
+    const user = await User.findOne({ username }).select('+password');
+    if (!user) {
+      return res.status(403).json({ message: 'Kullanıcı bulunamadı' });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(403).json({ message: 'Şifre yanlış' });
+    }
+
+    // Only superadmin and admin can recalculate balance
+    if (!['superadmin', 'admin'].includes(user.role)) {
+      return res.status(403).json({ message: 'Bu işlem için yetkiniz yok. Sadece admin kullanıcılar bakiye hesaplayabilir.' });
+    }
+
+    // Find student
+    const student = await Student.findById(req.params.id);
+    if (!student) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    const oldBalance = student.balance || 0;
+
+    // Find all payment plans for this student
+    const paymentPlans = await PaymentPlan.find({ student: req.params.id });
+
+    // Calculate correct balance from payment plans
+    // Balance = sum of (discountedAmount - paidAmount) for all plans
+    // This represents total remaining debt
+    let calculatedBalance = 0;
+    const planDetails = [];
+
+    for (const plan of paymentPlans) {
+      const planDebt = (plan.discountedAmount || 0) - (plan.paidAmount || 0);
+      calculatedBalance += planDebt;
+      planDetails.push({
+        planId: plan._id,
+        courseName: plan.course?.name || 'Bilinmiyor',
+        discountedAmount: plan.discountedAmount || 0,
+        paidAmount: plan.paidAmount || 0,
+        remainingDebt: planDebt
+      });
+    }
+
+    // Update student balance
+    student.balance = calculatedBalance;
+    await student.save();
+
+    // Log the activity
+    await ActivityLog.create({
+      user: updatedBy || user.username,
+      action: 'recalculate',
+      entity: 'Student',
+      entityId: student._id,
+      description: `Bakiye yeniden hesaplandı: ₺${oldBalance.toLocaleString('tr-TR')} → ₺${calculatedBalance.toLocaleString('tr-TR')} (${paymentPlans.length} ödeme planı tarandı)`,
+      institution: student.institution,
+      season: student.season
+    });
+
+    // Populate and return updated student
+    const updatedStudent = await Student.findById(student._id)
+      .populate('institution', 'name')
+      .populate('season', 'name startDate endDate');
+
+    res.json({
+      message: 'Bakiye başarıyla yeniden hesaplandı',
+      student: updatedStudent,
+      recalculationDetails: {
+        oldBalance,
+        newBalance: calculatedBalance,
+        difference: calculatedBalance - oldBalance,
+        paymentPlansScanned: paymentPlans.length,
+        planDetails
+      }
+    });
+  } catch (error) {
+    console.error('Error recalculating balance:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;

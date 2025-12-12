@@ -400,8 +400,10 @@ router.post('/transactions/:id/delete', async (req, res) => {
         deletionDetails.push(`${expense.category} gideri silindi ve kasaya ₺${expense.amount} eklendi`);
       }
 
-      // 3. Reverse student balance (add back debt) - only if student still exists
-      if (transaction.student && transaction.student._id) {
+      // 3. Reverse student balance (add back debt) - only if payment was NOT refunded
+      // IMPORTANT: If payment was refunded, the refund operation already added debt back to student balance
+      // So we should NOT add debt again when deleting a refunded payment
+      if (transaction.student && transaction.student._id && !transaction.isRefunded) {
         try {
           const student = await Student.findById(transaction.student._id);
           if (student) {
@@ -412,6 +414,8 @@ router.post('/transactions/:id/delete', async (req, res) => {
         } catch (error) {
           console.log('Student not found, skipping balance update:', error.message);
         }
+      } else if (transaction.isRefunded) {
+        deletionDetails.push(`Öğrenci bakiyesi değiştirilmedi (ödeme zaten iade edilmişti)`);
       }
 
       // 4. If payment is linked to a payment plan, reset the installment status
