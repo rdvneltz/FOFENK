@@ -80,6 +80,7 @@ const StudentDetail = () => {
   });
   const [recalculateDialog, setRecalculateDialog] = useState({
     open: false,
+    username: '',
     password: '',
     error: '',
     loading: false,
@@ -228,6 +229,11 @@ const StudentDetail = () => {
 
   const handleRecalculateBalance = async () => {
     try {
+      if (!recalculateDialog.username) {
+        setRecalculateDialog(prev => ({ ...prev, error: 'Kullanıcı adı gereklidir' }));
+        return;
+      }
+
       if (!recalculateDialog.password) {
         setRecalculateDialog(prev => ({ ...prev, error: 'Şifre gereklidir' }));
         return;
@@ -237,8 +243,8 @@ const StudentDetail = () => {
 
       const response = await api.post(`/students/${id}/recalculate-balance`, {
         password: recalculateDialog.password,
-        username: user?.username,
-        updatedBy: user?.username
+        username: recalculateDialog.username,
+        updatedBy: recalculateDialog.username
       });
 
       setRecalculateDialog(prev => ({
@@ -392,7 +398,7 @@ const StudentDetail = () => {
                 <Button
                   size="small"
                   startIcon={<Refresh />}
-                  onClick={() => setRecalculateDialog({ open: true, password: '', error: '', loading: false, result: null })}
+                  onClick={() => setRecalculateDialog({ open: true, username: '', password: '', error: '', loading: false, result: null })}
                   color="secondary"
                 >
                   Yeniden Hesapla
@@ -780,7 +786,7 @@ const StudentDetail = () => {
       {/* Recalculate Balance Dialog */}
       <Dialog
         open={recalculateDialog.open}
-        onClose={() => setRecalculateDialog({ open: false, password: '', error: '', loading: false, result: null })}
+        onClose={() => setRecalculateDialog({ open: false, username: '', password: '', error: '', loading: false, result: null })}
         maxWidth="sm"
         fullWidth
       >
@@ -844,21 +850,36 @@ const StudentDetail = () => {
                 )}
               </Box>
             ) : (
-              <TextField
-                fullWidth
-                label="Admin Şifresi"
-                type="password"
-                value={recalculateDialog.password}
-                onChange={(e) => setRecalculateDialog(prev => ({ ...prev, password: e.target.value, error: '' }))}
-                helperText={`Kullanıcı: ${user?.username} (Sadece admin/superadmin yetkisi gerekir)`}
-                required
-                disabled={recalculateDialog.loading}
-              />
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Admin Kullanıcı Adı"
+                    value={recalculateDialog.username}
+                    onChange={(e) => setRecalculateDialog(prev => ({ ...prev, username: e.target.value, error: '' }))}
+                    required
+                    disabled={recalculateDialog.loading}
+                    autoFocus
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="Admin Şifresi"
+                    type="password"
+                    value={recalculateDialog.password}
+                    onChange={(e) => setRecalculateDialog(prev => ({ ...prev, password: e.target.value, error: '' }))}
+                    helperText="Sadece admin/superadmin yetkisi gerekir"
+                    required
+                    disabled={recalculateDialog.loading}
+                  />
+                </Grid>
+              </Grid>
             )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRecalculateDialog({ open: false, password: '', error: '', loading: false, result: null })}>
+          <Button onClick={() => setRecalculateDialog({ open: false, username: '', password: '', error: '', loading: false, result: null })}>
             {recalculateDialog.result ? 'Kapat' : 'İptal'}
           </Button>
           {!recalculateDialog.result && (
@@ -866,7 +887,7 @@ const StudentDetail = () => {
               onClick={handleRecalculateBalance}
               variant="contained"
               color="secondary"
-              disabled={!recalculateDialog.password || recalculateDialog.loading}
+              disabled={!recalculateDialog.username || !recalculateDialog.password || recalculateDialog.loading}
             >
               {recalculateDialog.loading ? 'Hesaplanıyor...' : 'Yeniden Hesapla'}
             </Button>
