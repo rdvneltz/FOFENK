@@ -144,6 +144,7 @@ export const TEMPLATE_VARIABLES = [
   { key: '{paidInstallmentsList}', label: 'Ödenen Taksitler', description: 'Ödenen taksitlerin listesi', category: 'list' },
   { key: '{monthlySchedule}', label: 'Aylık Program', description: 'Aylık ödeme programı', category: 'list' },
   { key: '{lessonsPerMonth}', label: 'Aylık Ders Sayısı', description: 'Her ay için ders sayıları', category: 'list' },
+  { key: '{monthlyDetailsList}', label: 'Aylık Ders Programı', description: 'Her ay için ders sayısı ve ücret detayları', category: 'list' },
 ];
 
 /**
@@ -288,6 +289,9 @@ Toplam Tutar: {totalAmount}
 Ödenen: {paidAmount}
 Kalan Borç: {remainingAmount}
 Ödenen Taksit: {paidInstallments}/{totalInstallments}
+
+📅 *AYLIK DERS PROGRAMI*
+{monthlyDetailsList}
 
 ✅ *ÖDENEN TAKSİTLER*
 {paidInstallmentsList}

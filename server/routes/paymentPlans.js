@@ -41,7 +41,15 @@ router.get('/:id', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
-      .populate('course', 'name');
+      .populate('course', 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth')
+      .populate({
+        path: 'enrollment',
+        select: 'enrollmentDate isActive',
+        populate: {
+          path: 'course',
+          select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth'
+        }
+      });
 
     if (!paymentPlan) {
       return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
