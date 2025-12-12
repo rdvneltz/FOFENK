@@ -25,6 +25,9 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  FormGroup,
+  FormControlLabel,
+  Checkbox,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { Add, Edit, Delete, ContentCopy, Info } from '@mui/icons-material';
@@ -58,6 +61,18 @@ const CATEGORY_LABELS = {
   list: 'Detaylı Listeler',
 };
 
+// Page labels for showOnPages selection
+const PAGE_LABELS = {
+  allPages: 'Tüm Sayfalar',
+  students: 'Öğrenciler',
+  trialLessons: 'Deneme Dersleri',
+  phoneBook: 'Telefon Rehberi',
+  paymentPlanDetail: 'Ödeme Planı Detay',
+  paymentPlanCreate: 'Ödeme Planı Oluşturma',
+  dashboardPayments: 'Dashboard Ödemeler',
+  dashboardLessons: 'Dashboard Dersler',
+};
+
 const MessageTemplates = () => {
   const { institution, currentUser } = useApp();
   const [templates, setTemplates] = useState([]);
@@ -72,7 +87,8 @@ const MessageTemplates = () => {
     name: '',
     type: 'general',
     template: '',
-    variables: []
+    variables: [],
+    showOnPages: ['allPages']
   });
 
   useEffect(() => {
@@ -102,7 +118,8 @@ const MessageTemplates = () => {
         name: template.name || '',
         type: template.type || 'general',
         template: template.template || '',
-        variables: template.variables || []
+        variables: template.variables || [],
+        showOnPages: template.showOnPages?.length > 0 ? template.showOnPages : ['allPages']
       });
     } else {
       setSelectedTemplate(null);
@@ -110,7 +127,8 @@ const MessageTemplates = () => {
         name: '',
         type: 'general',
         template: '',
-        variables: []
+        variables: [],
+        showOnPages: ['allPages']
       });
     }
     setOpenDialog(true);
@@ -270,6 +288,45 @@ const MessageTemplates = () => {
     }));
   };
 
+  // Handle page checkbox changes
+  const handlePageChange = (page) => {
+    setFormData(prev => {
+      let newPages = [...prev.showOnPages];
+
+      // If "allPages" is being toggled
+      if (page === 'allPages') {
+        if (newPages.includes('allPages')) {
+          // Remove allPages, keep it empty (will show nothing)
+          newPages = [];
+        } else {
+          // Select only allPages
+          newPages = ['allPages'];
+        }
+      } else {
+        // If a specific page is being toggled
+        if (newPages.includes('allPages')) {
+          // Remove allPages and add the specific page
+          newPages = [page];
+        } else if (newPages.includes(page)) {
+          // Remove this page
+          newPages = newPages.filter(p => p !== page);
+        } else {
+          // Add this page
+          newPages.push(page);
+        }
+      }
+
+      return { ...prev, showOnPages: newPages };
+    });
+  };
+
+  // Get display text for showOnPages
+  const getShowOnPagesDisplay = (pages) => {
+    if (!pages || pages.length === 0) return 'Hiçbir sayfa';
+    if (pages.includes('allPages')) return 'Tüm Sayfalar';
+    return pages.map(p => PAGE_LABELS[p] || p).join(', ');
+  };
+
   if (loading) {
     return <LoadingSpinner message="Şablonlar yükleniyor..." />;
   }
@@ -344,13 +401,17 @@ const MessageTemplates = () => {
                   <Typography variant="h6" gutterBottom>
                     {template.name}
                   </Typography>
-                  <Chip
-                    label={TEMPLATE_TYPE_LABELS[template.type] || 'Genel'}
-                    size="small"
-                    color="primary"
-                    variant="outlined"
-                    sx={{ mb: 1 }}
-                  />
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 1 }}>
+                    <Chip
+                      label={TEMPLATE_TYPE_LABELS[template.type] || 'Genel'}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                    📍 {getShowOnPagesDisplay(template.showOnPages)}
+                  </Typography>
                   <Typography
                     variant="body2"
                     color="text.secondary"
@@ -452,6 +513,33 @@ const MessageTemplates = () => {
                       Varsayılan Yükle
                     </Button>
                   </Tooltip>
+                </Box>
+              </Grid>
+              <Grid item xs={12}>
+                <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, p: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Gösterilecek Sayfalar
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                    Bu şablonun hangi sayfalardaki bildirim menülerinde görüneceğini seçin
+                  </Typography>
+                  <FormGroup row>
+                    {Object.entries(PAGE_LABELS).map(([page, label]) => (
+                      <FormControlLabel
+                        key={page}
+                        control={
+                          <Checkbox
+                            checked={formData.showOnPages.includes(page) || (page !== 'allPages' && formData.showOnPages.includes('allPages'))}
+                            onChange={() => handlePageChange(page)}
+                            disabled={page !== 'allPages' && formData.showOnPages.includes('allPages')}
+                            size="small"
+                          />
+                        }
+                        label={<Typography variant="body2">{label}</Typography>}
+                        sx={{ mr: 2, mb: 0.5 }}
+                      />
+                    ))}
+                  </FormGroup>
                 </Box>
               </Grid>
               <Grid item xs={12}>

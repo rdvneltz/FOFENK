@@ -26,6 +26,21 @@ const messageTemplateSchema = new mongoose.Schema({
     ],
     required: true
   },
+  // Hangi sayfalarda gösterileceği
+  showOnPages: {
+    type: [String],
+    enum: [
+      'students',              // Öğrenciler sayfası
+      'trialLessons',          // Deneme dersleri sayfası
+      'phoneBook',             // Telefon rehberi sayfası
+      'paymentPlanDetail',     // Ödeme planı detay sayfası
+      'paymentPlanCreate',     // Ödeme planı oluşturma
+      'dashboardPayments',     // Dashboard ödemeler
+      'dashboardLessons',      // Dashboard dersler
+      'allPages'               // Tüm sayfalar
+    ],
+    default: ['allPages']
+  },
   institution: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Institution',

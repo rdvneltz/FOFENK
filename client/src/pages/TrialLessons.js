@@ -905,6 +905,7 @@ const TrialLessons = () => {
         templateData={notificationMenu.trial ? getTrialTemplateData(notificationMenu.trial) : {}}
         defaultTemplate="trialLessonReminder"
         onEmailClick={handleEmailFromNotification}
+        pageContext="trialLessons"
       />
 
       {/* Email Dialog */}

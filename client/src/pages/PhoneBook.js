@@ -458,6 +458,7 @@ const PhoneBook = () => {
           courseName: notificationMenu.contact.courses?.map(c => c.name).join(', ') || '',
         } : {}}
         onEmailClick={handleEmailFromNotification}
+        pageContext="phoneBook"
       />
 
       {/* Single Email Dialog (from notification) */}

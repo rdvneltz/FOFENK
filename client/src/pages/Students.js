@@ -515,6 +515,7 @@ const Students = () => {
           courseName: getStudentCourses(notificationMenu.student._id).join(', '),
         } : {}}
         onEmailClick={handleEmailFromNotification}
+        pageContext="students"
       />
 
       {/* Single Email Dialog (from notification) */}
