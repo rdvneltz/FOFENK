@@ -497,17 +497,34 @@ router.post('/:id/recalculate-balance', async (req, res) => {
     const User = require('../models/User');
     const PaymentPlan = require('../models/PaymentPlan');
 
+    console.log('Recalculate balance request for student:', req.params.id);
+    console.log('Username:', username);
+
     if (!password || !username) {
       return res.status(400).json({ message: 'Kullanıcı adı ve şifre gereklidir' });
     }
 
     // Verify user credentials and check role
-    const user = await User.findOne({ username }).select('+password');
+    let user;
+    try {
+      user = await User.findOne({ username }).select('+password');
+    } catch (userError) {
+      console.error('Error finding user:', userError);
+      return res.status(500).json({ message: 'Kullanıcı sorgusunda hata: ' + userError.message });
+    }
+
     if (!user) {
       return res.status(403).json({ message: 'Kullanıcı bulunamadı' });
     }
 
-    const isPasswordValid = await user.comparePassword(password);
+    let isPasswordValid;
+    try {
+      isPasswordValid = await user.comparePassword(password);
+    } catch (pwError) {
+      console.error('Error comparing password:', pwError);
+      return res.status(500).json({ message: 'Şifre doğrulamada hata: ' + pwError.message });
+    }
+
     if (!isPasswordValid) {
       return res.status(403).json({ message: 'Şifre yanlış' });
     }
@@ -518,7 +535,14 @@ router.post('/:id/recalculate-balance', async (req, res) => {
     }
 
     // Find student
-    const student = await Student.findById(req.params.id);
+    let student;
+    try {
+      student = await Student.findById(req.params.id);
+    } catch (studentError) {
+      console.error('Error finding student:', studentError);
+      return res.status(500).json({ message: 'Öğrenci sorgusunda hata: ' + studentError.message });
+    }
+
     if (!student) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
@@ -526,7 +550,15 @@ router.post('/:id/recalculate-balance', async (req, res) => {
     const oldBalance = student.balance || 0;
 
     // Find all payment plans for this student
-    const paymentPlans = await PaymentPlan.find({ student: req.params.id });
+    let paymentPlans;
+    try {
+      paymentPlans = await PaymentPlan.find({ student: req.params.id }).populate('course', 'name');
+    } catch (planError) {
+      console.error('Error finding payment plans:', planError);
+      return res.status(500).json({ message: 'Ödeme planı sorgusunda hata: ' + planError.message });
+    }
+
+    console.log('Found payment plans:', paymentPlans.length);
 
     // Calculate correct balance from payment plans
     // Balance = sum of (discountedAmount - paidAmount) for all plans
@@ -548,23 +580,40 @@ router.post('/:id/recalculate-balance', async (req, res) => {
 
     // Update student balance
     student.balance = calculatedBalance;
-    await student.save();
+    try {
+      await student.save();
+    } catch (saveError) {
+      console.error('Error saving student:', saveError);
+      return res.status(500).json({ message: 'Öğrenci kaydedilirken hata: ' + saveError.message });
+    }
 
     // Log the activity
-    await ActivityLog.create({
-      user: updatedBy || user.username,
-      action: 'recalculate',
-      entity: 'Student',
-      entityId: student._id,
-      description: `Bakiye yeniden hesaplandı: ₺${oldBalance.toLocaleString('tr-TR')} → ₺${calculatedBalance.toLocaleString('tr-TR')} (${paymentPlans.length} ödeme planı tarandı)`,
-      institution: student.institution,
-      season: student.season
-    });
+    try {
+      await ActivityLog.create({
+        user: updatedBy || user.username,
+        action: 'recalculate',
+        entity: 'Student',
+        entityId: student._id,
+        description: `Bakiye yeniden hesaplandı: ₺${oldBalance.toLocaleString('tr-TR')} → ₺${calculatedBalance.toLocaleString('tr-TR')} (${paymentPlans.length} ödeme planı tarandı)`,
+        institution: student.institution,
+        season: student.season
+      });
+    } catch (logError) {
+      console.error('Error creating activity log:', logError);
+      // Don't fail the whole operation for log error
+    }
 
     // Populate and return updated student
-    const updatedStudent = await Student.findById(student._id)
-      .populate('institution', 'name')
-      .populate('season', 'name startDate endDate');
+    let updatedStudent;
+    try {
+      updatedStudent = await Student.findById(student._id)
+        .populate('institution', 'name')
+        .populate('season', 'name startDate endDate');
+    } catch (populateError) {
+      console.error('Error populating student:', populateError);
+      // Use the student we already have
+      updatedStudent = student;
+    }
 
     res.json({
       message: 'Bakiye başarıyla yeniden hesaplandı',
@@ -579,7 +628,7 @@ router.post('/:id/recalculate-balance', async (req, res) => {
     });
   } catch (error) {
     console.error('Error recalculating balance:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: 'Beklenmeyen hata: ' + (error.message || 'Bilinmeyen hata') });
   }
 });
 

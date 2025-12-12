@@ -251,10 +251,21 @@ const StudentDetail = () => {
       loadStudent();
 
     } catch (error) {
+      console.error('Recalculate balance error:', error);
+      console.error('Error response:', error.response);
+      console.error('Error response data:', error.response?.data);
+
+      let errorMessage = 'Bakiye hesaplanırken hata oluştu';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
       setRecalculateDialog(prev => ({
         ...prev,
         loading: false,
-        error: error.response?.data?.message || 'Bakiye hesaplanırken hata oluştu'
+        error: errorMessage
       }));
     }
   };
