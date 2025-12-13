@@ -4,19 +4,20 @@ const Institution = require('../models/Institution');
 const Settings = require('../models/Settings');
 const ActivityLog = require('../models/ActivityLog');
 const multer = require('multer');
-const path = require('path');
 
-// Multer configuration for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+// Multer configuration - store in memory for Base64 conversion
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Sadece resim dosyaları yüklenebilir'), false);
+    }
   }
 });
-
-const upload = multer({ storage });
 
 // Get all institutions
 router.get('/', async (req, res) => {
@@ -114,7 +115,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Upload logo
+// Upload logo - stores as Base64 in database for persistence on cloud platforms
 router.post('/:id/upload-logo', upload.single('logo'), async (req, res) => {
   try {
     const institution = await Institution.findById(req.params.id);
@@ -122,16 +123,26 @@ router.post('/:id/upload-logo', upload.single('logo'), async (req, res) => {
       return res.status(404).json({ message: 'Kurum bulunamadı' });
     }
 
-    institution.logo = req.file.path;
+    if (!req.file) {
+      return res.status(400).json({ message: 'Dosya yüklenemedi' });
+    }
+
+    // Convert to Base64 data URL
+    const base64 = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype;
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    institution.logo = dataUrl;
     await institution.save();
 
     res.json({ logo: institution.logo });
   } catch (error) {
+    console.error('Logo upload error:', error);
     res.status(400).json({ message: error.message });
   }
 });
 
-// Upload letterhead
+// Upload letterhead - stores as Base64 in database for persistence
 router.post('/:id/upload-letterhead', upload.single('letterhead'), async (req, res) => {
   try {
     const institution = await Institution.findById(req.params.id);
@@ -139,11 +150,21 @@ router.post('/:id/upload-letterhead', upload.single('letterhead'), async (req, r
       return res.status(404).json({ message: 'Kurum bulunamadı' });
     }
 
-    institution.letterhead = req.file.path;
+    if (!req.file) {
+      return res.status(400).json({ message: 'Dosya yüklenemedi' });
+    }
+
+    // Convert to Base64 data URL
+    const base64 = req.file.buffer.toString('base64');
+    const mimeType = req.file.mimetype;
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+
+    institution.letterhead = dataUrl;
     await institution.save();
 
     res.json({ letterhead: institution.letterhead });
   } catch (error) {
+    console.error('Letterhead upload error:', error);
     res.status(400).json({ message: error.message });
   }
 });

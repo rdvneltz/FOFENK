@@ -49,10 +49,15 @@ const InstitutionSetup = () => {
       });
       // Set logo preview if exists
       if (institution.logo) {
-        // Remove /api from the URL since uploads are served from root
-        const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-        const baseUrl = apiUrl.replace('/api', '');
-        setLogoPreview(`${baseUrl}/${institution.logo}`);
+        // Check if it's already a Base64 data URL
+        if (institution.logo.startsWith('data:')) {
+          setLogoPreview(institution.logo);
+        } else {
+          // Legacy file path format - construct URL
+          const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+          const baseUrl = apiUrl.replace('/api', '');
+          setLogoPreview(`${baseUrl}/${institution.logo}`);
+        }
       }
     }
   }, [institution]);
@@ -77,17 +82,15 @@ const InstitutionSetup = () => {
     setError('');
 
     try {
-      const formData = new FormData();
-      formData.append('logo', file);
+      const uploadFormData = new FormData();
+      uploadFormData.append('logo', file);
 
-      const response = await api.post(`/institutions/${institution._id}/upload-logo`, formData, {
+      const response = await api.post(`/institutions/${institution._id}/upload-logo`, uploadFormData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      // Remove /api from the URL since uploads are served from root
-      const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
-      const baseUrl = apiUrl.replace('/api', '');
-      setLogoPreview(`${baseUrl}/${response.data.logo}`);
+      // Response now contains Base64 data URL directly
+      setLogoPreview(response.data.logo);
       setSuccess('Logo başarıyla yüklendi');
       await loadInitialData();
     } catch (error) {
