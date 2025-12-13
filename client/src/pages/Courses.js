@@ -23,8 +23,20 @@ import {
   Chip,
   IconButton,
   Alert,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  LinearProgress,
 } from '@mui/material';
-import { Add, Edit, Delete, Group, PersonAdd, Warning } from '@mui/icons-material';
+import { Add, Edit, Delete, Group, PersonAdd, Warning, Person, Visibility, Close } from '@mui/icons-material';
+
+// Helper function to get color based on occupancy percentage (green to red)
+const getOccupancyColor = (percentage) => {
+  // 0% = green, 100% = red, interpolate hue from 120 to 0
+  const hue = Math.max(0, 120 - (percentage * 1.2)); // 120 (green) to 0 (red)
+  return `hsl(${hue}, 70%, 45%)`;
+};
 import { useApp } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
@@ -46,6 +58,7 @@ const Courses = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [noInstructorDialog, setNoInstructorDialog] = useState(false);
+  const [studentListDialog, setStudentListDialog] = useState({ open: false, course: null, students: [], loading: false });
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -195,6 +208,28 @@ const Courses = () => {
     setOpenBulkEnroll(true);
   };
 
+  // Load and show enrolled students for a course
+  const handleShowStudents = async (course) => {
+    setStudentListDialog({ open: true, course, students: [], loading: true });
+    try {
+      const response = await api.get('/enrollments', {
+        params: {
+          courseId: course._id,
+          seasonId: season._id,
+          isActive: true,
+          populate: 'student'
+        }
+      });
+      const students = response.data
+        .filter(e => e.student)
+        .map(e => e.student);
+      setStudentListDialog({ open: true, course, students, loading: false });
+    } catch (error) {
+      console.error('Error loading enrolled students:', error);
+      setStudentListDialog({ open: true, course, students: [], loading: false });
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Dersler yükleniyor..." />;
   }
@@ -262,16 +297,44 @@ const Courses = () => {
                   </TableCell>
                   <TableCell>{course.instructor?.name || '-'}</TableCell>
                   <TableCell>
-                    <Chip
-                      icon={<Group />}
-                      label={`${course.enrollmentCount || 0}/${course.capacity || 0}`}
-                      size="small"
-                      color={
-                        (course.enrollmentCount || 0) >= (course.capacity || 0)
-                          ? 'error'
-                          : 'default'
-                      }
-                    />
+                    {(() => {
+                      const enrolled = course.enrollmentCount || 0;
+                      const capacity = course.capacity || 1;
+                      const percentage = Math.min((enrolled / capacity) * 100, 100);
+                      const occupancyColor = getOccupancyColor(percentage);
+                      return (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            icon={<Group />}
+                            label={`${enrolled}/${course.capacity || 0}`}
+                            size="small"
+                            onClick={() => handleShowStudents(course)}
+                            sx={{
+                              cursor: 'pointer',
+                              bgcolor: occupancyColor,
+                              color: 'white',
+                              '& .MuiChip-icon': { color: 'white' },
+                              '&:hover': { opacity: 0.85 }
+                            }}
+                          />
+                          <Box sx={{ flexGrow: 1, minWidth: 60 }}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={percentage}
+                              sx={{
+                                height: 6,
+                                borderRadius: 3,
+                                bgcolor: 'grey.200',
+                                '& .MuiLinearProgress-bar': {
+                                  bgcolor: occupancyColor,
+                                  borderRadius: 3,
+                                }
+                              }}
+                            />
+                          </Box>
+                        </Box>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     {course.isFree ? (
@@ -513,6 +576,112 @@ const Courses = () => {
           >
             Eğitmen Ekle
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Student List Dialog */}
+      <Dialog
+        open={studentListDialog.open}
+        onClose={() => setStudentListDialog({ open: false, course: null, students: [], loading: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Group color="primary" />
+            <Typography variant="h6">
+              {studentListDialog.course?.name} - Kayıtlı Öğrenciler
+            </Typography>
+          </Box>
+          <IconButton onClick={() => setStudentListDialog({ open: false, course: null, students: [], loading: false })}>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {studentListDialog.loading ? (
+            <Box sx={{ py: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">Öğrenciler yükleniyor...</Typography>
+            </Box>
+          ) : studentListDialog.students.length === 0 ? (
+            <Box sx={{ py: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">Bu derse kayıtlı öğrenci bulunmuyor</Typography>
+            </Box>
+          ) : (
+            <>
+              <Box sx={{ mb: 2, p: 1.5, bgcolor: 'primary.light', borderRadius: 1 }}>
+                <Typography variant="body2" color="primary.contrastText">
+                  Toplam: {studentListDialog.students.length} / {studentListDialog.course?.capacity || 0} öğrenci
+                </Typography>
+                {(() => {
+                  const percentage = studentListDialog.course?.capacity
+                    ? Math.min((studentListDialog.students.length / studentListDialog.course.capacity) * 100, 100)
+                    : 0;
+                  const occupancyColor = getOccupancyColor(percentage);
+                  return (
+                    <LinearProgress
+                      variant="determinate"
+                      value={percentage}
+                      sx={{
+                        mt: 1,
+                        height: 8,
+                        borderRadius: 4,
+                        bgcolor: 'rgba(255,255,255,0.3)',
+                        '& .MuiLinearProgress-bar': {
+                          bgcolor: occupancyColor,
+                          borderRadius: 4,
+                        }
+                      }}
+                    />
+                  );
+                })()}
+              </Box>
+              <List dense>
+                {studentListDialog.students.map((student) => (
+                  <ListItem
+                    key={student._id}
+                    button
+                    onClick={() => {
+                      setStudentListDialog({ open: false, course: null, students: [], loading: false });
+                      navigate(`/students/${student._id}`);
+                    }}
+                    sx={{
+                      borderRadius: 1,
+                      mb: 0.5,
+                      '&:hover': { bgcolor: 'primary.light' }
+                    }}
+                  >
+                    <ListItemIcon>
+                      <Person />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={`${student.firstName} ${student.lastName}`}
+                      secondary={student.phone || student.email || '-'}
+                    />
+                    <IconButton size="small" color="primary">
+                      <Visibility fontSize="small" />
+                    </IconButton>
+                  </ListItem>
+                ))}
+              </List>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setStudentListDialog({ open: false, course: null, students: [], loading: false })}>
+            Kapat
+          </Button>
+          {studentListDialog.course && (
+            <Button
+              variant="contained"
+              startIcon={<PersonAdd />}
+              onClick={() => {
+                setStudentListDialog({ open: false, course: null, students: [], loading: false });
+                handleOpenBulkEnroll(studentListDialog.course);
+              }}
+            >
+              Öğrenci Ekle
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>
