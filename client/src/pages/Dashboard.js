@@ -89,6 +89,13 @@ const getLocalDateStr = (date) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// Helper function to get color based on occupancy percentage (green to red)
+const getOccupancyColor = (percentage) => {
+  // 0% = green, 100% = red, interpolate hue from 120 to 0
+  const hue = Math.max(0, 120 - (percentage * 1.2)); // 120 (green) to 0 (red)
+  return `hsl(${hue}, 70%, 45%)`;
+};
+
 const Dashboard = () => {
   const { institution, season, currentUser } = useApp();
   const navigate = useNavigate();
@@ -782,20 +789,30 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
               <Typography color="text.secondary" align="center">Ders bulunamadi</Typography>
             ) : (
               <Box sx={{ maxHeight: 200, overflow: 'auto' }}>
-                {courseStats.slice(0, 5).map((course) => (
-                  <Box key={course._id} sx={{ mb: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="body2">{course.name}</Typography>
-                      <Typography variant="body2" color="text.secondary">{course.enrolledCount}/{course.capacity}</Typography>
+                {courseStats.slice(0, 5).map((course) => {
+                  const occupancyColor = getOccupancyColor(course.percentage);
+                  return (
+                    <Box key={course._id} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                        <Typography variant="body2">{course.name}</Typography>
+                        <Typography variant="body2" color="text.secondary">{course.enrolledCount}/{course.capacity}</Typography>
+                      </Box>
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.min(course.percentage, 100)}
+                        sx={{
+                          height: 8,
+                          borderRadius: 4,
+                          bgcolor: 'grey.200',
+                          '& .MuiLinearProgress-bar': {
+                            bgcolor: occupancyColor,
+                            borderRadius: 4,
+                          }
+                        }}
+                      />
                     </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={Math.min(course.percentage, 100)}
-                      color={course.percentage >= 90 ? 'success' : course.percentage >= 50 ? 'primary' : 'warning'}
-                      sx={{ height: 8, borderRadius: 4 }}
-                    />
-                  </Box>
-                ))}
+                  );
+                })}
               </Box>
             )}
           </Paper>
