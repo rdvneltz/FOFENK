@@ -65,7 +65,11 @@ const Sidebar = ({ drawerWidth, mobileOpen, handleDrawerToggle }) => {
   // Get logo URL if institution has logo
   const logoUrl = useMemo(() => {
     if (institution?.logo) {
-      // Remove /api from the URL since uploads are served from root
+      // Check if it's already a Base64 data URL
+      if (institution.logo.startsWith('data:')) {
+        return institution.logo;
+      }
+      // Legacy file path format - construct URL
       const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
       const baseUrl = apiUrl.replace('/api', '');
       return `${baseUrl}/${institution.logo}`;
