@@ -251,11 +251,12 @@ const Dashboard = () => {
 
       const stats = courses.map(course => {
         const enrolled = enrollments.filter(e => e.course?._id === course._id).length;
+        const capacity = course.capacity || course.maxStudents || 15;
         return {
           ...course,
           enrolledCount: enrolled,
-          capacity: course.maxStudents || 15,
-          percentage: course.maxStudents ? Math.round((enrolled / course.maxStudents) * 100) : 0
+          capacity: capacity,
+          percentage: capacity > 0 ? Math.round((enrolled / capacity) * 100) : 0
         };
       });
 
