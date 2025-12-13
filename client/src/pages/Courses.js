@@ -30,13 +30,6 @@ import {
   LinearProgress,
 } from '@mui/material';
 import { Add, Edit, Delete, Group, PersonAdd, Warning, Person, Visibility, Close } from '@mui/icons-material';
-
-// Helper function to get color based on occupancy percentage (green to red)
-const getOccupancyColor = (percentage) => {
-  // 0% = green, 100% = red, interpolate hue from 120 to 0
-  const hue = Math.max(0, 120 - (percentage * 1.2)); // 120 (green) to 0 (red)
-  return `hsl(${hue}, 70%, 45%)`;
-};
 import { useApp } from '../context/AppContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../api';
@@ -44,6 +37,13 @@ import LoadingSpinner from '../components/Common/LoadingSpinner';
 import SetupRequired from '../components/Common/SetupRequired';
 import ConfirmDialog from '../components/Common/ConfirmDialog';
 import BulkEnrollDialog from '../components/Courses/BulkEnrollDialog';
+
+// Helper function to get color based on occupancy percentage (green to red)
+const getOccupancyColor = (percentage) => {
+  // 0% = green, 100% = red, interpolate hue from 120 to 0
+  const hue = Math.max(0, 120 - (percentage * 1.2)); // 120 (green) to 0 (red)
+  return `hsl(${hue}, 70%, 45%)`;
+};
 
 const Courses = () => {
   const { institution, season, currentUser } = useApp();
