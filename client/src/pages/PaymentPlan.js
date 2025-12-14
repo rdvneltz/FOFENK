@@ -749,22 +749,27 @@ const PaymentPlan = () => {
                 {formData.courseType === 'monthly' && (
                   <>
                     <Grid item xs={6} sm={3}>
-                      <TextField
-                        fullWidth size="small"
-                        label="Kayıt Tarihi"
-                        name="enrollmentDate"
-                        type="date"
-                        value={formData.enrollmentDate}
-                        onChange={(e) => {
-                          const newEnrollmentDate = e.target.value;
-                          setFormData(prev => ({ ...prev, enrollmentDate: newEnrollmentDate }));
-                          if (formData.enrollmentId && formData.durationMonths > 0) {
-                            // Yeni tarihi parametre olarak geç (async state sorunu için)
-                            calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths, null, newEnrollmentDate);
-                          }
-                        }}
-                        InputLabelProps={{ shrink: true }}
-                      />
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                        <DatePicker
+                          label="Kayıt Tarihi"
+                          value={formData.enrollmentDate ? new Date(formData.enrollmentDate) : null}
+                          onChange={(date) => {
+                            if (date && !isNaN(date.getTime())) {
+                              const newEnrollmentDate = date.toISOString().split('T')[0];
+                              setFormData(prev => ({ ...prev, enrollmentDate: newEnrollmentDate }));
+                              if (formData.enrollmentId && formData.durationMonths > 0) {
+                                calculateMonthlyLessonDetails(formData.enrollmentId, formData.durationMonths, null, newEnrollmentDate);
+                              }
+                            }
+                          }}
+                          slotProps={{
+                            textField: {
+                              size: 'small',
+                              fullWidth: true
+                            }
+                          }}
+                        />
+                      </LocalizationProvider>
                     </Grid>
                     <Grid item xs={6} sm={3}>
                       <TextField
