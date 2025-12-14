@@ -83,7 +83,8 @@ const PaymentPlan = () => {
   // Notification dialog state after plan creation
   const [successDialog, setSuccessDialog] = useState({
     open: false,
-    planData: null
+    planData: null,
+    paymentPlanId: null
   });
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
 
@@ -542,7 +543,8 @@ const PaymentPlan = () => {
       // Show success dialog instead of navigating
       setSuccessDialog({
         open: true,
-        planData
+        planData,
+        paymentPlanId: response.data._id
       });
     } catch (error) {
       setError(error.response?.data?.message || 'Bir hata oluştu');
@@ -640,14 +642,15 @@ const PaymentPlan = () => {
     const message = replaceTemplateVariables(template, templateData);
 
     sendWhatsAppMessage(phone, message, {});
-    setSuccessDialog({ open: false, planData: null });
-    navigate(`/students/${studentId}`);
+    const planId = successDialog.paymentPlanId;
+    setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
+    navigate(`/payment-plan-detail/${planId}`);
   };
 
   // Handle Email notification after plan creation
   const handleEmailNotification = () => {
     setEmailDialogOpen(true);
-    setSuccessDialog({ open: false, planData: null });
+    // Keep paymentPlanId for navigation after email sent
   };
 
   // Get email template data
@@ -1416,8 +1419,9 @@ const PaymentPlan = () => {
       <Dialog
         open={successDialog.open}
         onClose={() => {
-          setSuccessDialog({ open: false, planData: null });
-          navigate(`/students/${studentId}`);
+          const planId = successDialog.paymentPlanId;
+          setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
+          navigate(`/payment-plan-detail/${planId}`);
         }}
         maxWidth="sm"
         fullWidth
@@ -1483,8 +1487,9 @@ const PaymentPlan = () => {
         <DialogActions>
           <Button
             onClick={() => {
-              setSuccessDialog({ open: false, planData: null });
-              navigate(`/students/${studentId}`);
+              const planId = successDialog.paymentPlanId;
+              setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
+              navigate(`/payment-plan-detail/${planId}`);
             }}
             color="inherit"
           >
@@ -1497,8 +1502,10 @@ const PaymentPlan = () => {
       <EmailDialog
         open={emailDialogOpen}
         onClose={() => {
+          const planId = successDialog.paymentPlanId;
           setEmailDialogOpen(false);
-          navigate(`/students/${studentId}`);
+          setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
+          navigate(`/payment-plan-detail/${planId}`);
         }}
         recipients={(() => {
           const { email, recipientName } = getNotificationRecipient();
@@ -1508,9 +1515,11 @@ const PaymentPlan = () => {
         defaultMessage=""
         templateData={getEmailTemplateData()}
         onSuccess={() => {
+          const planId = successDialog.paymentPlanId;
           alert('Email başarıyla gönderildi!');
           setEmailDialogOpen(false);
-          navigate(`/students/${studentId}`);
+          setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
+          navigate(`/payment-plan-detail/${planId}`);
         }}
       />
     </Container>
