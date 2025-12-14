@@ -5,6 +5,8 @@ import { AppProvider, useApp } from './context/AppContext';
 import theme from './theme';
 import api from './api';
 import StartupScreen from './components/Common/StartupScreen';
+import ErrorBoundary from './components/Common/ErrorBoundary';
+import { initVersionCheck } from './utils/versionCheck';
 
 // Layout Components
 import Sidebar from './components/Layout/Sidebar';
@@ -152,12 +154,18 @@ const MainLayout = ({ children }) => {
 };
 
 function App() {
+  // Initialize version checking on app start
+  useEffect(() => {
+    initVersionCheck();
+  }, []);
+
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <StartupScreen>
-        <AppProvider>
-          <Router>
+    <ErrorBoundary>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <StartupScreen>
+          <AppProvider>
+            <Router>
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
@@ -205,10 +213,11 @@ function App() {
               }
             />
           </Routes>
-          </Router>
-        </AppProvider>
-      </StartupScreen>
-    </ThemeProvider>
+            </Router>
+          </AppProvider>
+        </StartupScreen>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 
