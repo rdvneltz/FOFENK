@@ -100,6 +100,11 @@ app.use('/api/export', require('./routes/export'));
 app.use('/api/email', require('./routes/email'));
 app.use('/api/backup', require('./routes/backup'));
 
+// Root path - for Render health check
+app.get('/', (req, res) => {
+  res.json({ status: 'OK', message: 'Fofora Theatre Management API', timestamp: new Date().toISOString() });
+});
+
 // Health check - verifies both server and database connectivity
 app.get('/api/health', (req, res) => {
   const dbState = mongoose.connection.readyState;
