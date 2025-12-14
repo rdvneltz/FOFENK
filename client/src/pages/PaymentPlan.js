@@ -92,12 +92,34 @@ const PaymentPlan = () => {
   const [installmentDetails, setInstallmentDetails] = useState([]);
 
   useEffect(() => {
+    // Validate required context values before loading
+    if (!studentId) {
+      setError('Öğrenci ID bulunamadı');
+      return;
+    }
+    if (!season?._id) {
+      setError('Sezon seçili değil');
+      return;
+    }
+    if (!institution?._id) {
+      setError('Kurum seçili değil');
+      return;
+    }
     loadData();
-  }, [studentId]);
+  }, [studentId, season?._id, institution?._id]);
 
   const loadData = async () => {
     try {
       setLoading(true);
+      setError('');
+
+      // Validate studentId format (MongoDB ObjectId is 24 hex characters)
+      if (!studentId || !/^[a-fA-F0-9]{24}$/.test(studentId)) {
+        setError('Geçersiz öğrenci ID formatı');
+        setLoading(false);
+        return;
+      }
+
       const [studentRes, enrollmentsRes, cashRes, settingsRes] = await Promise.all([
         api.get(`/students/${studentId}`),
         api.get('/enrollments', { params: { studentId, seasonId: season._id } }),
@@ -105,11 +127,18 @@ const PaymentPlan = () => {
         api.get('/settings', { params: { institutionId: institution._id } }),
       ]);
 
-      setStudent(studentRes.data);
-      setEnrollments(enrollmentsRes.data);
-      setCashRegisters(cashRes.data);
+      // Validate student data
+      if (!studentRes.data || !studentRes.data._id) {
+        setError('Öğrenci bulunamadı. Lütfen geçerli bir öğrenci seçin.');
+        setLoading(false);
+        return;
+      }
 
-      if (cashRes.data.length > 0) {
+      setStudent(studentRes.data);
+      setEnrollments(enrollmentsRes.data || []);
+      setCashRegisters(cashRes.data || []);
+
+      if (cashRes.data && cashRes.data.length > 0) {
         setSelectedCashRegister(cashRes.data[0]._id);
       }
 
@@ -117,12 +146,16 @@ const PaymentPlan = () => {
         setSettings(settingsRes.data[0]);
       }
 
-      if (enrollmentsRes.data.length > 0) {
+      if (enrollmentsRes.data && enrollmentsRes.data.length > 0) {
         await handleEnrollmentChange(enrollmentsRes.data[0]._id, enrollmentsRes.data);
       }
     } catch (error) {
-      setError('Veri yüklenirken bir hata oluştu');
-      console.error(error);
+      console.error('PaymentPlan loadData error:', error);
+      if (error.response?.status === 404) {
+        setError('Öğrenci bulunamadı. Bu ID ile kayıtlı öğrenci yok.');
+      } else {
+        setError(error.response?.data?.message || 'Veri yüklenirken bir hata oluştu');
+      }
     } finally {
       setLoading(false);
     }
@@ -511,6 +544,16 @@ const PaymentPlan = () => {
 
       const response = await api.post('/payment-plans', paymentPlanData);
 
+      // Validate response
+      if (!response.data || !response.data._id) {
+        setError('Ödeme planı oluşturuldu ancak yanıt alınamadı. Lütfen sayfayı yenileyip kontrol edin.');
+        setLoading(false);
+        return;
+      }
+
+      const paymentPlanId = response.data._id;
+      console.log('Payment plan created successfully:', paymentPlanId);
+
       // Get payment method label
       const getPaymentMethodLabel = () => {
         if (hasCreditCard) return 'Kredi Kartı';
@@ -520,35 +563,35 @@ const PaymentPlan = () => {
 
       // Prepare plan data for notification
       const planData = {
-        studentName: `${student.firstName} ${student.lastName}`,
-        courseName: selectedEnrollment.course?.name || '',
+        studentName: student ? `${student.firstName || ''} ${student.lastName || ''}`.trim() : 'Öğrenci',
+        courseName: selectedEnrollment?.course?.name || '',
         seasonName: season?.name || '',
-        totalAmount: grandTotals.total,
+        totalAmount: grandTotals?.total || 0,
         totalInstallments: installments.length,
         installmentCount: installments.length,
-        installmentAmount: installments.length > 0 ? installments[0].amount : 0,
+        installmentAmount: installments.length > 0 ? (installments[0]?.amount || 0) : 0,
         paymentMethod: getPaymentMethodLabel(),
-        commissionAmount: grandTotals.commission > 0 ? `Komisyon: ${grandTotals.commission.toLocaleString('tr-TR')} TL` : '',
+        commissionAmount: grandTotals?.commission > 0 ? `Komisyon: ${grandTotals.commission.toLocaleString('tr-TR')} TL` : '',
         installments: installments.map(inst => ({
-          installmentNumber: inst.installmentNumber,
-          amount: inst.amount,
-          dueDate: inst.dueDate
+          installmentNumber: inst?.installmentNumber || 0,
+          amount: inst?.amount || 0,
+          dueDate: inst?.dueDate || new Date()
         })),
-        phone: student.phone,
-        email: student.email,
-        parentContacts: student.parentContacts,
-        defaultNotificationRecipient: student.defaultNotificationRecipient
+        phone: student?.phone || '',
+        email: student?.email || '',
+        parentContacts: student?.parentContacts || [],
+        defaultNotificationRecipient: student?.defaultNotificationRecipient || 'student'
       };
 
       // Show success dialog instead of navigating
       setSuccessDialog({
         open: true,
         planData,
-        paymentPlanId: response.data._id
+        paymentPlanId
       });
     } catch (error) {
-      setError(error.response?.data?.message || 'Bir hata oluştu');
-      console.error(error);
+      console.error('Payment plan creation error:', error);
+      setError(error.response?.data?.message || 'Ödeme planı oluşturulurken bir hata oluştu');
     } finally {
       setLoading(false);
     }
@@ -644,7 +687,11 @@ const PaymentPlan = () => {
     sendWhatsAppMessage(phone, message, {});
     const planId = successDialog.paymentPlanId;
     setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
-    navigate(`/payment-plan-detail/${planId}`);
+    if (planId) {
+      navigate(`/payment-plan-detail/${planId}`);
+    } else {
+      navigate(`/students/${studentId}`);
+    }
   };
 
   // Handle Email notification after plan creation
@@ -1421,7 +1468,11 @@ const PaymentPlan = () => {
         onClose={() => {
           const planId = successDialog.paymentPlanId;
           setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
-          navigate(`/payment-plan-detail/${planId}`);
+          if (planId) {
+            navigate(`/payment-plan-detail/${planId}`);
+          } else {
+            navigate(`/students/${studentId}`);
+          }
         }}
         maxWidth="sm"
         fullWidth
@@ -1489,7 +1540,11 @@ const PaymentPlan = () => {
             onClick={() => {
               const planId = successDialog.paymentPlanId;
               setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
-              navigate(`/payment-plan-detail/${planId}`);
+              if (planId) {
+                navigate(`/payment-plan-detail/${planId}`);
+              } else {
+                navigate(`/students/${studentId}`);
+              }
             }}
             color="inherit"
           >
@@ -1505,7 +1560,11 @@ const PaymentPlan = () => {
           const planId = successDialog.paymentPlanId;
           setEmailDialogOpen(false);
           setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
-          navigate(`/payment-plan-detail/${planId}`);
+          if (planId) {
+            navigate(`/payment-plan-detail/${planId}`);
+          } else {
+            navigate(`/students/${studentId}`);
+          }
         }}
         recipients={(() => {
           const { email, recipientName } = getNotificationRecipient();
@@ -1519,7 +1578,11 @@ const PaymentPlan = () => {
           alert('Email başarıyla gönderildi!');
           setEmailDialogOpen(false);
           setSuccessDialog({ open: false, planData: null, paymentPlanId: null });
-          navigate(`/payment-plan-detail/${planId}`);
+          if (planId) {
+            navigate(`/payment-plan-detail/${planId}`);
+          } else {
+            navigate(`/students/${studentId}`);
+          }
         }}
       />
     </Container>
