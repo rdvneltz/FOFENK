@@ -27,6 +27,8 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
+  Tooltip,
+  Divider,
 } from '@mui/material';
 import {
   Close,
@@ -50,6 +52,7 @@ import {
   CheckCircle,
   PendingActions,
   Send,
+  LocalOffer,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -122,6 +125,14 @@ const Dashboard = () => {
     totalInstructors: 0,
   });
 
+  // Discount statistics state
+  const [discountStats, setDiscountStats] = useState({
+    fullScholarship: { count: 0, totalAmount: 0 },
+    byPercentage: {}, // e.g., { 50: { count: 2, totalAmount: 500 }, 10: { count: 3, totalAmount: 200 } }
+    totalDiscountedStudents: 0,
+    totalDiscountAmount: 0
+  });
+
   const [todayLessons, setTodayLessons] = useState([]);
   const [trialLessons, setTrialLessons] = useState([]);
   const [courseStats, setCourseStats] = useState([]);
@@ -176,6 +187,7 @@ const Dashboard = () => {
         loadUpcomingPayments(),
         loadChartData(),
         loadEnrollments(),
+        loadDiscountStats(),
       ]);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -203,6 +215,57 @@ const Dashboard = () => {
       setStats(response.data);
     } catch (error) {
       console.error('Error loading stats:', error);
+    }
+  };
+
+  const loadDiscountStats = async () => {
+    try {
+      const response = await api.get('/students', {
+        params: {
+          institutionId: institution._id,
+          seasonId: season._id,
+          includeDiscountInfo: 'true'
+        }
+      });
+
+      const students = response.data;
+
+      // Calculate discount statistics
+      const discountData = {
+        fullScholarship: { count: 0, totalAmount: 0 },
+        byPercentage: {},
+        totalDiscountedStudents: 0,
+        totalDiscountAmount: 0
+      };
+
+      students.forEach(student => {
+        if (student.discounts && student.discounts.length > 0) {
+          discountData.totalDiscountedStudents++;
+
+          student.discounts.forEach(discount => {
+            const discountAmount = discount.discountAmount || 0;
+
+            if (discount.type === 'fullScholarship') {
+              discountData.fullScholarship.count++;
+              discountData.fullScholarship.totalAmount += discountAmount;
+            } else {
+              // Group by percentage value
+              const percentageKey = discount.percentageValue || discount.value;
+              if (!discountData.byPercentage[percentageKey]) {
+                discountData.byPercentage[percentageKey] = { count: 0, totalAmount: 0 };
+              }
+              discountData.byPercentage[percentageKey].count++;
+              discountData.byPercentage[percentageKey].totalAmount += discountAmount;
+            }
+
+            discountData.totalDiscountAmount += discountAmount;
+          });
+        }
+      });
+
+      setDiscountStats(discountData);
+    } catch (error) {
+      console.error('Error loading discount stats:', error);
     }
   };
 
@@ -646,12 +709,61 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
 
       <Grid container spacing={2}>
         {/* TOP ROW - Key Stats */}
-        <Grid item xs={6} sm={4} md={2}>
-          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={handleStudentsClick}>
-            <Group color="primary" sx={{ fontSize: 32 }} />
-            <Typography variant="h4">{stats.totalStudents}</Typography>
-            <Typography variant="body2" color="text.secondary">Ogrenci</Typography>
-            <Chip size="small" label={`${stats.activeStudents} aktif`} sx={{ mt: 0.5 }} />
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={handleStudentsClick}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Group color="primary" sx={{ fontSize: 28 }} />
+                <Box>
+                  <Typography variant="h4" sx={{ lineHeight: 1 }}>{stats.totalStudents}</Typography>
+                  <Typography variant="caption" color="text.secondary">Öğrenci</Typography>
+                </Box>
+              </Box>
+              <Chip size="small" label={`${stats.activeStudents} aktif`} color="primary" variant="outlined" />
+            </Box>
+
+            {/* Discount Breakdown */}
+            {discountStats.totalDiscountedStudents > 0 && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                  {discountStats.fullScholarship.count > 0 && (
+                    <Tooltip title={`Toplam: ${discountStats.fullScholarship.totalAmount.toLocaleString('tr-TR')} TL`}>
+                      <Chip
+                        size="small"
+                        icon={<School sx={{ fontSize: 14 }} />}
+                        label={`Burslu: ${discountStats.fullScholarship.count}`}
+                        color="success"
+                        sx={{ fontSize: '0.7rem' }}
+                      />
+                    </Tooltip>
+                  )}
+                  {Object.entries(discountStats.byPercentage)
+                    .sort(([a], [b]) => Number(b) - Number(a))
+                    .map(([percentage, data]) => (
+                      <Tooltip key={percentage} title={`Toplam: ${data.totalAmount.toLocaleString('tr-TR')} TL`}>
+                        <Chip
+                          size="small"
+                          icon={<LocalOffer sx={{ fontSize: 14 }} />}
+                          label={`%${percentage}: ${data.count}`}
+                          color="info"
+                          variant="outlined"
+                          sx={{ fontSize: '0.7rem' }}
+                        />
+                      </Tooltip>
+                    ))
+                  }
+                </Box>
+                <Box sx={{ textAlign: 'center', bgcolor: 'grey.100', borderRadius: 1, py: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Toplam İndirim/Burs:
+                  </Typography>
+                  <Typography variant="body2" fontWeight="bold" color="success.main">
+                    {discountStats.totalDiscountAmount.toLocaleString('tr-TR')} TL
+                  </Typography>
+                </Box>
+              </>
+            )}
           </Paper>
         </Grid>
 
