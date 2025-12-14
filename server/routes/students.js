@@ -33,15 +33,32 @@ router.get('/', async (req, res) => {
     // If discount info is requested, fetch enrollments with discount info
     if (includeDiscountInfo === 'true') {
       const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+      const PaymentPlan = require('../models/PaymentPlan');
       const studentIds = students.map(s => s._id);
 
-      const enrollments = await StudentCourseEnrollment.find({
-        student: { $in: studentIds },
-        season: seasonId,
-        isActive: true
-      })
-        .populate('course', 'name')
-        .lean();
+      // Fetch enrollments and payment plans in parallel
+      const [enrollments, paymentPlans] = await Promise.all([
+        StudentCourseEnrollment.find({
+          student: { $in: studentIds },
+          season: seasonId,
+          isActive: true
+        })
+          .populate('course', 'name')
+          .lean(),
+        PaymentPlan.find({
+          student: { $in: studentIds },
+          season: seasonId
+        })
+          .select('student course totalAmount discountedAmount discountType discountValue')
+          .lean()
+      ]);
+
+      // Index payment plans by student+course for quick lookup
+      const paymentPlanMap = {};
+      paymentPlans.forEach(plan => {
+        const key = `${plan.student.toString()}_${plan.course?.toString() || ''}`;
+        paymentPlanMap[key] = plan;
+      });
 
       // Group enrollments by student and find the best discount
       const studentDiscounts = {};
@@ -50,19 +67,39 @@ router.get('/', async (req, res) => {
         if (!studentDiscounts[studentId]) {
           studentDiscounts[studentId] = {
             discounts: [],
-            courses: []
+            courses: [],
+            totalDiscountAmount: 0
           };
         }
 
         studentDiscounts[studentId].courses.push(enrollment.course?.name || 'Ders');
 
         if (enrollment.discount && enrollment.discount.type !== 'none') {
+          // Find corresponding payment plan to get total amount
+          const planKey = `${studentId}_${enrollment.course?._id?.toString() || ''}`;
+          const plan = paymentPlanMap[planKey];
+          const totalAmount = plan?.totalAmount || 0;
+          const discountAmount = plan ? (plan.totalAmount - plan.discountedAmount) : 0;
+
+          // Calculate percentage for fixed discounts
+          let percentageValue = enrollment.discount.value;
+          if (enrollment.discount.type === 'fixed' && totalAmount > 0) {
+            percentageValue = Math.round((enrollment.discount.value / totalAmount) * 100);
+          } else if (enrollment.discount.type === 'fullScholarship') {
+            percentageValue = 100;
+          }
+
           studentDiscounts[studentId].discounts.push({
             type: enrollment.discount.type,
             value: enrollment.discount.value,
+            percentageValue: percentageValue,
+            totalAmount: totalAmount,
+            discountAmount: discountAmount,
             description: enrollment.discount.description,
             courseName: enrollment.course?.name
           });
+
+          studentDiscounts[studentId].totalDiscountAmount += discountAmount;
         }
       });
 
@@ -72,18 +109,16 @@ router.get('/', async (req, res) => {
         if (discountInfo) {
           student.enrolledCourses = discountInfo.courses;
           student.discounts = discountInfo.discounts;
+          student.totalDiscountAmount = discountInfo.totalDiscountAmount;
           // Set primary discount (fullScholarship takes priority, then highest percentage)
           if (discountInfo.discounts.length > 0) {
             const fullScholarship = discountInfo.discounts.find(d => d.type === 'fullScholarship');
             if (fullScholarship) {
               student.primaryDiscount = fullScholarship;
             } else {
-              // Find the highest discount
+              // Find the highest discount by percentage
               const sortedDiscounts = discountInfo.discounts.sort((a, b) => {
-                if (a.type === 'percentage' && b.type === 'percentage') {
-                  return b.value - a.value;
-                }
-                return 0;
+                return (b.percentageValue || 0) - (a.percentageValue || 0);
               });
               student.primaryDiscount = sortedDiscounts[0];
             }

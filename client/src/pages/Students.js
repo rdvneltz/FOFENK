@@ -143,31 +143,17 @@ const Students = () => {
       );
     }
 
-    if (discount.type === 'percentage') {
-      return (
-        <Chip
-          icon={<LocalOffer />}
-          label={`%${discount.value}`}
-          color="info"
-          size="small"
-          sx={{ ml: 1 }}
-        />
-      );
-    }
-
-    if (discount.type === 'fixed') {
-      return (
-        <Chip
-          icon={<LocalOffer />}
-          label={`₺${discount.value}`}
-          color="info"
-          size="small"
-          sx={{ ml: 1 }}
-        />
-      );
-    }
-
-    return null;
+    // For both percentage and fixed discounts, show as percentage
+    const percentageValue = discount.percentageValue || discount.value;
+    return (
+      <Chip
+        icon={<LocalOffer />}
+        label={`%${percentageValue}`}
+        color="info"
+        size="small"
+        sx={{ ml: 1 }}
+      />
+    );
   };
 
   const filteredStudents = students.filter((student) => {
