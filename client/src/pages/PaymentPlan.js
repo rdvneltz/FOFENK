@@ -80,6 +80,17 @@ const PaymentPlan = () => {
   const [showPartialPricingDialog, setShowPartialPricingDialog] = useState(false);
   const [showInstallmentDetails, setShowInstallmentDetails] = useState(true);
 
+  // Price Calculator Helper State
+  const [priceCalculator, setPriceCalculator] = useState({
+    open: true,
+    inputType: 'total', // 'total', 'monthly', 'perLesson'
+    customTotal: '',
+    customMonthly: '',
+    customPerLesson: '',
+    durationMonths: 9,
+    lessonsPerMonth: 4
+  });
+
   // Notification dialog state after plan creation
   const [successDialog, setSuccessDialog] = useState({
     open: false,
@@ -1009,6 +1020,225 @@ const PaymentPlan = () => {
 
         {/* Sağ Panel - Özet */}
         <Grid item xs={12} md={5}>
+          {/* Fiyat Hesaplama Yardımcısı */}
+          <Card sx={{ mb: 2, border: '2px dashed', borderColor: 'info.main' }}>
+            <CardContent>
+              <Box
+                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+                onClick={() => setPriceCalculator(prev => ({ ...prev, open: !prev.open }))}
+              >
+                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  🧮 Fiyat Hesaplama Yardımcısı
+                </Typography>
+                <IconButton size="small">
+                  {priceCalculator.open ? <ExpandLess /> : <ExpandMore />}
+                </IconButton>
+              </Box>
+
+              <Collapse in={priceCalculator.open}>
+                <Box sx={{ mt: 2 }}>
+                  {/* Default Values Info */}
+                  {course && (
+                    <Alert severity="info" sx={{ mb: 2, py: 0.5 }}>
+                      <Typography variant="caption">
+                        <strong>Varsayılan:</strong> Aylık {course.pricePerMonth?.toLocaleString('tr-TR') || 0} TL
+                        {course.pricePerLesson && ` | Ders başı ${course.pricePerLesson?.toLocaleString('tr-TR')} TL`}
+                      </Typography>
+                    </Alert>
+                  )}
+
+                  {/* Input Fields */}
+                  <Grid container spacing={1.5}>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Toplam Tutar (₺)"
+                        type="number"
+                        value={priceCalculator.customTotal}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPriceCalculator(prev => ({ ...prev, customTotal: val, inputType: 'total' }));
+                        }}
+                        placeholder={String(grandTotals.totalAmount || 0)}
+                        InputProps={{ sx: { bgcolor: priceCalculator.inputType === 'total' && priceCalculator.customTotal ? 'info.lighter' : 'inherit' } }}
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Aylık Ücret (₺)"
+                        type="number"
+                        value={priceCalculator.customMonthly}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPriceCalculator(prev => ({ ...prev, customMonthly: val, inputType: 'monthly' }));
+                        }}
+                        placeholder={String(formData.monthlyFee || 0)}
+                        InputProps={{ sx: { bgcolor: priceCalculator.inputType === 'monthly' && priceCalculator.customMonthly ? 'info.lighter' : 'inherit' } }}
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Ders Başı (₺)"
+                        type="number"
+                        value={priceCalculator.customPerLesson}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setPriceCalculator(prev => ({ ...prev, customPerLesson: val, inputType: 'perLesson' }));
+                        }}
+                        placeholder={String(course?.pricePerLesson || 0)}
+                        InputProps={{ sx: { bgcolor: priceCalculator.inputType === 'perLesson' && priceCalculator.customPerLesson ? 'info.lighter' : 'inherit' } }}
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Süre (Ay)"
+                        type="number"
+                        value={priceCalculator.durationMonths}
+                        onChange={(e) => setPriceCalculator(prev => ({ ...prev, durationMonths: parseInt(e.target.value) || 1 }))}
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Aylık Ders Sayısı"
+                        type="number"
+                        value={priceCalculator.lessonsPerMonth}
+                        onChange={(e) => setPriceCalculator(prev => ({ ...prev, lessonsPerMonth: parseInt(e.target.value) || 1 }))}
+                      />
+                    </Grid>
+                  </Grid>
+
+                  {/* Calculated Results */}
+                  {(() => {
+                    const duration = priceCalculator.durationMonths || formData.durationMonths || 9;
+                    const lessonsPerMonth = priceCalculator.lessonsPerMonth || monthlyLessonDetails?.course?.lessonsPerMonth || 4;
+                    const totalLessons = duration * lessonsPerMonth;
+                    const defaultTotal = grandTotals.totalAmount || 0;
+                    const defaultMonthly = parseFloat(formData.monthlyFee) || course?.pricePerMonth || 0;
+                    const defaultPerLesson = course?.pricePerLesson || 0;
+
+                    let calcTotal, calcMonthly, calcPerLesson;
+
+                    if (priceCalculator.inputType === 'total' && priceCalculator.customTotal) {
+                      calcTotal = parseFloat(priceCalculator.customTotal) || 0;
+                      calcMonthly = duration > 0 ? calcTotal / duration : 0;
+                      calcPerLesson = totalLessons > 0 ? calcTotal / totalLessons : 0;
+                    } else if (priceCalculator.inputType === 'monthly' && priceCalculator.customMonthly) {
+                      calcMonthly = parseFloat(priceCalculator.customMonthly) || 0;
+                      calcTotal = calcMonthly * duration;
+                      calcPerLesson = lessonsPerMonth > 0 ? calcMonthly / lessonsPerMonth : 0;
+                    } else if (priceCalculator.inputType === 'perLesson' && priceCalculator.customPerLesson) {
+                      calcPerLesson = parseFloat(priceCalculator.customPerLesson) || 0;
+                      calcMonthly = calcPerLesson * lessonsPerMonth;
+                      calcTotal = calcMonthly * duration;
+                    } else {
+                      calcTotal = defaultTotal;
+                      calcMonthly = defaultMonthly;
+                      calcPerLesson = defaultPerLesson || (lessonsPerMonth > 0 ? defaultMonthly / lessonsPerMonth : 0);
+                    }
+
+                    const discountAmount = defaultTotal - calcTotal;
+                    const discountPercent = defaultTotal > 0 ? ((discountAmount / defaultTotal) * 100) : 0;
+                    const hasDiscount = discountAmount > 0;
+                    const hasIncrease = discountAmount < 0;
+
+                    return (
+                      <Box sx={{ mt: 2, p: 1.5, bgcolor: 'grey.100', borderRadius: 1 }}>
+                        <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          📊 Hesaplanan Değerler
+                        </Typography>
+
+                        <Grid container spacing={1}>
+                          <Grid item xs={4}>
+                            <Typography variant="caption" color="text.secondary">Toplam</Typography>
+                            <Typography variant="body2" fontWeight="bold">₺{calcTotal.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</Typography>
+                          </Grid>
+                          <Grid item xs={4}>
+                            <Typography variant="caption" color="text.secondary">Aylık</Typography>
+                            <Typography variant="body2" fontWeight="bold">₺{calcMonthly.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</Typography>
+                          </Grid>
+                          <Grid item xs={4}>
+                            <Typography variant="caption" color="text.secondary">Ders Başı</Typography>
+                            <Typography variant="body2" fontWeight="bold">₺{calcPerLesson.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}</Typography>
+                          </Grid>
+                        </Grid>
+
+                        {(hasDiscount || hasIncrease) && (
+                          <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
+                            <Chip
+                              size="small"
+                              color={hasDiscount ? 'success' : 'error'}
+                              label={hasDiscount
+                                ? `%${discountPercent.toFixed(1)} İndirim (₺${discountAmount.toLocaleString('tr-TR', { maximumFractionDigits: 0 })} tasarruf)`
+                                : `%${Math.abs(discountPercent).toFixed(1)} Artış (₺${Math.abs(discountAmount).toLocaleString('tr-TR', { maximumFractionDigits: 0 })} fazla)`
+                              }
+                              sx={{ width: '100%', justifyContent: 'center' }}
+                            />
+                          </Box>
+                        )}
+
+                        {/* Apply Button */}
+                        {(priceCalculator.customTotal || priceCalculator.customMonthly || priceCalculator.customPerLesson) && (
+                          <Box sx={{ mt: 1.5, display: 'flex', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              color="info"
+                              fullWidth
+                              onClick={() => {
+                                // Apply calculated monthly fee to the form
+                                setFormData(prev => ({ ...prev, monthlyFee: calcMonthly.toFixed(0) }));
+                                // Calculate discount if there is one
+                                if (hasDiscount && defaultTotal > 0) {
+                                  const fixedDiscount = defaultTotal - calcTotal;
+                                  setFormData(prev => ({
+                                    ...prev,
+                                    monthlyFee: calcMonthly.toFixed(0),
+                                    discountType: 'fixed',
+                                    discountValue: fixedDiscount.toFixed(0)
+                                  }));
+                                }
+                                // Clear calculator inputs
+                                setPriceCalculator(prev => ({
+                                  ...prev,
+                                  customTotal: '',
+                                  customMonthly: '',
+                                  customPerLesson: ''
+                                }));
+                              }}
+                            >
+                              Ödeme Planına Uygula
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => setPriceCalculator(prev => ({
+                                ...prev,
+                                customTotal: '',
+                                customMonthly: '',
+                                customPerLesson: ''
+                              }))}
+                            >
+                              Temizle
+                            </Button>
+                          </Box>
+                        )}
+                      </Box>
+                    );
+                  })()}
+                </Box>
+              </Collapse>
+            </CardContent>
+          </Card>
+
           {/* Ödeme Özeti */}
           <Card sx={{ mb: 2 }}>
             <CardContent>
