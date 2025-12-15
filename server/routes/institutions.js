@@ -89,9 +89,31 @@ router.post('/', async (req, res) => {
 // Update institution
 router.put('/:id', async (req, res) => {
   try {
+    // First, get the existing institution to preserve logo if not provided
+    const existingInstitution = await Institution.findById(req.params.id);
+    if (!existingInstitution) {
+      return res.status(404).json({ message: 'Kurum bulunamadı' });
+    }
+
+    // Prepare update data, preserving logo and letterhead if not explicitly provided
+    const updateData = {
+      ...req.body,
+      updatedBy: req.body.updatedBy
+    };
+
+    // Preserve logo if not provided in update (empty string means intentional deletion)
+    if (req.body.logo === undefined) {
+      updateData.logo = existingInstitution.logo;
+    }
+
+    // Preserve letterhead if not provided in update
+    if (req.body.letterhead === undefined) {
+      updateData.letterhead = existingInstitution.letterhead;
+    }
+
     const institution = await Institution.findByIdAndUpdate(
       req.params.id,
-      { ...req.body, updatedBy: req.body.updatedBy },
+      updateData,
       { new: true }
     );
 
@@ -132,10 +154,20 @@ router.post('/:id/upload-logo', upload.single('logo'), async (req, res) => {
     const mimeType = req.file.mimetype;
     const dataUrl = `data:${mimeType};base64,${base64}`;
 
+    console.log(`[Logo Upload] Institution: ${institution._id}, File size: ${req.file.size} bytes, MIME: ${mimeType}`);
+
     institution.logo = dataUrl;
     await institution.save();
 
-    res.json({ logo: institution.logo });
+    // Verify the save was successful by fetching the institution again
+    const savedInstitution = await Institution.findById(req.params.id);
+    if (!savedInstitution.logo || !savedInstitution.logo.startsWith('data:')) {
+      console.error('[Logo Upload] Logo not saved properly!');
+      return res.status(500).json({ message: 'Logo kaydedilemedi' });
+    }
+
+    console.log(`[Logo Upload] Success! Logo saved for institution ${institution._id}`);
+    res.json({ logo: savedInstitution.logo });
   } catch (error) {
     console.error('Logo upload error:', error);
     res.status(400).json({ message: error.message });
