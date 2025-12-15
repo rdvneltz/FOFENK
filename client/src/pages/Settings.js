@@ -59,11 +59,17 @@ const Settings = () => {
 
   const [cardCommissions, setCardCommissions] = useState({
     single: 4,
-    installment2: 5,
-    installment3: 6,
-    installment6: 8,
-    installment9: 10,
-    installment12: 12
+    installment2: 6.5,
+    installment3: 9,
+    installment4: 11.5,
+    installment5: 14,
+    installment6: 16.5,
+    installment7: 19,
+    installment8: 21.5,
+    installment9: 24,
+    installment10: 26.5,
+    installment11: 29,
+    installment12: 31.5
   });
 
   const [resetDialog, setResetDialog] = useState({
@@ -127,19 +133,21 @@ const Settings = () => {
           const commissionsMap = {};
           rates.forEach(rate => {
             if (rate.installments === 1) commissionsMap.single = rate.rate;
-            else if (rate.installments === 2) commissionsMap.installment2 = rate.rate;
-            else if (rate.installments === 3) commissionsMap.installment3 = rate.rate;
-            else if (rate.installments === 6) commissionsMap.installment6 = rate.rate;
-            else if (rate.installments === 9) commissionsMap.installment9 = rate.rate;
-            else if (rate.installments === 12) commissionsMap.installment12 = rate.rate;
+            else commissionsMap[`installment${rate.installments}`] = rate.rate;
           });
           setCardCommissions({
-            single: commissionsMap.single || 4,
-            installment2: commissionsMap.installment2 || 5,
-            installment3: commissionsMap.installment3 || 6,
-            installment6: commissionsMap.installment6 || 8,
-            installment9: commissionsMap.installment9 || 10,
-            installment12: commissionsMap.installment12 || 12
+            single: commissionsMap.single ?? 4,
+            installment2: commissionsMap.installment2 ?? 6.5,
+            installment3: commissionsMap.installment3 ?? 9,
+            installment4: commissionsMap.installment4 ?? 11.5,
+            installment5: commissionsMap.installment5 ?? 14,
+            installment6: commissionsMap.installment6 ?? 16.5,
+            installment7: commissionsMap.installment7 ?? 19,
+            installment8: commissionsMap.installment8 ?? 21.5,
+            installment9: commissionsMap.installment9 ?? 24,
+            installment10: commissionsMap.installment10 ?? 26.5,
+            installment11: commissionsMap.installment11 ?? 29,
+            installment12: commissionsMap.installment12 ?? 31.5
           });
         }
       }
@@ -167,12 +175,18 @@ const Settings = () => {
     try {
       // Convert cardCommissions to creditCardRates format for backend
       const creditCardRates = [
-        { installments: 1, rate: parseFloat(cardCommissions.single) },
-        { installments: 2, rate: parseFloat(cardCommissions.installment2) },
-        { installments: 3, rate: parseFloat(cardCommissions.installment3) },
-        { installments: 6, rate: parseFloat(cardCommissions.installment6) },
-        { installments: 9, rate: parseFloat(cardCommissions.installment9) },
-        { installments: 12, rate: parseFloat(cardCommissions.installment12) }
+        { installments: 1, rate: parseFloat(cardCommissions.single) || 0 },
+        { installments: 2, rate: parseFloat(cardCommissions.installment2) || 0 },
+        { installments: 3, rate: parseFloat(cardCommissions.installment3) || 0 },
+        { installments: 4, rate: parseFloat(cardCommissions.installment4) || 0 },
+        { installments: 5, rate: parseFloat(cardCommissions.installment5) || 0 },
+        { installments: 6, rate: parseFloat(cardCommissions.installment6) || 0 },
+        { installments: 7, rate: parseFloat(cardCommissions.installment7) || 0 },
+        { installments: 8, rate: parseFloat(cardCommissions.installment8) || 0 },
+        { installments: 9, rate: parseFloat(cardCommissions.installment9) || 0 },
+        { installments: 10, rate: parseFloat(cardCommissions.installment10) || 0 },
+        { installments: 11, rate: parseFloat(cardCommissions.installment11) || 0 },
+        { installments: 12, rate: parseFloat(cardCommissions.installment12) || 0 }
       ];
 
       const settingsData = {
@@ -478,102 +492,38 @@ const Settings = () => {
               </Typography>
 
               <Grid container spacing={2}>
-                <Grid item xs={12} sm={6} md={4}>
-                  <TextField
-                    fullWidth
-                    label="Tek Çekim"
-                    type="number"
-                    value={cardCommissions.single}
-                    onChange={(e) => setCardCommissions({
-                      ...cardCommissions,
-                      single: parseFloat(e.target.value)
-                    })}
-                    inputProps={{ min: 0, max: 100, step: 0.1 }}
-                    InputProps={{
-                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={4}>
-                  <TextField
-                    fullWidth
-                    label="2 Taksit"
-                    type="number"
-                    value={cardCommissions.installment2}
-                    onChange={(e) => setCardCommissions({
-                      ...cardCommissions,
-                      installment2: parseFloat(e.target.value)
-                    })}
-                    inputProps={{ min: 0, max: 100, step: 0.1 }}
-                    InputProps={{
-                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={4}>
-                  <TextField
-                    fullWidth
-                    label="3 Taksit"
-                    type="number"
-                    value={cardCommissions.installment3}
-                    onChange={(e) => setCardCommissions({
-                      ...cardCommissions,
-                      installment3: parseFloat(e.target.value)
-                    })}
-                    inputProps={{ min: 0, max: 100, step: 0.1 }}
-                    InputProps={{
-                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={4}>
-                  <TextField
-                    fullWidth
-                    label="6 Taksit"
-                    type="number"
-                    value={cardCommissions.installment6}
-                    onChange={(e) => setCardCommissions({
-                      ...cardCommissions,
-                      installment6: parseFloat(e.target.value)
-                    })}
-                    inputProps={{ min: 0, max: 100, step: 0.1 }}
-                    InputProps={{
-                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={4}>
-                  <TextField
-                    fullWidth
-                    label="9 Taksit"
-                    type="number"
-                    value={cardCommissions.installment9}
-                    onChange={(e) => setCardCommissions({
-                      ...cardCommissions,
-                      installment9: parseFloat(e.target.value)
-                    })}
-                    inputProps={{ min: 0, max: 100, step: 0.1 }}
-                    InputProps={{
-                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                    }}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={6} md={4}>
-                  <TextField
-                    fullWidth
-                    label="12 Taksit"
-                    type="number"
-                    value={cardCommissions.installment12}
-                    onChange={(e) => setCardCommissions({
-                      ...cardCommissions,
-                      installment12: parseFloat(e.target.value)
-                    })}
-                    inputProps={{ min: 0, max: 100, step: 0.1 }}
-                    InputProps={{
-                      endAdornment: <InputAdornment position="end">%</InputAdornment>,
-                    }}
-                  />
-                </Grid>
+                {[
+                  { key: 'single', label: 'Tek Çekim' },
+                  { key: 'installment2', label: '2 Taksit' },
+                  { key: 'installment3', label: '3 Taksit' },
+                  { key: 'installment4', label: '4 Taksit' },
+                  { key: 'installment5', label: '5 Taksit' },
+                  { key: 'installment6', label: '6 Taksit' },
+                  { key: 'installment7', label: '7 Taksit' },
+                  { key: 'installment8', label: '8 Taksit' },
+                  { key: 'installment9', label: '9 Taksit' },
+                  { key: 'installment10', label: '10 Taksit' },
+                  { key: 'installment11', label: '11 Taksit' },
+                  { key: 'installment12', label: '12 Taksit' },
+                ].map(({ key, label }) => (
+                  <Grid item xs={6} sm={4} md={3} key={key}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label={label}
+                      type="number"
+                      value={cardCommissions[key]}
+                      onChange={(e) => setCardCommissions({
+                        ...cardCommissions,
+                        [key]: parseFloat(e.target.value) || 0
+                      })}
+                      inputProps={{ min: 0, max: 100, step: 0.1 }}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">%</InputAdornment>,
+                      }}
+                    />
+                  </Grid>
+                ))}
               </Grid>
 
               <Box sx={{ mt: 4, display: 'flex', gap: 2 }}>
