@@ -417,6 +417,13 @@ const PaymentPlan = () => {
     setInstallmentDetails(updated);
   };
 
+  // Handle installment commission rate change (for credit card)
+  const handleInstallmentCommissionRateChange = (index, rate) => {
+    const updated = [...installmentDetails];
+    updated[index] = { ...updated[index], customCommissionRate: parseFloat(rate) || 0 };
+    setInstallmentDetails(updated);
+  };
+
   // Handle installment date change
   const handleInstallmentDateChange = (index, date) => {
     const updated = [...installmentDetails];
@@ -460,7 +467,10 @@ const PaymentPlan = () => {
       let commission = 0;
       let commissionRate = 0;
       if (inst.paymentMethod === 'creditCard') {
-        commissionRate = getCreditCardCommissionRate(inst.creditCardInstallments);
+        // Use custom commission rate if set, otherwise use settings rate
+        commissionRate = inst.customCommissionRate !== undefined
+          ? inst.customCommissionRate
+          : getCreditCardCommissionRate(inst.creditCardInstallments);
         commission = (inst.amount * commissionRate) / 100;
       }
 
@@ -1451,21 +1461,38 @@ const PaymentPlan = () => {
 
                         {/* Kredi Kartı Taksit */}
                         {inst.paymentMethod === 'creditCard' && (
-                          <Grid item xs={6}>
-                            <FormControl fullWidth size="small">
-                              <InputLabel>K.K. Taksit</InputLabel>
-                              <Select
-                                value={inst.creditCardInstallments}
-                                onChange={(e) => handleInstallmentCCCountChange(index, e.target.value)}
-                                label="K.K. Taksit"
-                                sx={{ fontSize: '0.85rem' }}
-                              >
-                                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
-                                  <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
-                                ))}
-                              </Select>
-                            </FormControl>
-                          </Grid>
+                          <>
+                            <Grid item xs={6}>
+                              <FormControl fullWidth size="small">
+                                <InputLabel>K.K. Taksit</InputLabel>
+                                <Select
+                                  value={inst.creditCardInstallments}
+                                  onChange={(e) => handleInstallmentCCCountChange(index, e.target.value)}
+                                  label="K.K. Taksit"
+                                  sx={{ fontSize: '0.85rem' }}
+                                >
+                                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => (
+                                    <MenuItem key={num} value={num}>{num} Taksit</MenuItem>
+                                  ))}
+                                </Select>
+                              </FormControl>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label="Komisyon (%)"
+                                type="number"
+                                value={inst.customCommissionRate !== undefined
+                                  ? inst.customCommissionRate
+                                  : getCreditCardCommissionRate(inst.creditCardInstallments)}
+                                onChange={(e) => handleInstallmentCommissionRateChange(index, e.target.value)}
+                                inputProps={{ min: 0, max: 100, step: 0.1 }}
+                                sx={{ '& input': { fontSize: '0.85rem' } }}
+                                helperText={`Ayarlar: %${getCreditCardCommissionRate(inst.creditCardInstallments)}`}
+                              />
+                            </Grid>
+                          </>
                         )}
 
                         {/* Faturalı Checkbox */}

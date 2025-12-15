@@ -60,11 +60,11 @@ router.post('/', async (req, res) => {
         { installments: 5, rate: 14 },
         { installments: 6, rate: 16.5 },
         { installments: 7, rate: 19 },
-        { installments: 8, rate: 21.51 },
-        { installments: 9, rate: 21.5 },
-        { installments: 10, rate: 24 },
-        { installments: 11, rate: 26.5 },
-        { installments: 12, rate: 29 }
+        { installments: 8, rate: 21.5 },
+        { installments: 9, rate: 24 },
+        { installments: 10, rate: 26.5 },
+        { installments: 11, rate: 29 },
+        { installments: 12, rate: 31.5 }
       ],
       createdBy: req.body.createdBy || 'System'
     });
