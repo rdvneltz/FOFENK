@@ -554,41 +554,10 @@ const PaymentPlan = () => {
       const paymentPlanId = response.data._id;
       console.log('Payment plan created successfully:', paymentPlanId);
 
-      // Get payment method label
-      const getPaymentMethodLabel = () => {
-        if (hasCreditCard) return 'Kredi Kartı';
-        if (installments.length === 1) return 'Peşin';
-        return 'Taksitli';
-      };
-
-      // Prepare plan data for notification
-      const planData = {
-        studentName: student ? `${student.firstName || ''} ${student.lastName || ''}`.trim() : 'Öğrenci',
-        courseName: selectedEnrollment?.course?.name || '',
-        seasonName: season?.name || '',
-        totalAmount: grandTotals?.total || 0,
-        totalInstallments: installments.length,
-        installmentCount: installments.length,
-        installmentAmount: installments.length > 0 ? (installments[0]?.amount || 0) : 0,
-        paymentMethod: getPaymentMethodLabel(),
-        commissionAmount: grandTotals?.commission > 0 ? `Komisyon: ${grandTotals.commission.toLocaleString('tr-TR')} TL` : '',
-        installments: installments.map(inst => ({
-          installmentNumber: inst?.installmentNumber || 0,
-          amount: inst?.amount || 0,
-          dueDate: inst?.dueDate || new Date()
-        })),
-        phone: student?.phone || '',
-        email: student?.email || '',
-        parentContacts: student?.parentContacts || [],
-        defaultNotificationRecipient: student?.defaultNotificationRecipient || 'student'
-      };
-
-      // Show success dialog instead of navigating
-      setSuccessDialog({
-        open: true,
-        planData,
-        paymentPlanId
-      });
+      // Navigate directly to payment plan detail page
+      // This is more reliable than showing a dialog
+      setLoading(false);
+      navigate(`/payment-plan-detail/${paymentPlanId}`);
     } catch (error) {
       console.error('Payment plan creation error:', error);
       setError(error.response?.data?.message || 'Ödeme planı oluşturulurken bir hata oluştu');
