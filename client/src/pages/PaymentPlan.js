@@ -88,7 +88,8 @@ const PaymentPlan = () => {
     customMonthly: '',
     customPerLesson: '',
     durationMonths: 9,
-    lessonsPerMonth: 4
+    lessonsPerMonth: 4,
+    extraLessons: 0 // Ek dersler (8 ay + 2 ders gibi)
   });
 
   // Notification dialog state after plan creation
@@ -1094,55 +1095,79 @@ const PaymentPlan = () => {
                         InputProps={{ sx: { bgcolor: priceCalculator.inputType === 'perLesson' && priceCalculator.customPerLesson ? 'info.lighter' : 'inherit' } }}
                       />
                     </Grid>
-                    <Grid item xs={6}>
+                    <Grid item xs={4}>
                       <TextField
                         fullWidth
                         size="small"
                         label="Süre (Ay)"
                         type="number"
                         value={priceCalculator.durationMonths}
-                        onChange={(e) => setPriceCalculator(prev => ({ ...prev, durationMonths: parseInt(e.target.value) || 1 }))}
+                        onChange={(e) => setPriceCalculator(prev => ({ ...prev, durationMonths: parseInt(e.target.value) || 0 }))}
+                        inputProps={{ min: 0 }}
                       />
                     </Grid>
-                    <Grid item xs={6}>
+                    <Grid item xs={4}>
                       <TextField
                         fullWidth
                         size="small"
-                        label="Aylık Ders Sayısı"
+                        label="+ Ek Ders"
+                        type="number"
+                        value={priceCalculator.extraLessons}
+                        onChange={(e) => setPriceCalculator(prev => ({ ...prev, extraLessons: parseInt(e.target.value) || 0 }))}
+                        inputProps={{ min: 0 }}
+                        helperText="Ör: 8 ay + 2 ders"
+                      />
+                    </Grid>
+                    <Grid item xs={4}>
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="Aylık Ders"
                         type="number"
                         value={priceCalculator.lessonsPerMonth}
                         onChange={(e) => setPriceCalculator(prev => ({ ...prev, lessonsPerMonth: parseInt(e.target.value) || 1 }))}
+                        inputProps={{ min: 1 }}
                       />
                     </Grid>
                   </Grid>
 
                   {/* Calculated Results */}
                   {(() => {
-                    const duration = priceCalculator.durationMonths || formData.durationMonths || 9;
+                    const duration = priceCalculator.durationMonths ?? formData.durationMonths ?? 9;
                     const lessonsPerMonth = priceCalculator.lessonsPerMonth || monthlyLessonDetails?.course?.lessonsPerMonth || 4;
-                    const totalLessons = duration * lessonsPerMonth;
+                    const extraLessons = priceCalculator.extraLessons || 0;
+                    const totalLessonsFromMonths = duration * lessonsPerMonth;
+                    const totalLessons = totalLessonsFromMonths + extraLessons;
                     const defaultTotal = grandTotals.totalAmount || 0;
                     const defaultMonthly = parseFloat(formData.monthlyFee) || course?.pricePerMonth || 0;
-                    const defaultPerLesson = course?.pricePerLesson || 0;
+                    const defaultPerLesson = course?.pricePerLesson || (lessonsPerMonth > 0 ? defaultMonthly / lessonsPerMonth : 0);
 
-                    let calcTotal, calcMonthly, calcPerLesson;
+                    let calcTotal, calcMonthly, calcPerLesson, extraLessonsCost;
 
                     if (priceCalculator.inputType === 'total' && priceCalculator.customTotal) {
                       calcTotal = parseFloat(priceCalculator.customTotal) || 0;
-                      calcMonthly = duration > 0 ? calcTotal / duration : 0;
                       calcPerLesson = totalLessons > 0 ? calcTotal / totalLessons : 0;
+                      calcMonthly = lessonsPerMonth > 0 ? calcPerLesson * lessonsPerMonth : 0;
+                      extraLessonsCost = calcPerLesson * extraLessons;
                     } else if (priceCalculator.inputType === 'monthly' && priceCalculator.customMonthly) {
                       calcMonthly = parseFloat(priceCalculator.customMonthly) || 0;
-                      calcTotal = calcMonthly * duration;
                       calcPerLesson = lessonsPerMonth > 0 ? calcMonthly / lessonsPerMonth : 0;
+                      extraLessonsCost = calcPerLesson * extraLessons;
+                      calcTotal = (calcMonthly * duration) + extraLessonsCost;
                     } else if (priceCalculator.inputType === 'perLesson' && priceCalculator.customPerLesson) {
                       calcPerLesson = parseFloat(priceCalculator.customPerLesson) || 0;
                       calcMonthly = calcPerLesson * lessonsPerMonth;
-                      calcTotal = calcMonthly * duration;
+                      extraLessonsCost = calcPerLesson * extraLessons;
+                      calcTotal = (calcMonthly * duration) + extraLessonsCost;
                     } else {
                       calcTotal = defaultTotal;
                       calcMonthly = defaultMonthly;
-                      calcPerLesson = defaultPerLesson || (lessonsPerMonth > 0 ? defaultMonthly / lessonsPerMonth : 0);
+                      calcPerLesson = defaultPerLesson;
+                      extraLessonsCost = defaultPerLesson * extraLessons;
+                      // Eğer ek ders varsa ve varsayılan hesaplamadaysak, ek dersleri de ekle
+                      if (extraLessons > 0) {
+                        calcTotal = (defaultMonthly * duration) + extraLessonsCost;
+                      }
                     }
 
                     const discountAmount = defaultTotal - calcTotal;
@@ -1150,10 +1175,17 @@ const PaymentPlan = () => {
                     const hasDiscount = discountAmount > 0;
                     const hasIncrease = discountAmount < 0;
 
+                    // Süre gösterimi (8 ay + 2 ders formatında)
+                    const durationDisplay = extraLessons > 0
+                      ? `${duration} ay + ${extraLessons} ders`
+                      : `${duration} ay`;
+
                     return (
                       <Box sx={{ mt: 2, p: 1.5, bgcolor: 'grey.100', borderRadius: 1 }}>
                         <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           📊 Hesaplanan Değerler
+                          <Chip label={durationDisplay} size="small" variant="outlined" color="primary" />
+                          <Chip label={`${totalLessons} ders`} size="small" variant="outlined" />
                         </Typography>
 
                         <Grid container spacing={1}>
@@ -1171,6 +1203,16 @@ const PaymentPlan = () => {
                           </Grid>
                         </Grid>
 
+                        {/* Ek Ders Detayı */}
+                        {extraLessons > 0 && extraLessonsCost > 0 && (
+                          <Box sx={{ mt: 1, pt: 1, borderTop: '1px dashed', borderColor: 'divider' }}>
+                            <Typography variant="caption" color="text.secondary">
+                              Aylık ({duration} ay): ₺{(calcMonthly * duration).toLocaleString('tr-TR', { maximumFractionDigits: 0 })} +
+                              Ek Dersler ({extraLessons} ders): ₺{extraLessonsCost.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
+                            </Typography>
+                          </Box>
+                        )}
+
                         {(hasDiscount || hasIncrease) && (
                           <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid', borderColor: 'divider' }}>
                             <Chip
@@ -1186,7 +1228,7 @@ const PaymentPlan = () => {
                         )}
 
                         {/* Apply Button */}
-                        {(priceCalculator.customTotal || priceCalculator.customMonthly || priceCalculator.customPerLesson) && (
+                        {(priceCalculator.customTotal || priceCalculator.customMonthly || priceCalculator.customPerLesson || extraLessons > 0) && (
                           <Box sx={{ mt: 1.5, display: 'flex', gap: 1 }}>
                             <Button
                               size="small"
@@ -1211,7 +1253,8 @@ const PaymentPlan = () => {
                                   ...prev,
                                   customTotal: '',
                                   customMonthly: '',
-                                  customPerLesson: ''
+                                  customPerLesson: '',
+                                  extraLessons: 0
                                 }));
                               }}
                             >
@@ -1224,7 +1267,8 @@ const PaymentPlan = () => {
                                 ...prev,
                                 customTotal: '',
                                 customMonthly: '',
-                                customPerLesson: ''
+                                customPerLesson: '',
+                                extraLessons: 0
                               }))}
                             >
                               Temizle
