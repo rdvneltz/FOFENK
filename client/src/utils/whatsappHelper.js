@@ -87,6 +87,7 @@ export const replaceTemplateVariables = (message, data = {}) => {
     '{paidInstallmentsList}': data.paidInstallmentsList || '',
     '{monthlySchedule}': data.monthlySchedule || '',
     '{lessonsPerMonth}': data.lessonsPerMonth || '',
+    '{monthlyDetailsList}': data.monthlyDetailsList || '',
   };
 
   Object.entries(replacements).forEach(([key, value]) => {

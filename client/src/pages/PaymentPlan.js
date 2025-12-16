@@ -58,6 +58,7 @@ const PaymentPlan = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [student, setStudent] = useState(null);
+  const [messageTemplates, setMessageTemplates] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [formData, setFormData] = useState({
     enrollmentId: '',
@@ -124,6 +125,31 @@ const PaymentPlan = () => {
     }
     loadData();
   }, [studentId, season?._id, institution?._id]);
+
+  // Load message templates from DB
+  useEffect(() => {
+    if (institution?._id) {
+      loadMessageTemplates();
+    }
+  }, [institution?._id]);
+
+  const loadMessageTemplates = async () => {
+    try {
+      const response = await api.get('/message-templates', {
+        params: { institution: institution._id }
+      });
+      setMessageTemplates(response.data);
+    } catch (error) {
+      console.error('Error loading message templates:', error);
+    }
+  };
+
+  // Get template content from DB or fallback to default
+  const getTemplateContent = (templateType) => {
+    const dbTemplate = messageTemplates.find(t => t.type === templateType);
+    if (dbTemplate) return dbTemplate.template;
+    return DEFAULT_WHATSAPP_TEMPLATES[templateType] || DEFAULT_WHATSAPP_TEMPLATES.general;
+  };
 
   const loadData = async () => {
     try {
@@ -677,7 +703,7 @@ const PaymentPlan = () => {
       institutionName: institution?.name || 'Kurum'
     };
 
-    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentPlanCreated;
+    const template = getTemplateContent('paymentPlanCreated');
     const message = replaceTemplateVariables(template, templateData);
 
     sendWhatsAppMessage(phone, message, {});

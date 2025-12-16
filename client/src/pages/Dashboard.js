@@ -165,6 +165,7 @@ const Dashboard = () => {
   // State for showing students in today's lessons dialog
   const [selectedLessonStudents, setSelectedLessonStudents] = useState({ lessonId: null, students: [] });
   const [allEnrollments, setAllEnrollments] = useState([]);
+  const [messageTemplates, setMessageTemplates] = useState([]);
 
   useEffect(() => {
     if (institution && season) {
@@ -173,6 +174,31 @@ const Dashboard = () => {
       setLoading(false);
     }
   }, [institution, season]);
+
+  // Load message templates from DB
+  useEffect(() => {
+    if (institution?._id) {
+      loadMessageTemplates();
+    }
+  }, [institution?._id]);
+
+  const loadMessageTemplates = async () => {
+    try {
+      const response = await api.get('/message-templates', {
+        params: { institution: institution._id }
+      });
+      setMessageTemplates(response.data);
+    } catch (error) {
+      console.error('Error loading message templates:', error);
+    }
+  };
+
+  // Get template content from DB or fallback to default
+  const getTemplateContent = (templateType) => {
+    const dbTemplate = messageTemplates.find(t => t.type === templateType);
+    if (dbTemplate) return dbTemplate.template;
+    return DEFAULT_WHATSAPP_TEMPLATES[templateType] || DEFAULT_WHATSAPP_TEMPLATES.general;
+  };
 
   const loadAllData = async () => {
     setLoading(true);
@@ -584,8 +610,8 @@ const Dashboard = () => {
 
     // Use paymentOverdue for overdue payments, paymentDueReminder for upcoming
     const template = isOverdue
-      ? DEFAULT_WHATSAPP_TEMPLATES.paymentOverdue
-      : DEFAULT_WHATSAPP_TEMPLATES.paymentDueReminder;
+      ? getTemplateContent('paymentOverdue')
+      : getTemplateContent('paymentDueReminder');
     const message = replaceTemplateVariables(template, templateData);
 
     sendWhatsAppMessage(phone, message, {});
