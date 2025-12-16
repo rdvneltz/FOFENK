@@ -28,6 +28,11 @@ import {
   ListItemText,
   ListItemIcon,
   LinearProgress,
+  Card,
+  CardContent,
+  Fab,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import { Add, Edit, Delete, Group, PersonAdd, Warning, Person, Visibility, Close } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
@@ -48,6 +53,8 @@ const getOccupancyColor = (percentage) => {
 const Courses = () => {
   const { institution, season, currentUser } = useApp();
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -245,12 +252,14 @@ const Courses = () => {
   }
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Dersler</Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
-          Yeni Ders
-        </Button>
+    <Box sx={{ pb: { xs: 10, md: 2 } }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: { xs: 2, md: 3 } }}>
+        <Typography variant={isMobile ? 'h5' : 'h4'}>Dersler</Typography>
+        {!isMobile && (
+          <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
+            Yeni Ders
+          </Button>
+        )}
       </Box>
 
       {error && (
@@ -265,131 +274,218 @@ const Courses = () => {
         </Alert>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Ders Adı</TableCell>
-              <TableCell>Eğitmen</TableCell>
-              <TableCell>Kapasite</TableCell>
-              <TableCell>Ücret</TableCell>
-              <TableCell>Süre</TableCell>
-              <TableCell align="right">İşlemler</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {courses.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} align="center">
-                  <Typography color="text.secondary">Henüz ders eklenmedi</Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              courses.map((course) => (
-                <TableRow key={course._id}>
-                  <TableCell>
-                    <Typography variant="body1">{course.name}</Typography>
-                    {course.description && (
-                      <Typography variant="caption" color="text.secondary">
-                        {course.description}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>{course.instructor?.name || '-'}</TableCell>
-                  <TableCell>
-                    {(() => {
-                      const enrolled = course.enrollmentCount || 0;
-                      const capacity = course.capacity || 1;
-                      const percentage = Math.min((enrolled / capacity) * 100, 100);
-                      const occupancyColor = getOccupancyColor(percentage);
-                      return (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      {/* Mobile Card View */}
+      {isMobile ? (
+        <Box>
+          {courses.length === 0 ? (
+            <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">Henüz ders eklenmedi</Typography>
+            </Paper>
+          ) : (
+            <Grid container spacing={1.5}>
+              {courses.map((course) => {
+                const enrolled = course.enrollmentCount || 0;
+                const capacity = course.capacity || 1;
+                const percentage = Math.min((enrolled / capacity) * 100, 100);
+                const occupancyColor = getOccupancyColor(percentage);
+                return (
+                  <Grid item xs={12} key={course._id}>
+                    <Card>
+                      <CardContent sx={{ pb: '12px !important', pt: 1.5 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="subtitle1" fontWeight="bold">{course.name}</Typography>
+                            {course.instructor?.name && (
+                              <Typography variant="caption" color="text.secondary" display="block">
+                                Eğitmen: {course.instructor.name}
+                              </Typography>
+                            )}
+                          </Box>
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <IconButton size="small" onClick={() => handleOpenBulkEnroll(course)} color="success">
+                              <PersonAdd fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small" onClick={() => handleOpenDialog(course)} color="primary">
+                              <Edit fontSize="small" />
+                            </IconButton>
+                            <IconButton size="small" onClick={() => { setSelectedCourse(course); setOpenConfirm(true); }} color="error">
+                              <Delete fontSize="small" />
+                            </IconButton>
+                          </Box>
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
                           <Chip
                             icon={<Group />}
                             label={`${enrolled}/${course.capacity || 0}`}
                             size="small"
                             onClick={() => handleShowStudents(course)}
-                            sx={{
-                              cursor: 'pointer',
-                              bgcolor: occupancyColor,
-                              color: 'white',
-                              '& .MuiChip-icon': { color: 'white' },
-                              '&:hover': { opacity: 0.85 }
-                            }}
+                            sx={{ bgcolor: occupancyColor, color: 'white', '& .MuiChip-icon': { color: 'white' } }}
                           />
-                          <Box sx={{ flexGrow: 1, minWidth: 60 }}>
-                            <LinearProgress
-                              variant="determinate"
-                              value={percentage}
-                              sx={{
-                                height: 6,
-                                borderRadius: 3,
-                                bgcolor: 'grey.200',
-                                '& .MuiLinearProgress-bar': {
-                                  bgcolor: occupancyColor,
-                                  borderRadius: 3,
-                                }
-                              }}
-                            />
-                          </Box>
+                          {course.isFree ? (
+                            <Chip label="Ücretsiz" color="success" size="small" />
+                          ) : (
+                            <Typography variant="body2">
+                              ₺{(course.pricingType === 'monthly' ? course.pricePerMonth : course.pricePerLesson)?.toLocaleString('tr-TR') || 0}
+                              <Typography component="span" variant="caption" color="text.secondary">
+                                /{course.pricingType === 'monthly' ? 'ay' : 'ders'}
+                              </Typography>
+                            </Typography>
+                          )}
+                          {course.duration && (
+                            <Typography variant="body2" color="text.secondary">{course.duration} dk</Typography>
+                          )}
                         </Box>
-                      );
-                    })()}
-                  </TableCell>
-                  <TableCell>
-                    {course.isFree ? (
-                      <Chip label="Ücretsiz" color="success" size="small" />
-                    ) : (
-                      <>
-                        ₺{(course.pricingType === 'monthly'
-                          ? course.pricePerMonth
-                          : course.pricePerLesson
-                        )?.toLocaleString('tr-TR') || 0}
-                        <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
-                          /{course.pricingType === 'monthly' ? 'ay' : 'ders'}
-                        </Typography>
-                      </>
-                    )}
-                  </TableCell>
-                  <TableCell>{course.duration || '-'} dk</TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenBulkEnroll(course)}
-                      color="success"
-                      title="Öğrenci Ekle"
-                    >
-                      <PersonAdd />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenDialog(course)}
-                      color="primary"
-                      title="Düzenle"
-                    >
-                      <Edit />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        setSelectedCourse(course);
-                        setOpenConfirm(true);
-                      }}
-                      color="error"
-                      title="Sil"
-                    >
-                      <Delete />
-                    </IconButton>
+                        <LinearProgress
+                          variant="determinate"
+                          value={percentage}
+                          sx={{
+                            mt: 1,
+                            height: 4,
+                            borderRadius: 2,
+                            bgcolor: 'grey.200',
+                            '& .MuiLinearProgress-bar': { bgcolor: occupancyColor, borderRadius: 2 }
+                          }}
+                        />
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          )}
+          {/* Floating Action Button for Mobile */}
+          <Fab color="primary" sx={{ position: 'fixed', bottom: 72, right: 16 }} onClick={() => handleOpenDialog()}>
+            <Add />
+          </Fab>
+        </Box>
+      ) : (
+        /* Desktop Table View */
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>Ders Adı</TableCell>
+                <TableCell>Eğitmen</TableCell>
+                <TableCell>Kapasite</TableCell>
+                <TableCell>Ücret</TableCell>
+                <TableCell>Süre</TableCell>
+                <TableCell align="right">İşlemler</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {courses.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    <Typography color="text.secondary">Henüz ders eklenmedi</Typography>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              ) : (
+                courses.map((course) => (
+                  <TableRow key={course._id}>
+                    <TableCell>
+                      <Typography variant="body1">{course.name}</Typography>
+                      {course.description && (
+                        <Typography variant="caption" color="text.secondary">
+                          {course.description}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>{course.instructor?.name || '-'}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const enrolled = course.enrollmentCount || 0;
+                        const capacity = course.capacity || 1;
+                        const percentage = Math.min((enrolled / capacity) * 100, 100);
+                        const occupancyColor = getOccupancyColor(percentage);
+                        return (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Chip
+                              icon={<Group />}
+                              label={`${enrolled}/${course.capacity || 0}`}
+                              size="small"
+                              onClick={() => handleShowStudents(course)}
+                              sx={{
+                                cursor: 'pointer',
+                                bgcolor: occupancyColor,
+                                color: 'white',
+                                '& .MuiChip-icon': { color: 'white' },
+                                '&:hover': { opacity: 0.85 }
+                              }}
+                            />
+                            <Box sx={{ flexGrow: 1, minWidth: 60 }}>
+                              <LinearProgress
+                                variant="determinate"
+                                value={percentage}
+                                sx={{
+                                  height: 6,
+                                  borderRadius: 3,
+                                  bgcolor: 'grey.200',
+                                  '& .MuiLinearProgress-bar': {
+                                    bgcolor: occupancyColor,
+                                    borderRadius: 3,
+                                  }
+                                }}
+                              />
+                            </Box>
+                          </Box>
+                        );
+                      })()}
+                    </TableCell>
+                    <TableCell>
+                      {course.isFree ? (
+                        <Chip label="Ücretsiz" color="success" size="small" />
+                      ) : (
+                        <>
+                          ₺{(course.pricingType === 'monthly'
+                            ? course.pricePerMonth
+                            : course.pricePerLesson
+                          )?.toLocaleString('tr-TR') || 0}
+                          <Typography variant="caption" color="text.secondary" sx={{ ml: 0.5 }}>
+                            /{course.pricingType === 'monthly' ? 'ay' : 'ders'}
+                          </Typography>
+                        </>
+                      )}
+                    </TableCell>
+                    <TableCell>{course.duration || '-'} dk</TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenBulkEnroll(course)}
+                        color="success"
+                        title="Öğrenci Ekle"
+                      >
+                        <PersonAdd />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenDialog(course)}
+                        color="primary"
+                        title="Düzenle"
+                      >
+                        <Edit />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => {
+                          setSelectedCourse(course);
+                          setOpenConfirm(true);
+                        }}
+                        color="error"
+                        title="Sil"
+                      >
+                        <Delete />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {/* Course Form Dialog */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth fullScreen={isMobile}>
         <form onSubmit={handleSubmit}>
           <DialogTitle>{selectedCourse ? 'Ders Düzenle' : 'Yeni Ders'}</DialogTitle>
           <DialogContent>
@@ -585,6 +681,7 @@ const Courses = () => {
         onClose={() => setStudentListDialog({ open: false, course: null, students: [], loading: false })}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
       >
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
