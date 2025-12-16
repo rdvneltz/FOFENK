@@ -33,6 +33,8 @@ import {
   Collapse,
   IconButton,
   Tooltip,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import { ArrowBack, ExpandMore, ExpandLess, Edit, CreditCard, Money, Receipt, WhatsApp, Email } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -50,6 +52,9 @@ const PaymentPlan = () => {
   const { studentId } = useParams();
   const navigate = useNavigate();
   const { institution, season, user } = useApp();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [student, setStudent] = useState(null);
@@ -738,24 +743,24 @@ const PaymentPlan = () => {
     : pricePerLesson;
 
   return (
-    <Container maxWidth="lg">
-      <Box sx={{ mb: 3 }}>
-        <Button startIcon={<ArrowBack />} onClick={() => navigate(`/students/${studentId}`)}>
+    <Container maxWidth="lg" sx={{ px: { xs: 1, sm: 2, md: 3 }, pb: { xs: 10, md: 2 } }}>
+      <Box sx={{ mb: { xs: 2, md: 3 } }}>
+        <Button size={isMobile ? 'small' : 'medium'} startIcon={<ArrowBack />} onClick={() => navigate(`/students/${studentId}`)}>
           Geri
         </Button>
       </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={{ xs: 1.5, md: 3 }}>
         {/* Sol Panel - Form */}
         <Grid item xs={12} md={7}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h5" gutterBottom>
+          <Paper sx={{ p: { xs: 1.5, sm: 2, md: 3 } }}>
+            <Typography variant={isMobile ? 'h6' : 'h5'} gutterBottom>
               Ödeme Planı Oluştur
             </Typography>
 
             {student && (
-              <Box sx={{ mb: 3, p: 2, bgcolor: 'primary.light', borderRadius: 1, color: 'primary.contrastText' }}>
-                <Typography variant="h6">{student.firstName} {student.lastName}</Typography>
+              <Box sx={{ mb: { xs: 2, md: 3 }, p: { xs: 1.5, md: 2 }, bgcolor: 'primary.light', borderRadius: 1, color: 'primary.contrastText' }}>
+                <Typography variant={isMobile ? 'subtitle1' : 'h6'} fontWeight="bold">{student.firstName} {student.lastName}</Typography>
                 <Typography variant="body2">
                   Mevcut Bakiye: <strong>₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}</strong>
                 </Typography>
@@ -789,7 +794,7 @@ const PaymentPlan = () => {
                 {/* Aylık Kurs Alanları */}
                 {formData.courseType === 'monthly' && (
                   <>
-                    <Grid item xs={6} sm={3}>
+                    <Grid item xs={6}>
                       <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
                         <DatePicker
                           label="Kayıt Tarihi"
@@ -812,7 +817,7 @@ const PaymentPlan = () => {
                         />
                       </LocalizationProvider>
                     </Grid>
-                    <Grid item xs={6} sm={3}>
+                    <Grid item xs={6}>
                       <TextField
                         fullWidth size="small"
                         label="Aylık Ücret (₺)"
@@ -826,7 +831,7 @@ const PaymentPlan = () => {
                         }}
                       />
                     </Grid>
-                    <Grid item xs={6} sm={3}>
+                    <Grid item xs={6}>
                       <TextField
                         fullWidth size="small"
                         label="Süre (Ay)"
@@ -837,7 +842,7 @@ const PaymentPlan = () => {
                         inputProps={{ min: 1 }}
                       />
                     </Grid>
-                    <Grid item xs={6} sm={3}>
+                    <Grid item xs={6}>
                       <TextField
                         fullWidth size="small"
                         label="Toplam (₺)"
@@ -880,7 +885,7 @@ const PaymentPlan = () => {
                 </Grid>
 
                 {/* İndirim */}
-                <Grid item xs={6} sm={4}>
+                <Grid item xs={6}>
                   <FormControl fullWidth size="small">
                     <InputLabel>İndirim</InputLabel>
                     <Select name="discountType" value={formData.discountType} onChange={handleChange} label="İndirim">
@@ -893,7 +898,7 @@ const PaymentPlan = () => {
                 </Grid>
 
                 {formData.discountType !== 'none' && formData.discountType !== 'fullScholarship' && (
-                  <Grid item xs={6} sm={4}>
+                  <Grid item xs={6}>
                     <TextField
                       fullWidth size="small"
                       label={formData.discountType === 'percentage' ? 'İndirim (%)' : 'İndirim (₺)'}
@@ -906,7 +911,7 @@ const PaymentPlan = () => {
                 )}
 
                 {/* Ödeme Tipi */}
-                <Grid item xs={6} sm={4}>
+                <Grid item xs={6}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Ödeme Şekli</InputLabel>
                     <Select name="paymentType" value={formData.paymentType} onChange={handleChange} label="Ödeme Şekli">
@@ -919,7 +924,7 @@ const PaymentPlan = () => {
                 {/* Taksitli Ödeme Alanları */}
                 {formData.paymentType === 'cashInstallment' && (
                   <>
-                    <Grid item xs={6} sm={4}>
+                    <Grid item xs={6}>
                       <FormControl fullWidth size="small">
                         <InputLabel>Taksit Sayısı</InputLabel>
                         <Select
@@ -934,7 +939,7 @@ const PaymentPlan = () => {
                         </Select>
                       </FormControl>
                     </Grid>
-                    <Grid item xs={6} sm={4}>
+                    <Grid item xs={6}>
                       <FormControl fullWidth size="small">
                         <InputLabel>Ödeme Sıklığı</InputLabel>
                         <Select name="installmentFrequency" value={formData.installmentFrequency} onChange={handleChange} label="Ödeme Sıklığı">
@@ -944,7 +949,7 @@ const PaymentPlan = () => {
                         </Select>
                       </FormControl>
                     </Grid>
-                    <Grid item xs={12} sm={4}>
+                    <Grid item xs={12}>
                       <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
                         <DatePicker
                           label="İlk Taksit Tarihi"
@@ -971,7 +976,7 @@ const PaymentPlan = () => {
 
                 {/* Tek Seferde Ödeme için tarih */}
                 {formData.paymentType === 'cashFull' && (
-                  <Grid item xs={12} sm={6}>
+                  <Grid item xs={12}>
                     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
                       <DatePicker
                         label="Ödeme Tarihi"
@@ -985,7 +990,7 @@ const PaymentPlan = () => {
 
                 {/* Kasa Seçimi - Kredi kartı taksiti varsa göster */}
                 {calculatedInstallments.some(inst => inst.paymentMethod === 'creditCard') && (
-                  <Grid item xs={12} sm={6}>
+                  <Grid item xs={12}>
                     <FormControl fullWidth size="small">
                       <InputLabel>Kasa (Kredi Kartı için)</InputLabel>
                       <Select
@@ -1032,14 +1037,14 @@ const PaymentPlan = () => {
         {/* Sağ Panel - Özet */}
         <Grid item xs={12} md={5}>
           {/* Fiyat Hesaplama Yardımcısı */}
-          <Card sx={{ mb: 2, border: '2px dashed', borderColor: 'info.main' }}>
-            <CardContent>
+          <Card sx={{ mb: { xs: 1.5, md: 2 }, border: '2px dashed', borderColor: 'info.main' }}>
+            <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
               <Box
                 sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
                 onClick={() => setPriceCalculator(prev => ({ ...prev, open: !prev.open }))}
               >
-                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  🧮 Fiyat Hesaplama Yardımcısı
+                <Typography variant={isMobile ? 'subtitle1' : 'h6'} fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  🧮 Fiyat Hesaplama
                 </Typography>
                 <IconButton size="small">
                   {priceCalculator.open ? <ExpandLess /> : <ExpandMore />}
@@ -1294,9 +1299,9 @@ const PaymentPlan = () => {
           </Card>
 
           {/* Ödeme Özeti */}
-          <Card sx={{ mb: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Card sx={{ mb: { xs: 1.5, md: 2 } }}>
+            <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
+              <Typography variant={isMobile ? 'subtitle1' : 'h6'} fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 💰 Ödeme Özeti
                 {formData.discountType === 'fullScholarship' && (
                   <Chip label="Tam Burslu" color="secondary" size="small" />
@@ -1355,10 +1360,10 @@ const PaymentPlan = () => {
 
           {/* Taksit Detayları */}
           {calculatedInstallments.length > 0 && (
-            <Card sx={{ mb: 2 }}>
-              <CardContent sx={{ pb: 1 }}>
+            <Card sx={{ mb: { xs: 1.5, md: 2 } }}>
+              <CardContent sx={{ p: { xs: 1.5, md: 2 }, pb: { xs: 1, md: 1 }, '&:last-child': { pb: { xs: 1, md: 1 } } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant={isMobile ? 'subtitle1' : 'h6'} fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     📋 Taksit Detayları
                   </Typography>
                   <IconButton size="small" onClick={() => setShowInstallmentDetails(!showInstallmentDetails)}>
@@ -1567,9 +1572,9 @@ const PaymentPlan = () => {
           {/* Ders Detayları */}
           {monthlyLessonDetails && formData.courseType === 'monthly' && (
             <Card>
-              <CardContent>
+              <CardContent sx={{ p: { xs: 1.5, md: 2 }, '&:last-child': { pb: { xs: 1.5, md: 2 } } }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant={isMobile ? 'subtitle1' : 'h6'} fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     📚 Ders Detayları
                   </Typography>
                   <IconButton size="small" onClick={() => setShowLessonDetails(!showLessonDetails)}>
@@ -1648,7 +1653,7 @@ const PaymentPlan = () => {
       </Grid>
 
       {/* Partial Pricing Dialog */}
-      <Dialog open={showPartialPricingDialog} onClose={() => setShowPartialPricingDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog open={showPartialPricingDialog} onClose={() => setShowPartialPricingDialog(false)} maxWidth="sm" fullWidth fullScreen={isMobile}>
         <DialogTitle>İlk Ay Ücretlendirme</DialogTitle>
         <DialogContent>
           {monthlyLessonDetails && monthlyLessonDetails.firstMonthPartial && (() => {
@@ -1746,6 +1751,7 @@ const PaymentPlan = () => {
         }}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
       >
         <DialogTitle sx={{ bgcolor: 'success.light', color: 'success.contrastText' }}>
           ✓ Ödeme Planı Oluşturuldu
