@@ -136,6 +136,7 @@ const Dashboard = () => {
   const [todayLessons, setTodayLessons] = useState([]);
   const [trialLessons, setTrialLessons] = useState([]);
   const [courseStats, setCourseStats] = useState([]);
+  const [allInstructors, setAllInstructors] = useState([]);
   const [instructorDebts, setInstructorDebts] = useState({ total: 0, instructors: [] });
   const [plannedInvestments, setPlannedInvestments] = useState({ total: 0, count: 0, items: [] });
   // Unified upcoming payments state
@@ -361,9 +362,11 @@ const Dashboard = () => {
       const response = await api.get('/instructors', {
         params: { institutionId: institution._id, seasonId: season._id }
       });
-      const instructors = response.data.filter(i => (i.balance || 0) > 0);
-      const total = instructors.reduce((sum, i) => sum + (i.balance || 0), 0);
-      setInstructorDebts({ total, instructors });
+      const all = response.data;
+      setAllInstructors(all);
+      const instructorsWithDebt = all.filter(i => (i.balance || 0) > 0);
+      const total = instructorsWithDebt.reduce((sum, i) => sum + (i.balance || 0), 0);
+      setInstructorDebts({ total, instructors: instructorsWithDebt });
     } catch (error) {
       console.error('Error loading instructor debts:', error);
     }
@@ -847,44 +850,108 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           </Paper>
         </Grid>
 
+        {/* Eğitmen Card */}
         <Grid item xs={6} sm={6} md={2}>
-          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setInstructorDebtsDialog({ open: true })}>
-            <Person color="secondary" sx={{ fontSize: 32 }} />
-            <Typography variant="h4">{stats.totalInstructors || instructorDebts.instructors.length}</Typography>
-            <Typography variant="body2" color="text.secondary">Egitmen</Typography>
-            {instructorDebts.total > 0 && (
-              <Chip size="small" color="warning" label={`${instructorDebts.total.toLocaleString('tr-TR')} TL borc`} sx={{ mt: 0.5 }} />
-            )}
+          <Paper sx={{ p: 1.5, cursor: 'pointer', height: '100%', minHeight: 140, '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setInstructorDebtsDialog({ open: true })}>
+            <Box sx={{ textAlign: 'center', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                <Person color="secondary" sx={{ fontSize: 24 }} />
+                <Typography variant="h5">{stats.totalInstructors || allInstructors.length}</Typography>
+              </Box>
+              <Typography variant="caption" color="text.secondary">Eğitmen</Typography>
+            </Box>
+            <Divider sx={{ mb: 1 }} />
+            <Box sx={{ maxHeight: 80, overflow: 'auto', '&::-webkit-scrollbar': { width: 3 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'grey.400', borderRadius: 2 } }}>
+              {allInstructors.slice(0, 5).map((inst) => (
+                <Typography key={inst._id} variant="caption" sx={{ display: 'block', py: 0.25, color: inst.balance > 0 ? 'warning.main' : 'text.secondary' }}>
+                  • {inst.firstName} {inst.lastName}{inst.balance > 0 ? ` (${inst.balance.toLocaleString('tr-TR')}₺)` : ''}
+                </Typography>
+              ))}
+              {allInstructors.length > 5 && (
+                <Typography variant="caption" color="primary">+{allInstructors.length - 5} daha...</Typography>
+              )}
+            </Box>
           </Paper>
         </Grid>
 
+        {/* Bugün Ders Card */}
         <Grid item xs={6} sm={6} md={2}>
-          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setTodayLessonsDialog({ open: true })}>
-            <Schedule color="info" sx={{ fontSize: 32 }} />
-            <Typography variant="h4">{todayLessons.length}</Typography>
-            <Typography variant="body2" color="text.secondary">Bugun Ders</Typography>
-            {todayLessons.filter(l => l.status === 'completed').length > 0 && (
-              <Chip size="small" color="success" label={`${todayLessons.filter(l => l.status === 'completed').length} tamamlandi`} sx={{ mt: 0.5 }} />
-            )}
+          <Paper sx={{ p: 1.5, cursor: 'pointer', height: '100%', minHeight: 140, '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setTodayLessonsDialog({ open: true })}>
+            <Box sx={{ textAlign: 'center', mb: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                <Schedule color="info" sx={{ fontSize: 24 }} />
+                <Typography variant="h5">{todayLessons.length}</Typography>
+              </Box>
+              <Typography variant="caption" color="text.secondary">Bugün Ders</Typography>
+            </Box>
+            <Divider sx={{ mb: 1 }} />
+            <Box sx={{ maxHeight: 80, overflow: 'auto', '&::-webkit-scrollbar': { width: 3 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'grey.400', borderRadius: 2 } }}>
+              {todayLessons.length === 0 ? (
+                <Typography variant="caption" color="text.secondary" align="center" sx={{ display: 'block' }}>Ders yok</Typography>
+              ) : (
+                todayLessons.slice(0, 5).map((lesson) => (
+                  <Typography key={lesson._id} variant="caption" sx={{ display: 'block', py: 0.25, color: lesson.status === 'completed' ? 'success.main' : 'text.secondary' }}>
+                    • {lesson.startTime} {lesson.course?.name?.substring(0, 12)}{lesson.course?.name?.length > 12 ? '...' : ''}
+                  </Typography>
+                ))
+              )}
+              {todayLessons.length > 5 && (
+                <Typography variant="caption" color="primary">+{todayLessons.length - 5} daha...</Typography>
+              )}
+            </Box>
           </Paper>
         </Grid>
 
+        {/* Toplam Gelir Card */}
         {canSeePayments && (
           <Grid item xs={6} sm={6} md={2}>
-            <Paper sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <TrendingUp color="success" sx={{ fontSize: 32 }} />
-              <Typography variant="h5">{(stats.totalIncome || 0).toLocaleString('tr-TR')} TL</Typography>
-              <Typography variant="body2" color="text.secondary">Toplam Gelir</Typography>
+            <Paper sx={{ p: 1.5, height: '100%', minHeight: 140 }}>
+              <Box sx={{ textAlign: 'center', mb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                  <TrendingUp color="success" sx={{ fontSize: 24 }} />
+                  <Typography variant="h6" color="success.main">{(stats.totalIncome || 0).toLocaleString('tr-TR')}₺</Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary">Toplam Gelir</Typography>
+              </Box>
+              <Divider sx={{ mb: 1 }} />
+              <Box sx={{ maxHeight: 80, overflow: 'auto' }}>
+                <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                  • Gider: <span style={{ color: '#f44336' }}>{(stats.totalExpenses || 0).toLocaleString('tr-TR')}₺</span>
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                  • Net: <span style={{ color: (stats.totalIncome - stats.totalExpenses) >= 0 ? '#4caf50' : '#f44336' }}>{((stats.totalIncome || 0) - (stats.totalExpenses || 0)).toLocaleString('tr-TR')}₺</span>
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                  • Bekleyen: <span style={{ color: '#ff9800' }}>{(upcomingPayments.season?.total || 0).toLocaleString('tr-TR')}₺</span>
+                </Typography>
+              </Box>
             </Paper>
           </Grid>
         )}
 
+        {/* Kasa Card */}
         {canSeeExpenses && (
           <Grid item xs={6} sm={6} md={2}>
-            <Paper sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <AccountBalance color="warning" sx={{ fontSize: 32 }} />
-              <Typography variant="h5">{(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')} TL</Typography>
-              <Typography variant="body2" color="text.secondary">Kasa</Typography>
+            <Paper sx={{ p: 1.5, height: '100%', minHeight: 140 }}>
+              <Box sx={{ textAlign: 'center', mb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                  <AccountBalance color="warning" sx={{ fontSize: 24 }} />
+                  <Typography variant="h6" color="warning.main">{(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')}₺</Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary">Kasa</Typography>
+              </Box>
+              <Divider sx={{ mb: 1 }} />
+              <Box sx={{ maxHeight: 80, overflow: 'auto' }}>
+                <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                  • Eğitmen Borcu: <span style={{ color: '#ff9800' }}>{(instructorDebts.total || 0).toLocaleString('tr-TR')}₺</span>
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                  • Plan. Harcama: <span style={{ color: '#2196f3' }}>{(plannedInvestments.total || 0).toLocaleString('tr-TR')}₺</span>
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                  • Tahmini Net: <span style={{ color: '#4caf50' }}>{((stats.totalCashRegisterBalance || 0) - (instructorDebts.total || 0) - (plannedInvestments.total || 0)).toLocaleString('tr-TR')}₺</span>
+                </Typography>
+              </Box>
             </Paper>
           </Grid>
         )}
