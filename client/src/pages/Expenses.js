@@ -23,6 +23,11 @@ import {
   IconButton,
   Alert,
   Chip,
+  Card,
+  CardContent,
+  Fab,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import { Add, Edit, Delete, FileDownload } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
@@ -46,6 +51,8 @@ const EXPENSE_CATEGORIES = [
 
 const Expenses = () => {
   const { institution, season, currentUser, user } = useApp();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [expenses, setExpenses] = useState([]);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [instructors, setInstructors] = useState([]);
@@ -242,20 +249,22 @@ const Expenses = () => {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Giderler</Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button variant="outlined" startIcon={<FileDownload />} onClick={handleExportToExcel}>
-            Excel'e Aktar
-          </Button>
-          <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
-            Yeni Gider
-          </Button>
-        </Box>
+    <Box sx={{ pb: { xs: 10, md: 2 } }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: { xs: 2, md: 3 } }}>
+        <Typography variant={isMobile ? 'h5' : 'h4'}>Giderler</Typography>
+        {!isMobile && (
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button variant="outlined" startIcon={<FileDownload />} onClick={handleExportToExcel}>
+              Excel'e Aktar
+            </Button>
+            <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
+              Yeni Gider
+            </Button>
+          </Box>
+        )}
       </Box>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
+      <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: { xs: 2, md: 3 } }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={4}>
             <FormControl fullWidth size="small">
@@ -275,8 +284,8 @@ const Expenses = () => {
             </FormControl>
           </Grid>
           <Grid item xs={12} md={8}>
-            <Box sx={{ textAlign: 'right' }}>
-              <Typography variant="h5" color="error.main">
+            <Box sx={{ textAlign: { xs: 'center', md: 'right' } }}>
+              <Typography variant={isMobile ? 'h6' : 'h5'} color="error.main" fontWeight="bold">
                 Toplam: ₺{totalExpenses.toLocaleString('tr-TR')}
               </Typography>
             </Box>
@@ -290,74 +299,128 @@ const Expenses = () => {
         </Alert>
       )}
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>Tarih</TableCell>
-              <TableCell>Açıklama</TableCell>
-              <TableCell>Kategori</TableCell>
-              <TableCell>Eğitmen</TableCell>
-              <TableCell>Tutar</TableCell>
-              <TableCell>Kasa</TableCell>
-              <TableCell align="right">İşlemler</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredExpenses.length === 0 ? (
+      {/* Mobile Card View */}
+      {isMobile ? (
+        <Box>
+          {filteredExpenses.length === 0 ? (
+            <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">Henüz gider kaydı yok</Typography>
+            </Paper>
+          ) : (
+            <Grid container spacing={1.5}>
+              {filteredExpenses.map((expense) => (
+                <Grid item xs={12} key={expense._id}>
+                  <Card>
+                    <CardContent sx={{ pb: '12px !important', pt: 1.5 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="subtitle1" fontWeight="bold">{expense.description}</Typography>
+                          <Typography variant="caption" color="text.secondary" display="block">
+                            {new Date(expense.expenseDate).toLocaleDateString('tr-TR')}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 0.5 }}>
+                          <IconButton size="small" onClick={() => handleOpenDialog(expense)} color="primary">
+                            <Edit fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" onClick={() => setDeleteDialog({ open: true, expense, password: '' })} color="error">
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                        <Chip label={expense.category} size="small" />
+                        <Typography variant="body1" color="error.main" fontWeight="bold">
+                          ₺{expense.amount.toLocaleString('tr-TR')}
+                        </Typography>
+                        {expense.instructor && (
+                          <Typography variant="caption" color="text.secondary">
+                            {expense.instructor.firstName} {expense.instructor.lastName}
+                          </Typography>
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+          {/* Floating Action Button for Mobile */}
+          <Fab color="primary" sx={{ position: 'fixed', bottom: 72, right: 16 }} onClick={() => handleOpenDialog()}>
+            <Add />
+          </Fab>
+        </Box>
+      ) : (
+        /* Desktop Table View */
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={7} align="center">
-                  <Typography color="text.secondary">Henüz gider kaydı yok</Typography>
-                </TableCell>
+                <TableCell>Tarih</TableCell>
+                <TableCell>Açıklama</TableCell>
+                <TableCell>Kategori</TableCell>
+                <TableCell>Eğitmen</TableCell>
+                <TableCell>Tutar</TableCell>
+                <TableCell>Kasa</TableCell>
+                <TableCell align="right">İşlemler</TableCell>
               </TableRow>
-            ) : (
-              filteredExpenses.map((expense) => (
-                <TableRow key={expense._id}>
-                  <TableCell>
-                    {new Date(expense.expenseDate).toLocaleDateString('tr-TR')}
-                  </TableCell>
-                  <TableCell>{expense.description}</TableCell>
-                  <TableCell>
-                    <Chip label={expense.category} size="small" />
-                  </TableCell>
-                  <TableCell>
-                    {expense.instructor ? (
-                      <Typography variant="body2">
-                        {expense.instructor.firstName} {expense.instructor.lastName}
-                      </Typography>
-                    ) : '-'}
-                  </TableCell>
-                  <TableCell>
-                    <Typography color="error.main" sx={{ fontWeight: 'bold' }}>
-                      ₺{expense.amount.toLocaleString('tr-TR')}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{expense.cashRegister?.name || '-'}</TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenDialog(expense)}
-                      color="primary"
-                    >
-                      <Edit />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => setDeleteDialog({ open: true, expense, password: '' })}
-                      color="error"
-                      title="Sil"
-                    >
-                      <Delete />
-                    </IconButton>
+            </TableHead>
+            <TableBody>
+              {filteredExpenses.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} align="center">
+                    <Typography color="text.secondary">Henüz gider kaydı yok</Typography>
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              ) : (
+                filteredExpenses.map((expense) => (
+                  <TableRow key={expense._id}>
+                    <TableCell>
+                      {new Date(expense.expenseDate).toLocaleDateString('tr-TR')}
+                    </TableCell>
+                    <TableCell>{expense.description}</TableCell>
+                    <TableCell>
+                      <Chip label={expense.category} size="small" />
+                    </TableCell>
+                    <TableCell>
+                      {expense.instructor ? (
+                        <Typography variant="body2">
+                          {expense.instructor.firstName} {expense.instructor.lastName}
+                        </Typography>
+                      ) : '-'}
+                    </TableCell>
+                    <TableCell>
+                      <Typography color="error.main" sx={{ fontWeight: 'bold' }}>
+                        ₺{expense.amount.toLocaleString('tr-TR')}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{expense.cashRegister?.name || '-'}</TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpenDialog(expense)}
+                        color="primary"
+                      >
+                        <Edit />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => setDeleteDialog({ open: true, expense, password: '' })}
+                        color="error"
+                        title="Sil"
+                      >
+                        <Delete />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth fullScreen={isMobile}>
         <form onSubmit={handleSubmit}>
           <DialogTitle>{selectedExpense ? 'Gider Düzenle' : 'Yeni Gider'}</DialogTitle>
           <DialogContent>
@@ -465,6 +528,7 @@ const Expenses = () => {
         onClose={() => setDeleteDialog({ open: false, expense: null, password: '' })}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
       >
         <DialogTitle>Gideri Sil - Admin Onayı</DialogTitle>
         <DialogContent>
