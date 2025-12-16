@@ -22,6 +22,12 @@ import {
   Select,
   MenuItem,
   Tooltip,
+  useTheme,
+  useMediaQuery,
+  Card,
+  CardContent,
+  Grid,
+  Fab,
 } from '@mui/material';
 import {
   Add,
@@ -35,6 +41,7 @@ import {
   LocalOffer,
   WhatsApp,
   Send,
+  MoreVert,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -47,6 +54,9 @@ import NotificationMenu from '../components/Common/NotificationMenu';
 const Students = () => {
   const navigate = useNavigate();
   const { institution, season } = useApp();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
   const [students, setStudents] = useState([]);
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
@@ -257,220 +267,256 @@ const Students = () => {
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Öğrenciler</Typography>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          {selectedStudents.length > 0 && (
-            <Button
-              variant="outlined"
-              startIcon={<Email />}
-              onClick={handleSendEmail}
-              color="info"
-            >
-              Email Gönder ({selectedStudents.length})
+    <Box sx={{ pb: { xs: 10, md: 2 } }}>
+      {/* Header */}
+      <Box sx={{
+        display: 'flex',
+        flexDirection: { xs: 'column', md: 'row' },
+        justifyContent: 'space-between',
+        alignItems: { xs: 'stretch', md: 'center' },
+        gap: 2,
+        mb: 2
+      }}>
+        <Typography variant={isMobile ? 'h5' : 'h4'}>Öğrenciler</Typography>
+        {!isMobile && (
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {selectedStudents.length > 0 && (
+              <Button size="small" variant="outlined" startIcon={<Email />} onClick={handleSendEmail} color="info">
+                Email ({selectedStudents.length})
+              </Button>
+            )}
+            <Button size="small" variant="outlined" startIcon={<FileDownload />} onClick={handleExportToExcel}>
+              Excel
             </Button>
-          )}
-          <Button
-            variant="outlined"
-            startIcon={<FileDownload />}
-            onClick={handleExportToExcel}
-          >
-            Excel'e Aktar
-          </Button>
-          <Button
-            variant="outlined"
-            color="warning"
-            onClick={() => navigate('/archived-students')}
-          >
-            Arşiv
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<Add />}
-            onClick={() => navigate('/students/new')}
-          >
-            Yeni Öğrenci
-          </Button>
-        </Box>
+            <Button size="small" variant="outlined" color="warning" onClick={() => navigate('/archived-students')}>
+              Arşiv
+            </Button>
+            <Button size="small" variant="contained" startIcon={<Add />} onClick={() => navigate('/students/new')}>
+              Yeni Öğrenci
+            </Button>
+          </Box>
+        )}
       </Box>
 
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Box sx={{ display: 'flex', gap: 2 }}>
+      {/* Search & Filter */}
+      <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: 2 }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1.5 }}>
           <TextField
-            sx={{ flex: 1 }}
-            placeholder="Öğrenci ara (ad, soyad, telefon, e-posta)"
+            size={isMobile ? 'small' : 'medium'}
+            fullWidth
+            placeholder="Ara..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <Search />
-                </InputAdornment>
-              ),
+              startAdornment: <InputAdornment position="start"><Search /></InputAdornment>,
             }}
           />
-          <FormControl sx={{ minWidth: 200 }}>
-            <InputLabel>Ders Filtrele</InputLabel>
-            <Select
-              value={courseFilter}
-              onChange={(e) => setCourseFilter(e.target.value)}
-              label="Ders Filtrele"
-            >
+          <FormControl size={isMobile ? 'small' : 'medium'} sx={{ minWidth: { xs: '100%', sm: 180 } }}>
+            <InputLabel>Ders</InputLabel>
+            <Select value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)} label="Ders">
               <MenuItem value="">Tümü</MenuItem>
               {courses.map((course) => (
-                <MenuItem key={course._id} value={course._id}>
-                  {course.name}
-                </MenuItem>
+                <MenuItem key={course._id} value={course._id}>{course.name}</MenuItem>
               ))}
             </Select>
           </FormControl>
         </Box>
       </Paper>
 
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell padding="checkbox">
-                <Checkbox
-                  indeterminate={
-                    selectedStudents.length > 0 &&
-                    selectedStudents.length < filteredStudents.filter((s) => s.email).length
-                  }
-                  checked={
-                    filteredStudents.filter((s) => s.email).length > 0 &&
-                    selectedStudents.length === filteredStudents.filter((s) => s.email).length
-                  }
-                  onChange={handleSelectAll}
-                />
-              </TableCell>
-              <TableCell>Öğrenci</TableCell>
-              <TableCell>Dersler</TableCell>
-              <TableCell>Telefon</TableCell>
-              <TableCell>Yaş</TableCell>
-              <TableCell>Durum</TableCell>
-              <TableCell>Bakiye</TableCell>
-              <TableCell align="right">İşlemler</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredStudents.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center">
-                  <Typography color="text.secondary">
-                    {searchTerm ? 'Öğrenci bulunamadı' : 'Henüz öğrenci eklenmedi'}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredStudents.map((student) => {
+      {/* Mobile Card View */}
+      {isMobile ? (
+        <Box>
+          {filteredStudents.length === 0 ? (
+            <Paper sx={{ p: 3, textAlign: 'center' }}>
+              <Typography color="text.secondary">
+                {searchTerm ? 'Öğrenci bulunamadı' : 'Henüz öğrenci eklenmedi'}
+              </Typography>
+            </Paper>
+          ) : (
+            <Grid container spacing={1.5}>
+              {filteredStudents.map((student) => {
                 const studentCourses = getStudentCourses(student._id);
                 return (
-                  <TableRow key={student._id} hover>
-                    <TableCell padding="checkbox">
-                      <Checkbox
-                        checked={selectedStudents.includes(student._id)}
-                        onChange={() => handleSelectStudent(student._id)}
-                        disabled={!student.email}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Avatar>
-                          {student.firstName.charAt(0)}
-                          {student.lastName.charAt(0)}
-                        </Avatar>
-                        <Box>
-                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                            <Typography variant="body1">
-                              {student.firstName} {student.lastName}
-                            </Typography>
-                            {getDiscountBadge(student)}
+                  <Grid item xs={12} key={student._id}>
+                    <Card sx={{ position: 'relative' }}>
+                      <CardContent sx={{ pb: '12px !important', pt: 1.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                          <Avatar sx={{ width: 44, height: 44, fontSize: '1rem' }}>
+                            {student.firstName.charAt(0)}{student.lastName.charAt(0)}
+                          </Avatar>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                              <Typography variant="subtitle1" fontWeight="bold" noWrap>
+                                {student.firstName} {student.lastName}
+                              </Typography>
+                              {getDiscountBadge(student)}
+                              {student.status === 'active' ? (
+                                <Chip label="Kayıtlı" color="success" size="small" sx={{ height: 20 }} />
+                              ) : student.status === 'trial' && (
+                                <Chip label="Deneme" color="info" size="small" sx={{ height: 20 }} />
+                              )}
+                            </Box>
+                            {studentCourses.length > 0 && (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                {studentCourses.join(', ')}
+                              </Typography>
+                            )}
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 0.5 }}>
+                              {student.phone && (
+                                <Typography variant="body2" color="text.secondary">
+                                  {student.phone}
+                                </Typography>
+                              )}
+                              <Typography
+                                variant="body2"
+                                fontWeight="bold"
+                                color={student.balance > 0 ? 'error.main' : 'success.main'}
+                              >
+                                {student.balance > 0 ? '-' : ''}₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
+                              </Typography>
+                            </Box>
                           </Box>
-                          <Typography variant="caption" color="text.secondary">
-                            TC: {student.tcNo || '-'}
-                          </Typography>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                            <IconButton size="small" onClick={() => navigate(`/students/${student._id}`)} color="primary">
+                              <Visibility fontSize="small" />
+                            </IconButton>
+                            {student.phone && (
+                              <IconButton size="small" component="a" href={`tel:${student.phone}`} color="success">
+                                <Phone fontSize="small" />
+                              </IconButton>
+                            )}
+                          </Box>
                         </Box>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {studentCourses.length > 0 ? (
-                          studentCourses.map((courseName, idx) => (
-                            <Chip key={idx} label={courseName} size="small" variant="outlined" />
-                          ))
-                        ) : (
-                          <Typography variant="caption" color="text.secondary">-</Typography>
-                        )}
-                      </Box>
-                    </TableCell>
-                    <TableCell>{student.phone || '-'}</TableCell>
-                    <TableCell>
-                      {student.dateOfBirth
-                        ? calculateAge(student.dateOfBirth)
-                        : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {student.status === 'active' ? (
-                        <Chip label="Kayıtlı" color="success" size="small" />
-                      ) : student.status === 'passive' ? (
-                        <Chip label="Pasif" color="default" size="small" />
-                      ) : (
-                        <Chip label="Deneme" color="info" size="small" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        color={student.balance > 0 ? 'error.main' : 'success.main'}
-                      >
-                        {student.balance > 0 ? '-' : ''}
-                        ₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Tooltip title="Bildirim Gönder">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => handleNotificationClick(e, student)}
-                          sx={{ color: '#25D366' }}
-                        >
-                          <Send />
-                        </IconButton>
-                      </Tooltip>
-                      <IconButton
-                        size="small"
-                        onClick={() => navigate(`/students/${student._id}`)}
-                        color="primary"
-                      >
-                        <Visibility />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => navigate(`/students/${student._id}/edit`)}
-                        color="info"
-                      >
-                        <Edit />
-                      </IconButton>
-                      {student.phone && (
-                        <IconButton
-                          size="small"
-                          component="a"
-                          href={`tel:${student.phone}`}
-                          color="success"
-                        >
-                          <Phone />
-                        </IconButton>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                      </CardContent>
+                    </Card>
+                  </Grid>
                 );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+              })}
+            </Grid>
+          )}
+          {/* Floating Action Button for Mobile */}
+          <Fab
+            color="primary"
+            sx={{ position: 'fixed', bottom: 72, right: 16 }}
+            onClick={() => navigate('/students/new')}
+          >
+            <Add />
+          </Fab>
+        </Box>
+      ) : (
+        /* Desktop Table View */
+        <TableContainer component={Paper}>
+          <Table size={isTablet ? 'small' : 'medium'}>
+            <TableHead>
+              <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedStudents.length > 0 && selectedStudents.length < filteredStudents.filter((s) => s.email).length}
+                    checked={filteredStudents.filter((s) => s.email).length > 0 && selectedStudents.length === filteredStudents.filter((s) => s.email).length}
+                    onChange={handleSelectAll}
+                  />
+                </TableCell>
+                <TableCell>Öğrenci</TableCell>
+                <TableCell>Dersler</TableCell>
+                <TableCell>Telefon</TableCell>
+                <TableCell>Yaş</TableCell>
+                <TableCell>Durum</TableCell>
+                <TableCell>Bakiye</TableCell>
+                <TableCell align="right">İşlemler</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {filteredStudents.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    <Typography color="text.secondary">
+                      {searchTerm ? 'Öğrenci bulunamadı' : 'Henüz öğrenci eklenmedi'}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredStudents.map((student) => {
+                  const studentCourses = getStudentCourses(student._id);
+                  return (
+                    <TableRow key={student._id} hover>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={selectedStudents.includes(student._id)}
+                          onChange={() => handleSelectStudent(student._id)}
+                          disabled={!student.email}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Avatar sx={{ width: 36, height: 36, fontSize: '0.9rem' }}>
+                            {student.firstName.charAt(0)}{student.lastName.charAt(0)}
+                          </Avatar>
+                          <Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <Typography variant="body2" fontWeight="medium">
+                                {student.firstName} {student.lastName}
+                              </Typography>
+                              {getDiscountBadge(student)}
+                            </Box>
+                            <Typography variant="caption" color="text.secondary">
+                              TC: {student.tcNo || '-'}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {studentCourses.length > 0 ? (
+                            studentCourses.map((courseName, idx) => (
+                              <Chip key={idx} label={courseName} size="small" variant="outlined" />
+                            ))
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">-</Typography>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell>{student.phone || '-'}</TableCell>
+                      <TableCell>{student.dateOfBirth ? calculateAge(student.dateOfBirth) : '-'}</TableCell>
+                      <TableCell>
+                        {student.status === 'active' ? (
+                          <Chip label="Kayıtlı" color="success" size="small" />
+                        ) : student.status === 'passive' ? (
+                          <Chip label="Pasif" color="default" size="small" />
+                        ) : (
+                          <Chip label="Deneme" color="info" size="small" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color={student.balance > 0 ? 'error.main' : 'success.main'}>
+                          {student.balance > 0 ? '-' : ''}₺{Math.abs(student.balance || 0).toLocaleString('tr-TR')}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Tooltip title="Bildirim Gönder">
+                          <IconButton size="small" onClick={(e) => handleNotificationClick(e, student)} sx={{ color: '#25D366' }}>
+                            <Send />
+                          </IconButton>
+                        </Tooltip>
+                        <IconButton size="small" onClick={() => navigate(`/students/${student._id}`)} color="primary">
+                          <Visibility />
+                        </IconButton>
+                        <IconButton size="small" onClick={() => navigate(`/students/${student._id}/edit`)} color="info">
+                          <Edit />
+                        </IconButton>
+                        {student.phone && (
+                          <IconButton size="small" component="a" href={`tel:${student.phone}`} color="success">
+                            <Phone />
+                          </IconButton>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {/* Bulk Email Dialog */}
       <EmailDialog

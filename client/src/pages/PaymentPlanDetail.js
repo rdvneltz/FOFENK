@@ -45,11 +45,12 @@ import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariabl
 const PaymentPlanDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useApp();
+  const { user, institution } = useApp();
   const [paymentPlan, setPaymentPlan] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [messageTemplates, setMessageTemplates] = useState([]);
   const [editInstallmentDialog, setEditInstallmentDialog] = useState({
     open: false,
     installment: null,
@@ -90,6 +91,31 @@ const PaymentPlanDetail = () => {
       loadCashRegisters();
     }
   }, [paymentPlan]);
+
+  // Load message templates from DB
+  useEffect(() => {
+    if (institution?._id) {
+      loadMessageTemplates();
+    }
+  }, [institution]);
+
+  const loadMessageTemplates = async () => {
+    try {
+      const response = await api.get('/message-templates', {
+        params: { institution: institution._id }
+      });
+      setMessageTemplates(response.data);
+    } catch (error) {
+      console.error('Error loading message templates:', error);
+    }
+  };
+
+  // Get template content from DB or fallback to default
+  const getTemplateContent = (templateType) => {
+    const dbTemplate = messageTemplates.find(t => t.type === templateType);
+    if (dbTemplate) return dbTemplate.template;
+    return DEFAULT_WHATSAPP_TEMPLATES[templateType] || DEFAULT_WHATSAPP_TEMPLATES.general;
+  };
 
   const loadPaymentPlan = async () => {
     try {
@@ -445,8 +471,8 @@ const PaymentPlanDetail = () => {
       studentName
     };
 
-    // Use balanceSummary template and replace variables
-    const template = DEFAULT_WHATSAPP_TEMPLATES.balanceSummary;
+    // Use balanceSummary template from DB or fallback to default
+    const template = getTemplateContent('balanceSummary');
     const message = replaceTemplateVariables(template, data);
 
     sendWhatsAppMessage(phone, message, {});
@@ -549,7 +575,7 @@ Fofora Tiyatro`;
     }
 
     const data = getPaymentReceivedData();
-    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentReceived;
+    const template = getTemplateContent('paymentReceived');
     const message = replaceTemplateVariables(template, data);
 
     sendWhatsAppMessage(phone, message, {});
@@ -609,7 +635,7 @@ Fofora Tiyatro`;
       remainingInstallmentsList: remainingInstallmentsList || 'Tüm taksitler ödendi',
     };
 
-    const template = DEFAULT_WHATSAPP_TEMPLATES.paymentReceived;
+    const template = getTemplateContent('paymentReceived');
     const message = replaceTemplateVariables(template, data);
     sendWhatsAppMessage(phone, message, {});
   };
@@ -644,8 +670,8 @@ Fofora Tiyatro`;
     };
 
     const template = isOverdue
-      ? DEFAULT_WHATSAPP_TEMPLATES.paymentOverdue
-      : DEFAULT_WHATSAPP_TEMPLATES.paymentDueReminder;
+      ? getTemplateContent('paymentOverdue')
+      : getTemplateContent('paymentDueReminder');
     const message = replaceTemplateVariables(template, data);
     sendWhatsAppMessage(phone, message, {});
   };

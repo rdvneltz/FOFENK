@@ -712,4 +712,402 @@ router.get('/chart/payment-methods', async (req, res) => {
   }
 });
 
+// Get collection rate statistics (tahsilat oranı)
+router.get('/collection-rate', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.query;
+    const filter = {};
+
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    // Get all payment plans
+    const paymentPlans = await PaymentPlan.find(filter);
+
+    let totalExpected = 0;
+    let totalCollected = 0;
+    let overdueAmount = 0;
+    const now = new Date();
+
+    // Monthly collection data for chart
+    const monthlyData = {};
+
+    paymentPlans.forEach(plan => {
+      plan.installments?.forEach(inst => {
+        const dueDate = new Date(inst.dueDate);
+        const monthKey = dueDate.toISOString().substring(0, 7);
+
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { expected: 0, collected: 0 };
+        }
+
+        totalExpected += inst.amount || 0;
+        monthlyData[monthKey].expected += inst.amount || 0;
+
+        if (inst.isPaid) {
+          totalCollected += inst.paidAmount || inst.amount || 0;
+          monthlyData[monthKey].collected += inst.paidAmount || inst.amount || 0;
+        } else if (dueDate < now) {
+          overdueAmount += (inst.amount || 0) - (inst.paidAmount || 0);
+        }
+      });
+    });
+
+    const collectionRate = totalExpected > 0
+      ? ((totalCollected / totalExpected) * 100).toFixed(1)
+      : 0;
+
+    // Convert monthly data to array and sort
+    const chartData = Object.entries(monthlyData)
+      .map(([period, data]) => ({
+        period,
+        expected: data.expected,
+        collected: data.collected,
+        rate: data.expected > 0 ? ((data.collected / data.expected) * 100).toFixed(1) : 0
+      }))
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .slice(-12); // Last 12 months
+
+    res.json({
+      totalExpected,
+      totalCollected,
+      overdueAmount,
+      collectionRate: parseFloat(collectionRate),
+      pendingAmount: totalExpected - totalCollected,
+      chartData
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get comprehensive financial report
+router.get('/financial-comprehensive', async (req, res) => {
+  try {
+    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const filter = {};
+
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    const dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter.$gte = new Date(startDate);
+      dateFilter.$lte = new Date(endDate);
+    }
+
+    // Payment statistics by method
+    const paymentFilter = { ...filter };
+    if (Object.keys(dateFilter).length > 0) {
+      paymentFilter.paymentDate = dateFilter;
+    }
+
+    const paymentsByMethod = await Payment.aggregate([
+      { $match: paymentFilter },
+      {
+        $group: {
+          _id: '$paymentType',
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Total income
+    const totalIncome = paymentsByMethod.reduce((sum, p) => sum + p.total, 0);
+
+    // Expense statistics by category
+    const expenseFilter = { ...filter };
+    if (Object.keys(dateFilter).length > 0) {
+      expenseFilter.date = dateFilter;
+    }
+
+    const expensesByCategory = await Expense.aggregate([
+      { $match: expenseFilter },
+      {
+        $group: {
+          _id: '$category',
+          total: { $sum: '$amount' },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const totalExpenses = expensesByCategory.reduce((sum, e) => sum + e.total, 0);
+
+    // Monthly trend (last 12 months)
+    const end = new Date();
+    const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
+
+    const monthlyIncome = await Payment.aggregate([
+      {
+        $match: {
+          ...filter,
+          paymentDate: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$paymentDate' } },
+          total: { $sum: '$amount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const monthlyExpenses = await Expense.aggregate([
+      {
+        $match: {
+          ...filter,
+          date: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$date' } },
+          total: { $sum: '$amount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Combine monthly data
+    const monthlyTrend = [];
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(start);
+      date.setMonth(start.getMonth() + i);
+      const monthKey = date.toISOString().substring(0, 7);
+
+      const income = monthlyIncome.find(m => m._id === monthKey)?.total || 0;
+      const expense = monthlyExpenses.find(m => m._id === monthKey)?.total || 0;
+
+      monthlyTrend.push({
+        period: monthKey,
+        income,
+        expense,
+        net: income - expense
+      });
+    }
+
+    res.json({
+      totalIncome,
+      totalExpenses,
+      netIncome: totalIncome - totalExpenses,
+      paymentsByMethod,
+      expensesByCategory,
+      monthlyTrend
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get student comprehensive report
+router.get('/student-comprehensive', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.query;
+    const filter = {};
+
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    // Student counts by status
+    const statusCounts = await Student.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Enrollment statistics
+    const enrollmentStats = await StudentCourseEnrollment.aggregate([
+      { $match: filter },
+      {
+        $lookup: {
+          from: 'courses',
+          localField: 'course',
+          foreignField: '_id',
+          as: 'courseInfo'
+        }
+      },
+      { $unwind: '$courseInfo' },
+      {
+        $group: {
+          _id: '$course',
+          courseName: { $first: '$courseInfo.name' },
+          totalEnrollments: { $sum: 1 },
+          activeEnrollments: {
+            $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
+          }
+        }
+      },
+      { $sort: { totalEnrollments: -1 } }
+    ]);
+
+    // Registration trend (last 12 months)
+    const end = new Date();
+    const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
+
+    const registrationTrend = await Student.aggregate([
+      {
+        $match: {
+          ...filter,
+          registrationDate: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$registrationDate' } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Fill missing months
+    const registrationData = [];
+    for (let i = 0; i < 12; i++) {
+      const date = new Date(start);
+      date.setMonth(start.getMonth() + i);
+      const monthKey = date.toISOString().substring(0, 7);
+      const found = registrationTrend.find(r => r._id === monthKey);
+      registrationData.push({
+        period: monthKey,
+        count: found ? found.count : 0
+      });
+    }
+
+    // Discount statistics
+    const discountStats = await StudentCourseEnrollment.aggregate([
+      { $match: { ...filter, 'discount.type': { $exists: true } } },
+      {
+        $group: {
+          _id: '$discount.type',
+          count: { $sum: 1 },
+          totalValue: { $sum: '$discount.value' }
+        }
+      }
+    ]);
+
+    const totalStudents = await Student.countDocuments(filter);
+
+    res.json({
+      totalStudents,
+      statusCounts,
+      enrollmentStats,
+      registrationData,
+      discountStats
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get attendance comprehensive report
+router.get('/attendance-comprehensive', async (req, res) => {
+  try {
+    const { institutionId, seasonId, startDate, endDate } = req.query;
+    const filter = {};
+
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    const dateFilter = {};
+    if (startDate && endDate) {
+      dateFilter.$gte = new Date(startDate);
+      dateFilter.$lte = new Date(endDate);
+    }
+
+    if (Object.keys(dateFilter).length > 0) {
+      filter.date = dateFilter;
+    }
+
+    // Overall statistics
+    const overallStats = await Attendance.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // By course
+    const byCourse = await Attendance.aggregate([
+      { $match: filter },
+      {
+        $lookup: {
+          from: 'courses',
+          localField: 'course',
+          foreignField: '_id',
+          as: 'courseInfo'
+        }
+      },
+      { $unwind: '$courseInfo' },
+      {
+        $group: {
+          _id: '$course',
+          courseName: { $first: '$courseInfo.name' },
+          present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
+          absent: { $sum: { $cond: [{ $eq: ['$status', 'absent'] }, 1, 0] } },
+          late: { $sum: { $cond: [{ $eq: ['$status', 'late'] }, 1, 0] } },
+          excused: { $sum: { $cond: [{ $eq: ['$status', 'excused'] }, 1, 0] } },
+          total: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Monthly trend
+    const end = new Date();
+    const start = new Date(end.getFullYear(), end.getMonth() - 5, 1);
+
+    const monthlyTrend = await Attendance.aggregate([
+      {
+        $match: {
+          ...filter,
+          date: { $gte: start, $lte: end }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            month: { $dateToString: { format: '%Y-%m', date: '$date' } },
+            status: '$status'
+          },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { '_id.month': 1 } }
+    ]);
+
+    // Process overall stats
+    const stats = {
+      present: 0,
+      absent: 0,
+      late: 0,
+      excused: 0,
+      total: 0
+    };
+    overallStats.forEach(s => {
+      stats[s._id] = s.count;
+      stats.total += s.count;
+    });
+    stats.attendanceRate = stats.total > 0
+      ? (((stats.present + stats.late) / stats.total) * 100).toFixed(1)
+      : 0;
+
+    res.json({
+      stats,
+      byCourse,
+      monthlyTrend
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 module.exports = router;
