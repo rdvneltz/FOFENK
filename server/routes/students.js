@@ -53,50 +53,101 @@ router.get('/', async (req, res) => {
           .lean()
       ]);
 
-      // Index payment plans by student+course for quick lookup
+      // Index payment plans by student - store ALL plans in an array (not just one per course)
+      const paymentPlansByStudent = {};
+      paymentPlans.forEach(plan => {
+        const studentId = plan.student.toString();
+        if (!paymentPlansByStudent[studentId]) {
+          paymentPlansByStudent[studentId] = [];
+        }
+        paymentPlansByStudent[studentId].push(plan);
+      });
+
+      // Also create a map for enrollment lookup (use the plan with discount if multiple exist)
       const paymentPlanMap = {};
       paymentPlans.forEach(plan => {
         const key = `${plan.student.toString()}_${plan.course?.toString() || ''}`;
-        paymentPlanMap[key] = plan;
+        // If a plan with discount exists, prefer it over one without
+        const existingPlan = paymentPlanMap[key];
+        const hasDiscount = plan.discountedAmount && plan.discountedAmount < plan.totalAmount;
+        const existingHasDiscount = existingPlan && existingPlan.discountedAmount && existingPlan.discountedAmount < existingPlan.totalAmount;
+
+        if (!existingPlan || (hasDiscount && !existingHasDiscount)) {
+          paymentPlanMap[key] = plan;
+        }
       });
 
-      // Group enrollments by student and find the best discount
+      // Group discounts by student - process PAYMENT PLANS directly (more accurate than enrollments)
       const studentDiscounts = {};
+
+      // First, initialize with enrollment info for course names
       enrollments.forEach(enrollment => {
         const studentId = enrollment.student.toString();
         if (!studentDiscounts[studentId]) {
           studentDiscounts[studentId] = {
             discounts: [],
             courses: [],
-            totalDiscountAmount: 0
+            totalDiscountAmount: 0,
+            processedPlans: new Set() // Track processed plans to avoid duplicates
+          };
+        }
+        studentDiscounts[studentId].courses.push(enrollment.course?.name || 'Ders');
+      });
+
+      // Process ALL payment plans to find discounts (not just enrollments)
+      paymentPlans.forEach(plan => {
+        const studentId = plan.student.toString();
+        if (!studentDiscounts[studentId]) {
+          studentDiscounts[studentId] = {
+            discounts: [],
+            courses: [],
+            totalDiscountAmount: 0,
+            processedPlans: new Set()
           };
         }
 
-        studentDiscounts[studentId].courses.push(enrollment.course?.name || 'Ders');
+        // Skip if already processed this plan
+        if (studentDiscounts[studentId].processedPlans.has(plan._id.toString())) {
+          return;
+        }
+        studentDiscounts[studentId].processedPlans.add(plan._id.toString());
 
-        if (enrollment.discount && enrollment.discount.type !== 'none') {
-          // Find corresponding payment plan to get total amount
-          const planKey = `${studentId}_${enrollment.course?._id?.toString() || ''}`;
-          const plan = paymentPlanMap[planKey];
-          const totalAmount = plan?.totalAmount || 0;
-          const discountAmount = plan ? (plan.totalAmount - plan.discountedAmount) : 0;
+        // Check if this payment plan has a discount
+        const totalAmount = plan.totalAmount || 0;
+        const discountedAmount = plan.discountedAmount || plan.totalAmount || 0;
+        const discountAmount = totalAmount - discountedAmount;
 
-          // Calculate percentage for fixed discounts
-          let percentageValue = enrollment.discount.value;
-          if (enrollment.discount.type === 'fixed' && totalAmount > 0) {
-            percentageValue = Math.round((enrollment.discount.value / totalAmount) * 100);
-          } else if (enrollment.discount.type === 'fullScholarship') {
+        // Only process if there's actually a discount
+        if (discountAmount > 0 && totalAmount > 0) {
+          // Calculate percentage
+          let percentageValue = 0;
+          let discountType = plan.discountType || 'percentage';
+
+          if (discountType === 'fullScholarship') {
             percentageValue = 100;
+          } else if (plan.discountValue) {
+            percentageValue = plan.discountValue;
+          } else {
+            // Calculate from amounts
+            percentageValue = Math.round((discountAmount / totalAmount) * 1000) / 10; // One decimal
           }
 
+          // Find course name from enrollments if available
+          const enrollment = enrollments.find(e =>
+            e.student.toString() === studentId &&
+            e.course?._id?.toString() === plan.course?.toString()
+          );
+          const courseName = enrollment?.course?.name || 'Ders';
+
           studentDiscounts[studentId].discounts.push({
-            type: enrollment.discount.type,
-            value: enrollment.discount.value,
+            type: discountType,
+            value: plan.discountValue || discountAmount,
             percentageValue: percentageValue,
             totalAmount: totalAmount,
             discountAmount: discountAmount,
-            description: enrollment.discount.description,
-            courseName: enrollment.course?.name
+            description: plan.discountDescription || '',
+            courseName: courseName,
+            paymentPlanId: plan._id
           });
 
           studentDiscounts[studentId].totalDiscountAmount += discountAmount;
