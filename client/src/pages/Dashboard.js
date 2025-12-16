@@ -166,6 +166,7 @@ const Dashboard = () => {
   const [selectedLessonStudents, setSelectedLessonStudents] = useState({ lessonId: null, students: [] });
   const [allEnrollments, setAllEnrollments] = useState([]);
   const [messageTemplates, setMessageTemplates] = useState([]);
+  const [discountStudentsDialog, setDiscountStudentsDialog] = useState({ open: false, title: '', students: [], discountType: '' });
 
   useEffect(() => {
     if (institution && season) {
@@ -544,6 +545,47 @@ const Dashboard = () => {
     }
   };
 
+  // Discount students dialog - show students with specific discount
+  const handleDiscountChipClick = async (discountType, percentage = null) => {
+    try {
+      const response = await api.get('/students', {
+        params: {
+          institutionId: institution._id,
+          seasonId: season._id,
+          includeDiscountInfo: 'true'
+        }
+      });
+
+      const allStudents = response.data;
+      let filteredStudents = [];
+      let title = '';
+
+      if (discountType === 'fullScholarship') {
+        title = 'Tam Burslu Öğrenciler';
+        filteredStudents = allStudents.filter(student =>
+          student.discounts?.some(d => d.type === 'fullScholarship')
+        );
+      } else if (percentage !== null) {
+        title = `%${percentage} İndirimli Öğrenciler`;
+        filteredStudents = allStudents.filter(student =>
+          student.discounts?.some(d => {
+            const pValue = d.percentageValue || d.value;
+            return d.type !== 'fullScholarship' && pValue == percentage;
+          })
+        );
+      }
+
+      setDiscountStudentsDialog({
+        open: true,
+        title,
+        students: filteredStudents,
+        discountType: discountType === 'fullScholarship' ? 'fullScholarship' : `percent_${percentage}`
+      });
+    } catch (error) {
+      console.error('Error loading discount students:', error);
+    }
+  };
+
   const handlePaymentsBoxClick = (type, title, payments) => {
     setPaymentsDetailDialog({ open: true, title, payments, type });
   };
@@ -749,34 +791,44 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
               <Chip size="small" label={`${stats.activeStudents} aktif`} color="primary" variant="outlined" />
             </Box>
 
-            {/* Discount Breakdown - Compact */}
+            {/* Discount Breakdown - Scrollable */}
             {discountStats.totalDiscountedStudents > 0 && (
               <>
                 <Divider sx={{ my: 1 }} />
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
+                <Box sx={{
+                  display: 'flex',
+                  flexWrap: 'nowrap',
+                  gap: 0.5,
+                  mb: 1,
+                  overflowX: 'auto',
+                  pb: 0.5,
+                  '&::-webkit-scrollbar': { height: 4 },
+                  '&::-webkit-scrollbar-thumb': { bgcolor: 'grey.400', borderRadius: 2 }
+                }}>
                   {discountStats.fullScholarship.count > 0 && (
-                    <Tooltip title={`Toplam: ${discountStats.fullScholarship.totalAmount.toLocaleString('tr-TR')} TL`}>
+                    <Tooltip title={`Toplam: ${discountStats.fullScholarship.totalAmount.toLocaleString('tr-TR')} TL - Tıkla öğrencileri gör`}>
                       <Chip
                         size="small"
                         icon={<School sx={{ fontSize: 14 }} />}
                         label={`Burslu: ${discountStats.fullScholarship.count}`}
                         color="success"
-                        sx={{ fontSize: '0.7rem' }}
+                        onClick={(e) => { e.stopPropagation(); handleDiscountChipClick('fullScholarship'); }}
+                        sx={{ fontSize: '0.7rem', cursor: 'pointer', flexShrink: 0 }}
                       />
                     </Tooltip>
                   )}
                   {Object.entries(discountStats.byPercentage)
                     .sort(([a], [b]) => Number(b) - Number(a))
-                    .slice(0, 3)
                     .map(([percentage, data]) => (
-                      <Tooltip key={percentage} title={`Toplam: ${data.totalAmount.toLocaleString('tr-TR')} TL`}>
+                      <Tooltip key={percentage} title={`Toplam: ${data.totalAmount.toLocaleString('tr-TR')} TL - Tıkla öğrencileri gör`}>
                         <Chip
                           size="small"
                           icon={<LocalOffer sx={{ fontSize: 14 }} />}
                           label={`%${percentage}: ${data.count}`}
                           color="info"
                           variant="outlined"
-                          sx={{ fontSize: '0.7rem' }}
+                          onClick={(e) => { e.stopPropagation(); handleDiscountChipClick('percentage', percentage); }}
+                          sx={{ fontSize: '0.7rem', cursor: 'pointer', flexShrink: 0 }}
                         />
                       </Tooltip>
                     ))
@@ -1477,6 +1529,73 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           </TableContainer>
         </DialogContent>
         <DialogActions><Button onClick={() => setPaymentsDetailDialog({ open: false, title: '', payments: [], type: '' })}>Kapat</Button></DialogActions>
+      </Dialog>
+
+      {/* Discount Students Dialog */}
+      <Dialog open={discountStudentsDialog.open} onClose={() => setDiscountStudentsDialog({ open: false, title: '', students: [], discountType: '' })} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">{discountStudentsDialog.title} ({discountStudentsDialog.students.length})</Typography>
+            <IconButton onClick={() => setDiscountStudentsDialog({ open: false, title: '', students: [], discountType: '' })}><Close /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {discountStudentsDialog.students.length === 0 ? (
+            <Typography color="text.secondary" align="center" sx={{ py: 3 }}>Bu kategoride öğrenci bulunamadı</Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Öğrenci</TableCell>
+                    <TableCell>Telefon</TableCell>
+                    <TableCell>İndirim Tutarı</TableCell>
+                    <TableCell>Durum</TableCell>
+                    <TableCell align="right">İşlem</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {discountStudentsDialog.students.map((student) => {
+                    // Calculate discount amount for this student
+                    const relevantDiscount = student.discounts?.find(d => {
+                      if (discountStudentsDialog.discountType === 'fullScholarship') {
+                        return d.type === 'fullScholarship';
+                      } else {
+                        const pValue = d.percentageValue || d.value;
+                        const targetPercentage = discountStudentsDialog.discountType.replace('percent_', '');
+                        return d.type !== 'fullScholarship' && pValue == targetPercentage;
+                      }
+                    });
+                    const discountAmount = relevantDiscount?.discountAmount || 0;
+
+                    return (
+                      <TableRow key={student._id} hover>
+                        <TableCell>
+                          <Typography variant="body2" fontWeight="bold">{student.firstName} {student.lastName}</Typography>
+                        </TableCell>
+                        <TableCell>{student.phone || '-'}</TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="success.main" fontWeight="bold">
+                            {discountAmount.toLocaleString('tr-TR')} TL
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip size="small" color={student.status === 'active' ? 'success' : 'default'} label={student.status === 'active' ? 'Aktif' : 'Pasif'} />
+                        </TableCell>
+                        <TableCell align="right">
+                          <IconButton size="small" onClick={() => { setDiscountStudentsDialog({ open: false, title: '', students: [], discountType: '' }); navigate(`/students/${student._id}`); }}>
+                            <Visibility />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDiscountStudentsDialog({ open: false, title: '', students: [], discountType: '' })}>Kapat</Button></DialogActions>
       </Dialog>
     </Box>
   );
