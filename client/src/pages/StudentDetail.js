@@ -461,7 +461,9 @@ const StudentDetail = () => {
                                 {enrollment.course?.name}
                               </Typography>
                               <Typography variant="body2" color="text.secondary">
-                                Eğitmen: {enrollment.course?.instructor?.name || '-'}
+                                Eğitmen: {enrollment.course?.instructor ?
+                                  `${enrollment.course.instructor.firstName || ''} ${enrollment.course.instructor.lastName || ''}`.trim() || '-'
+                                  : '-'}
                               </Typography>
                               <Typography variant="body2" color="text.secondary">
                                 Kayıt Tarihi:{' '}

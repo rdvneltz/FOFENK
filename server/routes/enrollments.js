@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
       .populate({
         path: 'course',
         select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth instructor',
-        populate: { path: 'instructor', select: 'name phone email' }
+        populate: { path: 'instructor', select: 'firstName lastName phone email' }
       })
       .sort({ enrollmentDate: -1 });
 
@@ -45,7 +45,7 @@ router.get('/:id', async (req, res) => {
       .populate({
         path: 'course',
         select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth instructor',
-        populate: { path: 'instructor', select: 'name phone email' }
+        populate: { path: 'instructor', select: 'firstName lastName phone email' }
       });
 
     if (!enrollment) {
@@ -81,7 +81,7 @@ router.post('/', async (req, res) => {
       .populate({
         path: 'course',
         select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth instructor',
-        populate: { path: 'instructor', select: 'name phone email' }
+        populate: { path: 'instructor', select: 'firstName lastName phone email' }
       });
 
     res.status(201).json(populatedEnrollment);
@@ -103,7 +103,7 @@ router.put('/:id', async (req, res) => {
      .populate({
        path: 'course',
        select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth instructor',
-       populate: { path: 'instructor', select: 'name phone email' }
+       populate: { path: 'instructor', select: 'firstName lastName phone email' }
      });
 
     if (!enrollment) {
@@ -220,7 +220,7 @@ router.post('/bulk', async (req, res) => {
       .populate({
         path: 'course',
         select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth instructor',
-        populate: { path: 'instructor', select: 'name phone email' }
+        populate: { path: 'instructor', select: 'firstName lastName phone email' }
       });
 
     res.status(201).json({
