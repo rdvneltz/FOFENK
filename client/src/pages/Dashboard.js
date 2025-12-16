@@ -734,9 +734,10 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
       </Box>
 
       <Grid container spacing={2}>
-        {/* TOP ROW - Key Stats */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper sx={{ p: 2, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={handleStudentsClick}>
+        {/* TOP ROW - Key Stats - Consistent 2-column layout at md */}
+        {/* First Row: Students (wider) + 3 small stat cards */}
+        <Grid item xs={12} sm={6} md={4}>
+          <Paper sx={{ p: 2, cursor: 'pointer', height: '100%', minHeight: 140, '&:hover': { bgcolor: 'action.hover' } }} onClick={handleStudentsClick}>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <Group color="primary" sx={{ fontSize: 28 }} />
@@ -748,7 +749,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
               <Chip size="small" label={`${stats.activeStudents} aktif`} color="primary" variant="outlined" />
             </Box>
 
-            {/* Discount Breakdown */}
+            {/* Discount Breakdown - Compact */}
             {discountStats.totalDiscountedStudents > 0 && (
               <>
                 <Divider sx={{ my: 1 }} />
@@ -766,6 +767,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                   )}
                   {Object.entries(discountStats.byPercentage)
                     .sort(([a], [b]) => Number(b) - Number(a))
+                    .slice(0, 3)
                     .map(([percentage, data]) => (
                       <Tooltip key={percentage} title={`Toplam: ${data.totalAmount.toLocaleString('tr-TR')} TL`}>
                         <Chip
@@ -793,8 +795,8 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           </Paper>
         </Grid>
 
-        <Grid item xs={6} sm={4} md={2}>
-          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setInstructorDebtsDialog({ open: true })}>
+        <Grid item xs={6} sm={6} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setInstructorDebtsDialog({ open: true })}>
             <Person color="secondary" sx={{ fontSize: 32 }} />
             <Typography variant="h4">{stats.totalInstructors || instructorDebts.instructors.length}</Typography>
             <Typography variant="body2" color="text.secondary">Egitmen</Typography>
@@ -804,8 +806,8 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           </Paper>
         </Grid>
 
-        <Grid item xs={6} sm={4} md={2}>
-          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setTodayLessonsDialog({ open: true })}>
+        <Grid item xs={6} sm={6} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center', '&:hover': { bgcolor: 'action.hover' } }} onClick={() => setTodayLessonsDialog({ open: true })}>
             <Schedule color="info" sx={{ fontSize: 32 }} />
             <Typography variant="h4">{todayLessons.length}</Typography>
             <Typography variant="body2" color="text.secondary">Bugun Ders</Typography>
@@ -816,8 +818,8 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
         </Grid>
 
         {canSeePayments && (
-          <Grid item xs={6} sm={4} md={2}>
-            <Paper sx={{ p: 2, textAlign: 'center' }}>
+          <Grid item xs={6} sm={6} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <TrendingUp color="success" sx={{ fontSize: 32 }} />
               <Typography variant="h5">{(stats.totalIncome || 0).toLocaleString('tr-TR')} TL</Typography>
               <Typography variant="body2" color="text.secondary">Toplam Gelir</Typography>
@@ -826,8 +828,8 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
         )}
 
         {canSeeExpenses && (
-          <Grid item xs={6} sm={4} md={2}>
-            <Paper sx={{ p: 2, textAlign: 'center' }}>
+          <Grid item xs={6} sm={6} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
               <AccountBalance color="warning" sx={{ fontSize: 32 }} />
               <Typography variant="h5">{(stats.totalCashRegisterBalance || 0).toLocaleString('tr-TR')} TL</Typography>
               <Typography variant="body2" color="text.secondary">Kasa</Typography>
@@ -835,8 +837,9 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           </Grid>
         )}
 
-        <Grid item xs={6} sm={4} md={2}>
-          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', bgcolor: 'primary.light', color: 'white', '&:hover': { bgcolor: 'primary.main' } }} onClick={() => setInvestmentDialog({ open: true, mode: 'list' })}>
+        {/* Second Row Start - Planlanan Harcama aligned with above */}
+        <Grid item xs={6} sm={6} md={2}>
+          <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer', bgcolor: 'primary.light', color: 'white', height: '100%', minHeight: 140, display: 'flex', flexDirection: 'column', justifyContent: 'center', '&:hover': { bgcolor: 'primary.main' } }} onClick={() => setInvestmentDialog({ open: true, mode: 'list' })}>
             <ShoppingCart sx={{ fontSize: 32 }} />
             <Typography variant="h5">{plannedInvestments.total.toLocaleString('tr-TR')} TL</Typography>
             <Typography variant="body2">Planlanan Harcama</Typography>
@@ -845,8 +848,8 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
         </Grid>
 
         {/* Second Row - Today's Schedule & Urgent */}
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: '100%' }}>
+        <Grid item xs={12} md={5}>
+          <Paper sx={{ p: 2, height: '100%', minHeight: 220 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6"><CalendarToday sx={{ mr: 1, verticalAlign: 'middle' }} />Bugunku Program</Typography>
               <Button size="small" endIcon={<ArrowForward />} onClick={() => navigate('/calendar')}>Takvim</Button>
@@ -875,8 +878,8 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           </Paper>
         </Grid>
 
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: '100%' }}>
+        <Grid item xs={12} md={5}>
+          <Paper sx={{ p: 2, height: '100%', minHeight: 220 }}>
             <Typography variant="h6" sx={{ mb: 2 }}><Warning color="error" sx={{ mr: 1, verticalAlign: 'middle' }} />Acil / Oncelikli</Typography>
             <List dense>
               {upcomingPayments.overdue.items.length > 0 && (
@@ -922,7 +925,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
 
         {/* Third Row - Course Capacity & Trial Lessons */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{ p: 2, height: '100%', minHeight: 220 }}>
             <Typography variant="h6" sx={{ mb: 2 }}><School sx={{ mr: 1, verticalAlign: 'middle' }} />Ders Doluluk Durumu</Typography>
             {courseStats.length === 0 ? (
               <Typography color="text.secondary" align="center">Ders bulunamadi</Typography>
@@ -958,7 +961,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
         </Grid>
 
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
+          <Paper sx={{ p: 2, height: '100%', minHeight: 220 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6"><StarBorder sx={{ mr: 1, verticalAlign: 'middle' }} />Deneme Dersleri</Typography>
               <Button size="small" onClick={() => navigate('/trial-lessons')}>Tumu</Button>
