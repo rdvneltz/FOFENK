@@ -114,7 +114,8 @@ router.get('/', async (req, res) => {
 
         // Check if this payment plan has a discount
         const totalAmount = plan.totalAmount || 0;
-        const discountedAmount = plan.discountedAmount || plan.totalAmount || 0;
+        // Use ?? instead of || to handle discountedAmount = 0 (full scholarship)
+        const discountedAmount = plan.discountedAmount ?? plan.totalAmount ?? 0;
         const discountAmount = totalAmount - discountedAmount;
 
         // Only process if there's actually a discount
