@@ -36,11 +36,56 @@ import {
   Delete,
   AccountBalance,
   Refresh,
+  LocalOffer,
+  School,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import RefundDialog from '../components/Payment/RefundDialog';
+
+// Helper function to get discount chip color based on percentage (light blue to dark blue)
+const getDiscountChipColor = (percentage) => {
+  const lightness = Math.max(35, 70 - (percentage * 0.35));
+  return `hsl(210, 79%, ${lightness}%)`;
+};
+
+// Helper to get discount chip for a payment plan
+const getPaymentPlanDiscountChip = (plan) => {
+  if (!plan.totalAmount || !plan.discountedAmount) return null;
+  const discountAmount = plan.totalAmount - plan.discountedAmount;
+  if (discountAmount <= 0) return null;
+
+  // Calculate percentage
+  const percentage = Math.round((discountAmount / plan.totalAmount) * 1000) / 10;
+
+  // Check if full scholarship (100% discount or discountedAmount is 0)
+  if (plan.discountType === 'fullScholarship' || percentage >= 99) {
+    return (
+      <Chip
+        icon={<School sx={{ fontSize: 14 }} />}
+        label="Burslu"
+        color="success"
+        size="small"
+        sx={{ ml: 1 }}
+      />
+    );
+  }
+
+  return (
+    <Chip
+      icon={<LocalOffer sx={{ fontSize: 14, color: 'white' }} />}
+      label={`%${percentage} indirim`}
+      size="small"
+      sx={{
+        ml: 1,
+        bgcolor: getDiscountChipColor(percentage),
+        color: 'white',
+        '& .MuiChip-label': { color: 'white' }
+      }}
+    />
+  );
+};
 
 const StudentDetail = () => {
   const { id } = useParams();
@@ -508,13 +553,29 @@ const StudentDetail = () => {
                           >
                             <ListItemText
                               primary={
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                  <Typography variant="h6">
-                                    {plan.course?.name || 'Ders'}
-                                  </Typography>
-                                  <Typography variant="h6" color="primary">
-                                    ₺{plan.discountedAmount?.toLocaleString('tr-TR') || 0}
-                                  </Typography>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <Typography variant="h6">
+                                      {plan.course?.name || 'Ders'}
+                                    </Typography>
+                                    {getPaymentPlanDiscountChip(plan)}
+                                  </Box>
+                                  <Box sx={{ textAlign: 'right' }}>
+                                    {plan.totalAmount && plan.discountedAmount && plan.totalAmount > plan.discountedAmount ? (
+                                      <>
+                                        <Typography variant="body2" color="text.secondary" sx={{ textDecoration: 'line-through' }}>
+                                          ₺{plan.totalAmount?.toLocaleString('tr-TR')}
+                                        </Typography>
+                                        <Typography variant="h6" color="success.main">
+                                          ₺{plan.discountedAmount?.toLocaleString('tr-TR')}
+                                        </Typography>
+                                      </>
+                                    ) : (
+                                      <Typography variant="h6" color="primary">
+                                        ₺{plan.discountedAmount?.toLocaleString('tr-TR') || plan.totalAmount?.toLocaleString('tr-TR') || 0}
+                                      </Typography>
+                                    )}
+                                  </Box>
                                 </Box>
                               }
                               secondary={

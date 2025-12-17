@@ -99,6 +99,14 @@ const getOccupancyColor = (percentage) => {
   return `hsl(${hue}, 70%, 45%)`;
 };
 
+// Helper function to get discount chip color based on percentage (light blue to dark blue)
+const getDiscountChipColor = (percentage) => {
+  // 0% = light blue (#90CAF9), 100% = dark blue (#1565C0)
+  // Interpolate lightness from 70% to 35%
+  const lightness = Math.max(35, 70 - (percentage * 0.35));
+  return `hsl(210, 79%, ${lightness}%)`;
+};
+
 const Dashboard = () => {
   const { institution, season, currentUser } = useApp();
   const navigate = useNavigate();
@@ -826,12 +834,17 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                       <Tooltip key={percentage} title={`Toplam: ${data.totalAmount.toLocaleString('tr-TR')} TL - Tıkla öğrencileri gör`}>
                         <Chip
                           size="small"
-                          icon={<LocalOffer sx={{ fontSize: 14 }} />}
+                          icon={<LocalOffer sx={{ fontSize: 14, color: 'white' }} />}
                           label={`%${percentage}: ${data.count}`}
-                          color="info"
-                          variant="outlined"
                           onClick={(e) => { e.stopPropagation(); handleDiscountChipClick('percentage', percentage); }}
-                          sx={{ fontSize: '0.7rem', cursor: 'pointer', flexShrink: 0 }}
+                          sx={{
+                            fontSize: '0.7rem',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            bgcolor: getDiscountChipColor(Number(percentage)),
+                            color: 'white',
+                            '& .MuiChip-label': { color: 'white' }
+                          }}
                         />
                       </Tooltip>
                     ))

@@ -29,7 +29,7 @@ import {
   FormControlLabel,
   Tooltip,
 } from '@mui/material';
-import { ArrowBack, Edit, Delete, Payment, Undo, CreditCard, Money, Receipt, WhatsApp, Email, Send } from '@mui/icons-material';
+import { ArrowBack, Edit, Delete, Payment, Undo, CreditCard, Money, Receipt, WhatsApp, Email, Send, LocalOffer, School } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -41,6 +41,12 @@ import ConfirmDialog from '../components/Common/ConfirmDialog';
 import PaymentDialog from '../components/Payment/PaymentDialog';
 import EmailDialog from '../components/Email/EmailDialog';
 import { sendWhatsAppMessage, DEFAULT_WHATSAPP_TEMPLATES, replaceTemplateVariables } from '../utils/whatsappHelper';
+
+// Helper function to get discount chip color based on percentage (light blue to dark blue)
+const getDiscountChipColor = (percentage) => {
+  const lightness = Math.max(35, 70 - (percentage * 0.35));
+  return `hsl(210, 79%, ${lightness}%)`;
+};
 
 const PaymentPlanDetail = () => {
   const { id } = useParams();
@@ -772,7 +778,7 @@ Fofora Tiyatro`;
             </Typography>
           </Grid>
           <Grid item xs={12}>
-            <Box sx={{ display: 'flex', gap: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               <Chip
                 label={
                   paymentPlan.paymentType === 'cashFull' ? 'Tek Seferde' :
@@ -783,9 +789,35 @@ Fofora Tiyatro`;
               />
               {paymentPlan.isInvoiced && <Chip label="Faturalı" color="info" />}
               {paymentPlan.isCompleted && <Chip label="Tamamlandı" color="success" />}
+              {/* Full Scholarship Chip */}
               {(paymentPlan.discountType === 'fullScholarship' || paymentPlan.discountedAmount === 0) && (
-                <Chip label="Tam Burslu (%100)" color="secondary" sx={{ fontWeight: 'bold' }} />
+                <Chip
+                  icon={<School sx={{ fontSize: 16 }} />}
+                  label="Tam Burslu"
+                  color="success"
+                  sx={{ fontWeight: 'bold' }}
+                />
               )}
+              {/* Percentage Discount Chip */}
+              {paymentPlan.totalAmount && paymentPlan.discountedAmount &&
+               paymentPlan.totalAmount > paymentPlan.discountedAmount &&
+               paymentPlan.discountType !== 'fullScholarship' &&
+               paymentPlan.discountedAmount > 0 && (() => {
+                const discountAmount = paymentPlan.totalAmount - paymentPlan.discountedAmount;
+                const percentage = Math.round((discountAmount / paymentPlan.totalAmount) * 1000) / 10;
+                return (
+                  <Chip
+                    icon={<LocalOffer sx={{ fontSize: 16, color: 'white' }} />}
+                    label={`%${percentage} indirim (${discountAmount.toLocaleString('tr-TR')} TL)`}
+                    sx={{
+                      fontWeight: 'bold',
+                      bgcolor: getDiscountChipColor(percentage),
+                      color: 'white',
+                      '& .MuiChip-label': { color: 'white' }
+                    }}
+                  />
+                );
+              })()}
             </Box>
           </Grid>
         </Grid>
