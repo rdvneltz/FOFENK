@@ -135,34 +135,51 @@ const Students = () => {
     return studentEnrollments.map(e => e.course?.name || '').filter(Boolean);
   };
 
-  // Helper to get discount badge
-  const getDiscountBadge = (student) => {
-    if (!student.primaryDiscount) return null;
+  // Helper function to get discount chip color based on percentage (light blue to dark blue)
+  const getDiscountChipColor = (percentage) => {
+    // 0% = light blue, 100% = dark blue
+    const lightness = Math.max(35, 70 - (percentage * 0.35));
+    return `hsl(210, 79%, ${lightness}%)`;
+  };
 
-    const discount = student.primaryDiscount;
+  // Helper to get ALL discount badges (not just primary)
+  const getDiscountBadges = (student) => {
+    if (!student.discounts || student.discounts.length === 0) return null;
 
-    if (discount.type === 'fullScholarship') {
-      return (
-        <Chip
-          icon={<School />}
-          label="Burslu"
-          color="success"
-          size="small"
-          sx={{ ml: 1 }}
-        />
-      );
-    }
-
-    // For both percentage and fixed discounts, show as percentage
-    const percentageValue = discount.percentageValue || discount.value;
     return (
-      <Chip
-        icon={<LocalOffer />}
-        label={`%${percentageValue}`}
-        color="info"
-        size="small"
-        sx={{ ml: 1 }}
-      />
+      <Box sx={{ display: 'inline-flex', gap: 0.5, ml: 1, flexWrap: 'wrap' }}>
+        {student.discounts.map((discount, idx) => {
+          if (discount.type === 'fullScholarship') {
+            return (
+              <Chip
+                key={idx}
+                icon={<School sx={{ fontSize: 14 }} />}
+                label="Burslu"
+                color="success"
+                size="small"
+                sx={{ height: 22 }}
+              />
+            );
+          }
+
+          // For percentage discounts, use color gradient
+          const percentageValue = discount.percentageValue || discount.value;
+          return (
+            <Chip
+              key={idx}
+              icon={<LocalOffer sx={{ fontSize: 14, color: 'white' }} />}
+              label={`%${percentageValue}`}
+              size="small"
+              sx={{
+                height: 22,
+                bgcolor: getDiscountChipColor(Number(percentageValue)),
+                color: 'white',
+                '& .MuiChip-label': { color: 'white' }
+              }}
+            />
+          );
+        })}
+      </Box>
     );
   };
 
@@ -349,7 +366,7 @@ const Students = () => {
                               <Typography variant="subtitle1" fontWeight="bold" noWrap>
                                 {student.firstName} {student.lastName}
                               </Typography>
-                              {getDiscountBadge(student)}
+                              {getDiscountBadges(student)}
                               {student.status === 'active' ? (
                                 <Chip label="Kayıtlı" color="success" size="small" sx={{ height: 20 }} />
                               ) : student.status === 'trial' && (
@@ -456,7 +473,7 @@ const Students = () => {
                               <Typography variant="body2" fontWeight="medium">
                                 {student.firstName} {student.lastName}
                               </Typography>
-                              {getDiscountBadge(student)}
+                              {getDiscountBadges(student)}
                             </Box>
                             <Typography variant="caption" color="text.secondary">
                               TC: {student.tcNo || '-'}
