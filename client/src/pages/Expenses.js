@@ -32,10 +32,6 @@ import {
   Tab,
   Tooltip,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
   FormControlLabel,
   Switch,
   RadioGroup,
@@ -54,7 +50,6 @@ import {
   Schedule,
   CalendarMonth,
   TrendingUp,
-  Refresh,
   FileDownload,
   History,
   EventNote,
@@ -206,7 +201,7 @@ const Expenses = () => {
           params: { institution: institution._id, season: season._id },
         }),
         api.get('/recurring-expenses/pending/list', {
-          params: { institution: institution._id, season: season._id, days: 90 },
+          params: { institution: institution._id, season: season._id },  // No days limit - show all pending
         }),
         api.get('/recurring-expenses', {
           params: { institution: institution._id, season: season._id },
@@ -577,9 +572,6 @@ const Expenses = () => {
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button variant="outlined" size="small" startIcon={<FileDownload />} onClick={handleExportToExcel}>
               Excel
-            </Button>
-            <Button variant="outlined" size="small" startIcon={<Refresh />} onClick={handleGenerateAll}>
-              Toplu Oluştur
             </Button>
           </Box>
         )}
