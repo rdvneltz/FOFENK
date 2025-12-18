@@ -151,21 +151,29 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Düzenli gider bulunamadı' });
     }
 
-    // Check if there are pending expenses from this recurring expense
-    const pendingCount = await Expense.countDocuments({
+    // Delete all pending/overdue expenses from this recurring expense (keep paid ones)
+    const deleteResult = await Expense.deleteMany({
       recurringExpense: req.params.id,
-      status: 'pending'
+      status: { $in: ['pending', 'overdue'] }
     });
-
-    if (pendingCount > 0) {
-      return res.status(400).json({
-        message: `Bu düzenli gidere bağlı ${pendingCount} bekleyen ödeme var. Önce onları silin veya ödeyin.`
-      });
-    }
 
     await RecurringExpense.findByIdAndDelete(req.params.id);
 
-    res.json({ message: 'Düzenli gider silindi' });
+    // Log activity
+    await ActivityLog.create({
+      user: 'system',
+      action: 'delete',
+      entity: 'RecurringExpense',
+      entityId: req.params.id,
+      description: `Düzenli gider silindi: ${recurringExpense.title} (${deleteResult.deletedCount} bekleyen gider de silindi)`,
+      institution: recurringExpense.institution,
+      season: recurringExpense.season
+    });
+
+    res.json({
+      message: `Düzenli gider silindi${deleteResult.deletedCount > 0 ? ` ve ${deleteResult.deletedCount} bekleyen gider de silindi` : ''}`,
+      deletedExpenses: deleteResult.deletedCount
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

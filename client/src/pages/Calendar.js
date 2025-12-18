@@ -16,6 +16,14 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
 } from '@mui/material';
 import {
   ChevronLeft,
@@ -52,7 +60,18 @@ const Calendar = () => {
   const [trialLessonsArray, setTrialLessonsArray] = useState([]);
   const [pendingExpenses, setPendingExpenses] = useState({});
   const [pendingExpensesArray, setPendingExpensesArray] = useState([]);
+  const [cashRegisters, setCashRegisters] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Expense pay dialog
+  const [expensePayOpen, setExpensePayOpen] = useState(false);
+  const [selectedExpense, setSelectedExpense] = useState(null);
+  const [payFormData, setPayFormData] = useState({
+    amount: '',
+    cashRegisterId: '',
+    notes: '',
+    expenseDate: new Date().toISOString().split('T')[0],
+  });
   const [autoScheduleOpen, setAutoScheduleOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [createLessonOpen, setCreateLessonOpen] = useState(false);
@@ -78,9 +97,20 @@ const Calendar = () => {
   const loadAllData = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadLessons(), loadTrialLessons(), loadPendingExpenses()]);
+      await Promise.all([loadLessons(), loadTrialLessons(), loadPendingExpenses(), loadCashRegisters()]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCashRegisters = async () => {
+    try {
+      const response = await api.get('/cash-registers', {
+        params: { institution: institution._id },
+      });
+      setCashRegisters(response.data);
+    } catch (error) {
+      console.error('Error loading cash registers:', error);
     }
   };
 
@@ -278,6 +308,32 @@ const Calendar = () => {
   const handleTrialLessonClick = (trialLesson) => {
     setSelectedTrialLesson(trialLesson);
     setTrialLessonDetailOpen(true);
+  };
+
+  const handleExpenseClick = (expense) => {
+    setSelectedExpense(expense);
+    setPayFormData({
+      amount: expense.amount || expense.estimatedAmount || '',
+      cashRegisterId: expense.recurringExpense?.defaultCashRegister || cashRegisters[0]?._id || '',
+      notes: '',
+      expenseDate: new Date().toISOString().split('T')[0],
+    });
+    setExpensePayOpen(true);
+  };
+
+  const handlePayExpense = async () => {
+    try {
+      await api.post(`/recurring-expenses/pay/${selectedExpense._id}`, {
+        ...payFormData,
+        amount: parseFloat(payFormData.amount),
+      });
+      setSnackbar({ open: true, message: 'Gider ödendi', severity: 'success' });
+      setExpensePayOpen(false);
+      setSelectedExpense(null);
+      loadPendingExpenses();
+    } catch (err) {
+      setSnackbar({ open: true, message: err.response?.data?.message || 'Ödeme başarısız', severity: 'error' });
+    }
   };
 
   const handleDayClick = (date, event) => {
@@ -537,6 +593,7 @@ const Calendar = () => {
                   expenses={pendingExpenses[day.date.toDateString()]}
                   onLessonClick={handleLessonClick}
                   onTrialLessonClick={handleTrialLessonClick}
+                  onExpenseClick={handleExpenseClick}
                   onDayClick={handleDayClick}
                   onDayDoubleClick={handleDayDoubleClick}
                 />
@@ -634,6 +691,71 @@ const Calendar = () => {
           onDeleted={handleTrialLessonDeleted}
         />
       )}
+
+      {/* Expense Pay Dialog */}
+      <Dialog open={expensePayOpen} onClose={() => setExpensePayOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Gider Öde</DialogTitle>
+        <DialogContent>
+          {selectedExpense && (
+            <Box sx={{ mb: 2, mt: 1, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="subtitle1" fontWeight="bold">{selectedExpense.description}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Vade: {new Date(selectedExpense.dueDate).toLocaleDateString('tr-TR')}
+              </Typography>
+            </Box>
+          )}
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Tutar (TL)"
+                type="number"
+                value={payFormData.amount}
+                onChange={(e) => setPayFormData({ ...payFormData, amount: e.target.value })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth required>
+                <InputLabel>Kasa</InputLabel>
+                <Select
+                  value={payFormData.cashRegisterId}
+                  onChange={(e) => setPayFormData({ ...payFormData, cashRegisterId: e.target.value })}
+                  label="Kasa"
+                >
+                  {cashRegisters.map((reg) => (
+                    <MenuItem key={reg._id} value={reg._id}>{reg.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Ödeme Tarihi"
+                type="date"
+                value={payFormData.expenseDate}
+                onChange={(e) => setPayFormData({ ...payFormData, expenseDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Notlar"
+                multiline
+                rows={2}
+                value={payFormData.notes}
+                onChange={(e) => setPayFormData({ ...payFormData, notes: e.target.value })}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExpensePayOpen(false)}>İptal</Button>
+          <Button variant="contained" color="success" onClick={handlePayExpense}>Öde</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Snackbar */}
       <Snackbar

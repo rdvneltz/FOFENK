@@ -141,6 +141,11 @@ const expenseSchema = new mongoose.Schema({
     required: true
   },
   notes: String,
+  // Takvimde göster (tek seferlik giderler için kullanıcı seçimi)
+  showInCalendar: {
+    type: Boolean,
+    default: false
+  },
   createdAt: {
     type: Date,
     default: Date.now
