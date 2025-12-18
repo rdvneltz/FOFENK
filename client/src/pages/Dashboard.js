@@ -176,6 +176,7 @@ const Dashboard = () => {
   const [allEnrollments, setAllEnrollments] = useState([]);
   const [messageTemplates, setMessageTemplates] = useState([]);
   const [discountStudentsDialog, setDiscountStudentsDialog] = useState({ open: false, title: '', students: [], discountType: '' });
+  const [pendingExpenses, setPendingExpenses] = useState({ overdue: [], thisWeek: [], upcoming: [], totals: {} });
 
   useEffect(() => {
     if (institution && season) {
@@ -224,6 +225,7 @@ const Dashboard = () => {
         loadChartData(),
         loadEnrollments(),
         loadDiscountStats(),
+        loadPendingExpenses(),
       ]);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -240,6 +242,17 @@ const Dashboard = () => {
       setAllEnrollments(response.data);
     } catch (error) {
       console.error('Error loading enrollments:', error);
+    }
+  };
+
+  const loadPendingExpenses = async () => {
+    try {
+      const response = await api.get('/recurring-expenses/pending/list', {
+        params: { institution: institution._id, season: season._id, days: 30 }
+      });
+      setPendingExpenses(response.data);
+    } catch (error) {
+      console.error('Error loading pending expenses:', error);
     }
   };
 
@@ -978,6 +991,61 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
             <Chip size="small" label={`${plannedInvestments.count} plan`} sx={{ mt: 0.5, bgcolor: 'rgba(255,255,255,0.3)' }} />
           </Paper>
         </Grid>
+
+        {/* Bekleyen Giderler Widget */}
+        {canSeeExpenses && (
+          <Grid item xs={6} sm={6} md={2}>
+            <Paper
+              sx={{
+                p: 1.5,
+                cursor: 'pointer',
+                height: '100%',
+                minHeight: 140,
+                bgcolor: pendingExpenses.totals?.overdueCount > 0 ? 'error.light' :
+                         pendingExpenses.totals?.thisWeekCount > 0 ? 'warning.light' : 'grey.100',
+                '&:hover': { opacity: 0.9 }
+              }}
+              onClick={() => navigate('/recurring-expenses')}
+            >
+              <Box sx={{ textAlign: 'center', mb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                  {pendingExpenses.totals?.overdueCount > 0 ? (
+                    <Warning sx={{ fontSize: 24, color: 'error.dark' }} />
+                  ) : (
+                    <Schedule sx={{ fontSize: 24, color: 'text.secondary' }} />
+                  )}
+                  <Typography variant="h6">
+                    {((pendingExpenses.totals?.overdueAmount || 0) + (pendingExpenses.totals?.thisWeekAmount || 0)).toLocaleString('tr-TR')}₺
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary">Bekleyen Giderler</Typography>
+              </Box>
+              <Divider sx={{ mb: 1 }} />
+              <Box sx={{ maxHeight: 70, overflow: 'auto' }}>
+                {pendingExpenses.totals?.overdueCount > 0 && (
+                  <Typography variant="caption" sx={{ display: 'block', py: 0.25, color: 'error.dark', fontWeight: 'bold' }}>
+                    • Gecikmiş: {pendingExpenses.totals.overdueCount} ({(pendingExpenses.totals.overdueAmount || 0).toLocaleString('tr-TR')}₺)
+                  </Typography>
+                )}
+                {pendingExpenses.totals?.thisWeekCount > 0 && (
+                  <Typography variant="caption" sx={{ display: 'block', py: 0.25, color: 'warning.dark' }}>
+                    • Bu Hafta: {pendingExpenses.totals.thisWeekCount} ({(pendingExpenses.totals.thisWeekAmount || 0).toLocaleString('tr-TR')}₺)
+                  </Typography>
+                )}
+                {pendingExpenses.totals?.upcomingCount > 0 && (
+                  <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                    • Yaklaşan: {pendingExpenses.totals.upcomingCount}
+                  </Typography>
+                )}
+                {!pendingExpenses.totals?.overdueCount && !pendingExpenses.totals?.thisWeekCount && !pendingExpenses.totals?.upcomingCount && (
+                  <Typography variant="caption" sx={{ display: 'block', py: 0.25, color: 'success.main' }}>
+                    Bekleyen gider yok
+                  </Typography>
+                )}
+              </Box>
+            </Paper>
+          </Grid>
+        )}
 
         {/* Second Row - Today's Schedule & Urgent */}
         <Grid item xs={12} md={5}>
