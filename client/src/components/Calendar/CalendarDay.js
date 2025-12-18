@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Typography, Paper } from '@mui/material';
+import { Payment as PaymentIcon } from '@mui/icons-material';
 
 const CalendarDay = ({
   date,
@@ -7,6 +8,7 @@ const CalendarDay = ({
   isToday,
   lessons,
   trialLessons,
+  expenses,
   onLessonClick,
   onTrialLessonClick,
   onDayClick,
@@ -78,6 +80,22 @@ const CalendarDay = ({
     }
   };
 
+  const getExpenseColor = (status) => {
+    switch (status) {
+      case 'overdue':
+        return '#f44336'; // Red
+      case 'pending':
+        return '#ff9800'; // Orange
+      default:
+        return '#9e9e9e'; // Grey
+    }
+  };
+
+  // Calculate how many slots we have for events
+  const maxVisibleEvents = expenses && expenses.length > 0 ? 3 : 4;
+  const visibleEvents = allEvents.slice(0, maxVisibleEvents);
+  const remainingEvents = allEvents.length - maxVisibleEvents;
+
   return (
     <Paper
       elevation={isToday ? 3 : 1}
@@ -99,18 +117,66 @@ const CalendarDay = ({
       onClick={handleDayClick}
       onDoubleClick={handleDayDoubleClick}
     >
-      <Typography
-        variant="body1"
-        sx={{
-          fontWeight: isToday ? 'bold' : 'normal',
-          color: isCurrentMonth ? 'text.primary' : 'text.disabled',
-          mb: 1,
-        }}
-      >
-        {date.getDate()}
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+        <Typography
+          variant="body1"
+          sx={{
+            fontWeight: isToday ? 'bold' : 'normal',
+            color: isCurrentMonth ? 'text.primary' : 'text.disabled',
+          }}
+        >
+          {date.getDate()}
+        </Typography>
+        {/* Expense indicator */}
+        {expenses && expenses.length > 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.3,
+              px: 0.5,
+              py: 0.2,
+              borderRadius: 1,
+              bgcolor: expenses.some(e => e.status === 'overdue') ? 'error.light' : 'warning.light',
+              color: 'white',
+              fontSize: '0.6rem',
+            }}
+            title={expenses.map(e => `${e.description}: ${e.amount?.toLocaleString('tr-TR')}₺`).join('\n')}
+          >
+            <PaymentIcon sx={{ fontSize: 10 }} />
+            {expenses.length > 1 ? expenses.length : (expenses[0].amount?.toLocaleString('tr-TR') + '₺')}
+          </Box>
+        )}
+      </Box>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, overflow: 'hidden' }}>
-        {allEvents.slice(0, 4).map((event, index) => (
+        {/* Expense items first if overdue */}
+        {expenses && expenses.filter(e => e.status === 'overdue').map((expense, index) => (
+          <Box
+            key={`expense-${expense._id || index}`}
+            sx={{
+              fontSize: '0.7rem',
+              p: 0.5,
+              borderRadius: 1,
+              backgroundColor: getExpenseColor(expense.status),
+              color: 'white',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              fontWeight: 500,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+            }}
+            title={`GİDER: ${expense.description} - ${expense.amount?.toLocaleString('tr-TR')}₺`}
+          >
+            <PaymentIcon sx={{ fontSize: 12 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {expense.category}: {expense.amount?.toLocaleString('tr-TR')}₺
+            </span>
+          </Box>
+        ))}
+
+        {visibleEvents.map((event, index) => (
           event.type === 'trial' ? (
             // Trial Lesson
             <Box
@@ -185,9 +251,9 @@ const CalendarDay = ({
             </Box>
           )
         ))}
-        {allEvents.length > 4 && (
+        {remainingEvents > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
-            +{allEvents.length - 4} daha
+            +{remainingEvents} daha
           </Typography>
         )}
       </Box>

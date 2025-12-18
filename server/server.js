@@ -87,6 +87,7 @@ app.use('/api/attendance', require('./routes/attendance'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/payment-plans', require('./routes/paymentPlans'));
 app.use('/api/expenses', require('./routes/expenses'));
+app.use('/api/recurring-expenses', require('./routes/recurringExpenses'));
 app.use('/api/cash-registers', require('./routes/cashRegisters'));
 app.use('/api/trial-lessons', require('./routes/trialLessons'));
 app.use('/api/message-templates', require('./routes/messageTemplates'));

@@ -50,6 +50,8 @@ const Calendar = () => {
   const [lessonsArray, setLessonsArray] = useState([]);
   const [trialLessons, setTrialLessons] = useState({});
   const [trialLessonsArray, setTrialLessonsArray] = useState([]);
+  const [pendingExpenses, setPendingExpenses] = useState({});
+  const [pendingExpensesArray, setPendingExpensesArray] = useState([]);
   const [loading, setLoading] = useState(true);
   const [autoScheduleOpen, setAutoScheduleOpen] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
@@ -76,7 +78,7 @@ const Calendar = () => {
   const loadAllData = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadLessons(), loadTrialLessons()]);
+      await Promise.all([loadLessons(), loadTrialLessons(), loadPendingExpenses()]);
     } finally {
       setLoading(false);
     }
@@ -141,6 +143,43 @@ const Calendar = () => {
       setTrialLessons(grouped);
     } catch (error) {
       console.error('Error loading trial lessons:', error);
+    }
+  };
+
+  const loadPendingExpenses = async () => {
+    try {
+      const response = await api.get('/recurring-expenses/pending/list', {
+        params: {
+          institution: institution._id,
+          season: season._id,
+          days: 60
+        },
+      });
+
+      // Combine all pending expenses
+      const allExpenses = [
+        ...(response.data.overdue || []),
+        ...(response.data.thisWeek || []),
+        ...(response.data.upcoming || [])
+      ];
+
+      // Store as array
+      setPendingExpensesArray(allExpenses);
+
+      // Group by due date for monthly view
+      const grouped = {};
+      allExpenses.forEach((expense) => {
+        if (expense.dueDate) {
+          const date = new Date(expense.dueDate).toDateString();
+          if (!grouped[date]) {
+            grouped[date] = [];
+          }
+          grouped[date].push(expense);
+        }
+      });
+      setPendingExpenses(grouped);
+    } catch (error) {
+      console.error('Error loading pending expenses:', error);
     }
   };
 
@@ -495,6 +534,7 @@ const Calendar = () => {
                   isToday={isToday(day.date)}
                   lessons={lessons[day.date.toDateString()]}
                   trialLessons={trialLessons[day.date.toDateString()]}
+                  expenses={pendingExpenses[day.date.toDateString()]}
                   onLessonClick={handleLessonClick}
                   onTrialLessonClick={handleTrialLessonClick}
                   onDayClick={handleDayClick}

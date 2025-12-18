@@ -33,6 +33,12 @@ const expenseSchema = new mongoose.Schema({
       'Ofis Malzemeleri',
       'Bakım Onarım',
       'Vergi',
+      'Muhasebe',
+      'Hukuk',
+      'Danışmanlık',
+      'Sahne Malzemeleri',
+      'Etkinlik Gideri',
+      'Eğitim Materyali',
       'Kasa Giriş (Manuel)',
       'Kasa Çıkış (Manuel)',
       'Diğer'
@@ -43,22 +49,52 @@ const expenseSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  // Tahmini tutar (düzenli giderler için)
+  estimatedAmount: {
+    type: Number,
+    default: null
+  },
   // Gider açıklaması
   description: {
     type: String,
     required: true
   },
-  // Gider tarihi
+  // Gider tarihi (ödeme yapıldığında)
   expenseDate: {
     type: Date,
     required: true,
     default: Date.now
   },
+  // Vade tarihi (düzenli giderler için)
+  dueDate: {
+    type: Date,
+    default: null
+  },
+  // Gider durumu
+  status: {
+    type: String,
+    enum: ['pending', 'paid', 'overdue'],
+    default: 'paid'
+  },
+  // Düzenli gider referansı
+  recurringExpense: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'RecurringExpense',
+    default: null
+  },
+  // Düzenli giderden mi oluşturuldu
+  isFromRecurring: {
+    type: Boolean,
+    default: false
+  },
   // Hangi kasadan ödendi
   cashRegister: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CashRegister',
-    required: true
+    required: function() {
+      // Bekleyen giderler için kasa zorunlu değil
+      return this.status === 'paid';
+    }
   },
   // Fatura/belge
   invoice: {

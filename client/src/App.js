@@ -34,6 +34,7 @@ import Payments from './pages/Payments';
 import PaymentPlan from './pages/PaymentPlan';
 import PaymentPlanDetail from './pages/PaymentPlanDetail';
 import Expenses from './pages/Expenses';
+import RecurringExpenses from './pages/RecurringExpenses';
 import CashRegisters from './pages/CashRegisters';
 import TrialLessons from './pages/TrialLessons';
 import PhoneBook from './pages/PhoneBook';
@@ -197,6 +198,7 @@ function App() {
                       <Route path="/payment-plan/:studentId" element={<ProtectedRoute permission="canManagePayments"><PaymentPlan /></ProtectedRoute>} />
                       <Route path="/payment-plan-detail/:id" element={<ProtectedRoute permission="canManagePayments"><PaymentPlanDetail /></ProtectedRoute>} />
                       <Route path="/expenses" element={<ProtectedRoute permission="canManageExpenses"><Expenses /></ProtectedRoute>} />
+                      <Route path="/recurring-expenses" element={<ProtectedRoute permission="canManageExpenses"><RecurringExpenses /></ProtectedRoute>} />
                       <Route path="/cash-registers" element={<ProtectedRoute permission="canManageExpenses"><CashRegisters /></ProtectedRoute>} />
                       <Route path="/trial-lessons" element={<ProtectedRoute permission="canManageCourses"><TrialLessons /></ProtectedRoute>} />
                       <Route path="/phone-book" element={<PhoneBook />} />
