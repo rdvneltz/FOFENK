@@ -60,8 +60,9 @@ router.post('/', async (req, res) => {
 
     // Log activity
     await ActivityLog.create({
+      user: 'system',
       action: 'create',
-      entityType: 'recurringExpense',
+      entity: 'RecurringExpense',
       entityId: savedExpense._id,
       description: `Düzenli gider oluşturuldu: ${savedExpense.title}`,
       institution: savedExpense.institution,
@@ -253,13 +254,14 @@ router.post('/pay/:expenseId', async (req, res) => {
 
     // Log activity
     await ActivityLog.create({
-      action: 'payment',
-      entityType: 'expense',
+      user: 'system',
+      action: 'expense',
+      entity: 'Expense',
       entityId: expense._id,
       description: `Gider ödendi: ${expense.description} - ${amount} TL`,
       institution: expense.institution,
       season: expense.season,
-      details: {
+      metadata: {
         amount,
         cashRegister: cashRegister.name
       }
