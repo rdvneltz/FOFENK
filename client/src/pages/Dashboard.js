@@ -177,6 +177,7 @@ const Dashboard = () => {
   const [messageTemplates, setMessageTemplates] = useState([]);
   const [discountStudentsDialog, setDiscountStudentsDialog] = useState({ open: false, title: '', students: [], discountType: '' });
   const [pendingExpenses, setPendingExpenses] = useState({ overdue: [], thisWeek: [], upcoming: [], totals: {} });
+  const [pendingExpensesDialog, setPendingExpensesDialog] = useState({ open: false });
 
   useEffect(() => {
     if (institution && season) {
@@ -1008,7 +1009,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                          pendingExpenses.totals?.thisWeekCount > 0 ? 'warning.light' : 'grey.100',
                 '&:hover': { opacity: 0.9 }
               }}
-              onClick={() => navigate('/recurring-expenses')}
+              onClick={() => setPendingExpensesDialog({ open: true })}
             >
               <Box sx={{ textAlign: 'center', mb: 1 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
@@ -1765,6 +1766,107 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           )}
         </DialogContent>
         <DialogActions><Button onClick={() => setDiscountStudentsDialog({ open: false, title: '', students: [], discountType: '' })}>Kapat</Button></DialogActions>
+      </Dialog>
+
+      {/* Pending Expenses Dialog */}
+      <Dialog open={pendingExpensesDialog.open} onClose={() => setPendingExpensesDialog({ open: false })} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">Bekleyen Giderler</Typography>
+            <Box>
+              <Button size="small" onClick={() => { setPendingExpensesDialog({ open: false }); navigate('/expenses'); }}>
+                Giderler Sayfasına Git
+              </Button>
+              <IconButton onClick={() => setPendingExpensesDialog({ open: false })}><Close /></IconButton>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {/* Summary */}
+          <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 2 }}>
+            <Grid container spacing={2}>
+              <Grid item xs={4}>
+                <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'error.light', borderRadius: 1 }}>
+                  <Typography variant="caption" color="error.dark">Gecikmiş</Typography>
+                  <Typography variant="h6" color="error.dark" fontWeight="bold">{pendingExpenses.totals?.overdueCount || 0}</Typography>
+                  <Typography variant="body2" color="error.dark">{(pendingExpenses.totals?.overdueAmount || 0).toLocaleString('tr-TR')} TL</Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={4}>
+                <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'warning.light', borderRadius: 1 }}>
+                  <Typography variant="caption" color="warning.dark">Bu Hafta</Typography>
+                  <Typography variant="h6" color="warning.dark" fontWeight="bold">{pendingExpenses.totals?.thisWeekCount || 0}</Typography>
+                  <Typography variant="body2" color="warning.dark">{(pendingExpenses.totals?.thisWeekAmount || 0).toLocaleString('tr-TR')} TL</Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={4}>
+                <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'info.light', borderRadius: 1 }}>
+                  <Typography variant="caption" color="info.dark">Yaklaşan</Typography>
+                  <Typography variant="h6" color="info.dark" fontWeight="bold">{pendingExpenses.totals?.upcomingCount || 0}</Typography>
+                  <Typography variant="body2" color="info.dark">{(pendingExpenses.totals?.upcomingAmount || 0).toLocaleString('tr-TR')} TL</Typography>
+                </Box>
+              </Grid>
+            </Grid>
+            <Box sx={{ textAlign: 'center', mt: 2, p: 1, bgcolor: 'primary.light', borderRadius: 1 }}>
+              <Typography variant="subtitle2" color="primary.dark">Toplam Bekleyen</Typography>
+              <Typography variant="h5" color="primary.dark" fontWeight="bold">
+                {((pendingExpenses.totals?.overdueAmount || 0) + (pendingExpenses.totals?.thisWeekAmount || 0) + (pendingExpenses.totals?.upcomingAmount || 0)).toLocaleString('tr-TR')} TL
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Expense List */}
+          {(pendingExpenses.overdue?.length > 0 || pendingExpenses.thisWeek?.length > 0 || pendingExpenses.upcoming?.length > 0) ? (
+            <TableContainer sx={{ maxHeight: 400 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Açıklama</TableCell>
+                    <TableCell>Kategori</TableCell>
+                    <TableCell>Vade Tarihi</TableCell>
+                    <TableCell>Durum</TableCell>
+                    <TableCell align="right">Tutar</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {/* Overdue expenses first */}
+                  {pendingExpenses.overdue?.map((expense) => (
+                    <TableRow key={expense._id} sx={{ bgcolor: 'error.lighter' }}>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell><Chip size="small" label={expense.category} /></TableCell>
+                      <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell><Chip size="small" color="error" label="Gecikmiş" /></TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* This week expenses */}
+                  {pendingExpenses.thisWeek?.map((expense) => (
+                    <TableRow key={expense._id} sx={{ bgcolor: 'warning.lighter' }}>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell><Chip size="small" label={expense.category} /></TableCell>
+                      <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell><Chip size="small" color="warning" label="Bu Hafta" /></TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Upcoming expenses */}
+                  {pendingExpenses.upcoming?.map((expense) => (
+                    <TableRow key={expense._id}>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell><Chip size="small" label={expense.category} /></TableCell>
+                      <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell><Chip size="small" color="info" label="Yaklaşan" /></TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : (
+            <Typography color="text.secondary" align="center" sx={{ py: 3 }}>Bekleyen gider bulunmuyor</Typography>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setPendingExpensesDialog({ open: false })}>Kapat</Button></DialogActions>
       </Dialog>
     </Box>
   );

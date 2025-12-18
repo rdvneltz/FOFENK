@@ -182,7 +182,7 @@ const Calendar = () => {
         params: {
           institution: institution._id,
           season: season._id,
-          days: 365  // Show expenses up to 1 year ahead
+          days: 730  // Show expenses up to 2 years ahead
         },
       });
 
