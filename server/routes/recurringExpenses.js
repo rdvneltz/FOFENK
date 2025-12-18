@@ -58,6 +58,15 @@ router.post('/', async (req, res) => {
       ? new Date(savedExpense.endDate)
       : new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
 
+    // DEBUG: Log date values
+    console.log('=== RECURRING EXPENSE GENERATION DEBUG ===');
+    console.log('savedExpense.startDate:', savedExpense.startDate);
+    console.log('savedExpense.endDate:', savedExpense.endDate);
+    console.log('start Date object:', start);
+    console.log('end Date object:', end);
+    console.log('start.getTime():', start.getTime());
+    console.log('end.getTime():', end.getTime());
+
     let currentDate = new Date(start);
     let generatedCount = 0;
 
@@ -67,6 +76,9 @@ router.post('/', async (req, res) => {
         : savedExpense.dueDayRangeStart;
 
       const dueDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay);
+
+      // DEBUG: Log each iteration
+      console.log(`Iteration: currentDate=${currentDate.toISOString()}, dueDate=${dueDate.toISOString()}, check: ${dueDate >= start && dueDate <= end}`);
 
       // Only create if within active period (use start/end Date objects, not raw values)
       if (dueDate >= start && dueDate <= end) {
@@ -96,6 +108,8 @@ router.post('/', async (req, res) => {
         currentDate.setFullYear(currentDate.getFullYear() + 1);
       }
     }
+
+    console.log(`=== GENERATION COMPLETE: ${generatedCount} expenses created ===`);
 
     // Populate and return
     const populated = await RecurringExpense.findById(savedExpense._id)
