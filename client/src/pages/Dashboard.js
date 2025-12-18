@@ -948,7 +948,10 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                   • Net: <span style={{ color: (stats.totalIncome - stats.totalExpenses) >= 0 ? '#4caf50' : '#f44336' }}>{((stats.totalIncome || 0) - (stats.totalExpenses || 0)).toLocaleString('tr-TR')}₺</span>
                 </Typography>
                 <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
-                  • Bekleyen: <span style={{ color: '#ff9800' }}>{(upcomingPayments.season?.total || 0).toLocaleString('tr-TR')}₺</span>
+                  • Bek. Tahsilat: <span style={{ color: '#ff9800' }}>{(upcomingPayments.season?.total || 0).toLocaleString('tr-TR')}₺</span>
+                </Typography>
+                <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
+                  • Bek. Gider: <span style={{ color: '#f44336' }}>{((pendingExpenses.totals?.overdueAmount || 0) + (pendingExpenses.totals?.thisWeekAmount || 0) + (pendingExpenses.totals?.upcomingAmount || 0)).toLocaleString('tr-TR')}₺</span>
                 </Typography>
               </Box>
             </Paper>
@@ -1090,6 +1093,24 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                   />
                 </ListItem>
               )}
+              {pendingExpenses.overdue?.length > 0 && (
+                <ListItem button onClick={() => navigate('/recurring-expenses')} sx={{ bgcolor: 'error.light', borderRadius: 1, mb: 0.5 }}>
+                  <ListItemIcon><AttachMoney color="error" /></ListItemIcon>
+                  <ListItemText
+                    primary={<Typography color="error.dark" fontWeight="bold">{pendingExpenses.overdue.length} Gecikmis Gider</Typography>}
+                    secondary={`${pendingExpenses.totals?.overdueAmount?.toLocaleString('tr-TR') || 0} TL`}
+                  />
+                </ListItem>
+              )}
+              {pendingExpenses.thisWeek?.length > 0 && (
+                <ListItem button onClick={() => navigate('/recurring-expenses')} sx={{ bgcolor: 'warning.light', borderRadius: 1, mb: 0.5 }}>
+                  <ListItemIcon><AttachMoney color="warning" /></ListItemIcon>
+                  <ListItemText
+                    primary={<Typography color="warning.dark" fontWeight="bold">{pendingExpenses.thisWeek.length} Bu Hafta Vadeli Gider</Typography>}
+                    secondary={`${pendingExpenses.totals?.thisWeekAmount?.toLocaleString('tr-TR') || 0} TL`}
+                  />
+                </ListItem>
+              )}
               {upcomingPayments.today.items.length > 0 && (
                 <ListItem button onClick={() => handlePaymentsBoxClick('today', 'Bugunku Odemeler', upcomingPayments.today.items)} sx={{ bgcolor: 'warning.light', borderRadius: 1, mb: 0.5 }}>
                   <ListItemText
@@ -1116,7 +1137,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                   />
                 </ListItem>
               )}
-              {upcomingPayments.overdue.items.length === 0 && upcomingPayments.today.items.length === 0 && trialLessons.length === 0 && instructorDebts.total === 0 && (
+              {upcomingPayments.overdue.items.length === 0 && upcomingPayments.today.items.length === 0 && trialLessons.length === 0 && instructorDebts.total === 0 && pendingExpenses.overdue?.length === 0 && pendingExpenses.thisWeek?.length === 0 && (
                 <Typography color="text.secondary" align="center" sx={{ py: 2 }}>Acil durum yok</Typography>
               )}
             </List>

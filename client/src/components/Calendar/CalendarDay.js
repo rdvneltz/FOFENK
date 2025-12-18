@@ -11,6 +11,7 @@ const CalendarDay = ({
   expenses,
   onLessonClick,
   onTrialLessonClick,
+  onExpenseClick,
   onDayClick,
   onDayDoubleClick
 }) => {
@@ -140,8 +141,16 @@ const CalendarDay = ({
               bgcolor: expenses.some(e => e.status === 'overdue') ? 'error.light' : 'warning.light',
               color: 'white',
               fontSize: '0.6rem',
+              cursor: 'pointer',
+              '&:hover': { opacity: 0.8 },
             }}
-            title={expenses.map(e => `${e.description}: ${e.amount?.toLocaleString('tr-TR')}₺`).join('\n')}
+            title={expenses.map(e => `${e.description}: ${e.amount?.toLocaleString('tr-TR')}₺`).join('\n') + '\n(Tıkla: Öde)'}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onExpenseClick && expenses.length === 1) {
+                onExpenseClick(expenses[0]);
+              }
+            }}
           >
             <PaymentIcon sx={{ fontSize: 10 }} />
             {expenses.length > 1 ? expenses.length : (expenses[0].amount?.toLocaleString('tr-TR') + '₺')}
@@ -166,8 +175,18 @@ const CalendarDay = ({
               display: 'flex',
               alignItems: 'center',
               gap: 0.5,
+              cursor: 'pointer',
+              '&:hover': {
+                opacity: 0.8,
+                transform: 'scale(1.02)',
+              },
+              transition: 'all 0.2s',
             }}
-            title={`GİDER: ${expense.description} - ${expense.amount?.toLocaleString('tr-TR')}₺`}
+            title={`GİDER: ${expense.description} - ${expense.amount?.toLocaleString('tr-TR')}₺ (Tıkla: Öde)`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (onExpenseClick) onExpenseClick(expense);
+            }}
           >
             <PaymentIcon sx={{ fontSize: 12 }} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
