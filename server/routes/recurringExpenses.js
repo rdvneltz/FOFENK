@@ -52,6 +52,51 @@ router.post('/', async (req, res) => {
     const recurringExpense = new RecurringExpense(req.body);
     const savedExpense = await recurringExpense.save();
 
+    // Auto-generate expenses from startDate to endDate (or 1 year ahead if no endDate)
+    const start = new Date(savedExpense.startDate);
+    const end = savedExpense.endDate
+      ? new Date(savedExpense.endDate)
+      : new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
+
+    let currentDate = new Date(start);
+    let generatedCount = 0;
+
+    while (currentDate <= end) {
+      const dueDay = savedExpense.dueDayType === 'fixed'
+        ? savedExpense.dueDay
+        : savedExpense.dueDayRangeStart;
+
+      const dueDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay);
+
+      // Only create if within active period
+      if (dueDate >= savedExpense.startDate && (!savedExpense.endDate || dueDate <= savedExpense.endDate)) {
+        await Expense.create({
+          category: savedExpense.category,
+          amount: savedExpense.estimatedAmount,
+          estimatedAmount: savedExpense.estimatedAmount,
+          description: `${savedExpense.title} - ${dueDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}`,
+          expenseDate: dueDate,
+          dueDate: dueDate,
+          status: dueDate < new Date() ? 'overdue' : 'pending',
+          recurringExpense: savedExpense._id,
+          isFromRecurring: true,
+          institution: savedExpense.institution,
+          season: savedExpense.season,
+          notes: savedExpense.notes
+        });
+        generatedCount++;
+      }
+
+      // Move to next period
+      if (savedExpense.frequency === 'monthly') {
+        currentDate.setMonth(currentDate.getMonth() + 1);
+      } else if (savedExpense.frequency === 'quarterly') {
+        currentDate.setMonth(currentDate.getMonth() + 3);
+      } else if (savedExpense.frequency === 'yearly') {
+        currentDate.setFullYear(currentDate.getFullYear() + 1);
+      }
+    }
+
     // Populate and return
     const populated = await RecurringExpense.findById(savedExpense._id)
       .populate('institution', 'name')
@@ -64,12 +109,12 @@ router.post('/', async (req, res) => {
       action: 'create',
       entity: 'RecurringExpense',
       entityId: savedExpense._id,
-      description: `Düzenli gider oluşturuldu: ${savedExpense.title}`,
+      description: `Düzenli gider oluşturuldu: ${savedExpense.title} (${generatedCount} gider oluşturuldu)`,
       institution: savedExpense.institution,
       season: savedExpense.season
     });
 
-    res.status(201).json(populated);
+    res.status(201).json({ ...populated.toObject(), generatedCount });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }
@@ -347,7 +392,7 @@ router.get('/pending/list', async (req, res) => {
 // Generate all pending expenses for all active recurring expenses
 router.post('/generate-all', async (req, res) => {
   try {
-    const { institution, season, endDate } = req.body;
+    const { institution, season } = req.body;
 
     const recurringExpenses = await RecurringExpense.find({
       institution,
@@ -356,11 +401,14 @@ router.post('/generate-all', async (req, res) => {
     });
 
     let totalGenerated = 0;
-    const end = new Date(endDate || new Date());
-    end.setMonth(end.getMonth() + 1); // Generate for next month too
 
     for (const recurring of recurringExpenses) {
       const start = recurring.startDate;
+      // Use each recurring expense's own endDate (or 1 year from start if no endDate)
+      const end = recurring.endDate
+        ? new Date(recurring.endDate)
+        : new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
+
       let currentDate = new Date(start);
 
       while (currentDate <= end) {

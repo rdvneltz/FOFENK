@@ -238,8 +238,9 @@ const RecurringExpenses = () => {
         await api.put(`/recurring-expenses/${selectedRecurring._id}`, data);
         setSuccess('Düzenli gider güncellendi');
       } else {
-        await api.post('/recurring-expenses', data);
-        setSuccess('Düzenli gider oluşturuldu');
+        const response = await api.post('/recurring-expenses', data);
+        const generatedCount = response.data.generatedCount || 0;
+        setSuccess(`Düzenli gider oluşturuldu ve ${generatedCount} gider kaydı oluşturuldu`);
       }
 
       handleCloseDialog();
@@ -289,9 +290,13 @@ const RecurringExpenses = () => {
 
   const handleOpenGenerateDialog = (recurring) => {
     setSelectedRecurring(recurring);
+    // Default endDate to recurring expense's endDate, or 1 year from start if no endDate
+    const defaultEndDate = recurring.endDate
+      ? recurring.endDate.split('T')[0]
+      : new Date(new Date(recurring.startDate).getFullYear() + 1, new Date(recurring.startDate).getMonth(), new Date(recurring.startDate).getDate()).toISOString().split('T')[0];
     setGenerateFormData({
       startDate: recurring.startDate ? recurring.startDate.split('T')[0] : new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0],
+      endDate: defaultEndDate,
     });
     setOpenGenerateDialog(true);
   };
