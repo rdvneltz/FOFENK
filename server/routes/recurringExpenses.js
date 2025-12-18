@@ -68,8 +68,8 @@ router.post('/', async (req, res) => {
 
       const dueDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay);
 
-      // Only create if within active period
-      if (dueDate >= savedExpense.startDate && (!savedExpense.endDate || dueDate <= savedExpense.endDate)) {
+      // Only create if within active period (use start/end Date objects, not raw values)
+      if (dueDate >= start && dueDate <= end) {
         await Expense.create({
           category: savedExpense.category,
           amount: savedExpense.estimatedAmount,
@@ -193,6 +193,10 @@ router.post('/:id/generate', async (req, res) => {
     const end = new Date(endDate);
     const generatedExpenses = [];
 
+    // Convert recurring expense dates to Date objects for proper comparison
+    const recurringStart = new Date(recurringExpense.startDate);
+    const recurringEnd = recurringExpense.endDate ? new Date(recurringExpense.endDate) : null;
+
     // Calculate due dates based on frequency
     let currentDate = new Date(start);
 
@@ -215,8 +219,7 @@ router.post('/:id/generate', async (req, res) => {
         const dueDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay);
 
         // Only create if within the recurring expense's active period
-        if (dueDate >= recurringExpense.startDate &&
-            (!recurringExpense.endDate || dueDate <= recurringExpense.endDate)) {
+        if (dueDate >= recurringStart && (!recurringEnd || dueDate <= recurringEnd)) {
 
           const newExpense = await Expense.create({
             category: recurringExpense.category,
@@ -411,8 +414,8 @@ router.post('/generate-all', async (req, res) => {
     let totalGenerated = 0;
 
     for (const recurring of recurringExpenses) {
-      const start = recurring.startDate;
-      // Use each recurring expense's own endDate (or 1 year from start if no endDate)
+      // Convert dates to Date objects for proper comparison
+      const start = new Date(recurring.startDate);
       const end = recurring.endDate
         ? new Date(recurring.endDate)
         : new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
@@ -436,8 +439,8 @@ router.post('/generate-all', async (req, res) => {
 
           const dueDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), dueDay);
 
-          if (dueDate >= recurring.startDate &&
-              (!recurring.endDate || dueDate <= recurring.endDate)) {
+          // Use start/end Date objects for comparison
+          if (dueDate >= start && dueDate <= end) {
 
             await Expense.create({
               category: recurring.category,
