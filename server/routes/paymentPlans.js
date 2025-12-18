@@ -133,9 +133,20 @@ router.post('/', async (req, res) => {
         discountUpdate['discount.description'] = `₺${req.body.discountValue} İndirim`;
       }
 
+      // Also update enrollmentDate if provided
+      if (req.body.enrollmentDate) {
+        discountUpdate.enrollmentDate = new Date(req.body.enrollmentDate);
+      }
+
       await StudentCourseEnrollment.findByIdAndUpdate(
         req.body.enrollment,
         { $set: discountUpdate }
+      );
+    } else if (req.body.enrollment && req.body.enrollmentDate) {
+      // Even without discount, update enrollmentDate if provided
+      await StudentCourseEnrollment.findByIdAndUpdate(
+        req.body.enrollment,
+        { $set: { enrollmentDate: new Date(req.body.enrollmentDate) } }
       );
     }
 
@@ -1041,6 +1052,69 @@ router.post('/:id/refund-installment', async (req, res) => {
   } catch (error) {
     console.error('Error refunding installment:', error);
     res.status(400).json({ message: error.message });
+  }
+});
+
+// Sync enrollment dates from payment plans to enrollments
+// This updates enrollment dates to match the first installment due date of the payment plan
+router.post('/sync-enrollment-dates', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.body;
+
+    if (!institutionId || !seasonId) {
+      return res.status(400).json({ message: 'Institution and season are required' });
+    }
+
+    // Get all payment plans for this institution/season
+    const paymentPlans = await PaymentPlan.find({
+      institution: institutionId,
+      season: seasonId
+    }).populate('enrollment');
+
+    let updatedCount = 0;
+    const updates = [];
+
+    for (const plan of paymentPlans) {
+      if (!plan.enrollment) continue;
+
+      // Get the first installment's due date as the enrollment date
+      const firstInstallment = plan.installments && plan.installments.length > 0
+        ? plan.installments.sort((a, b) => a.installmentNumber - b.installmentNumber)[0]
+        : null;
+
+      if (firstInstallment && firstInstallment.dueDate) {
+        const newEnrollmentDate = new Date(firstInstallment.dueDate);
+        const currentEnrollmentDate = new Date(plan.enrollment.enrollmentDate);
+
+        // Only update if dates are different (more than 1 day apart)
+        const diffDays = Math.abs((newEnrollmentDate - currentEnrollmentDate) / (1000 * 60 * 60 * 24));
+
+        if (diffDays > 1) {
+          await StudentCourseEnrollment.findByIdAndUpdate(
+            plan.enrollment._id,
+            { $set: { enrollmentDate: newEnrollmentDate } }
+          );
+          updatedCount++;
+          updates.push({
+            enrollmentId: plan.enrollment._id,
+            studentId: plan.student,
+            courseId: plan.course,
+            oldDate: currentEnrollmentDate,
+            newDate: newEnrollmentDate
+          });
+        }
+      }
+    }
+
+    res.json({
+      message: `${updatedCount} kayıt tarihi güncellendi`,
+      totalPlans: paymentPlans.length,
+      updatedCount,
+      updates
+    });
+  } catch (error) {
+    console.error('Error syncing enrollment dates:', error);
+    res.status(500).json({ message: error.message });
   }
 });
 
