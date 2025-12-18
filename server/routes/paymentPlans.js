@@ -1059,20 +1059,23 @@ router.post('/:id/refund-installment', async (req, res) => {
 // This updates enrollment dates to match the first installment due date of the payment plan
 router.post('/sync-enrollment-dates', async (req, res) => {
   try {
-    const { institutionId, seasonId } = req.body;
+    const { institutionId, seasonId, dryRun } = req.body;
 
     if (!institutionId || !seasonId) {
       return res.status(400).json({ message: 'Institution and season are required' });
     }
 
-    // Get all payment plans for this institution/season
+    // Get all payment plans for this institution/season with student and course details
     const paymentPlans = await PaymentPlan.find({
       institution: institutionId,
       season: seasonId
-    }).populate('enrollment');
+    })
+      .populate('enrollment')
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name');
 
-    let updatedCount = 0;
-    const updates = [];
+    let wouldUpdateCount = 0;
+    const wouldUpdate = [];
 
     for (const plan of paymentPlans) {
       if (!plan.enrollment) continue;
@@ -1090,28 +1093,42 @@ router.post('/sync-enrollment-dates', async (req, res) => {
         const diffDays = Math.abs((newEnrollmentDate - currentEnrollmentDate) / (1000 * 60 * 60 * 24));
 
         if (diffDays > 1) {
-          await StudentCourseEnrollment.findByIdAndUpdate(
-            plan.enrollment._id,
-            { $set: { enrollmentDate: newEnrollmentDate } }
-          );
-          updatedCount++;
-          updates.push({
-            enrollmentId: plan.enrollment._id,
-            studentId: plan.student,
-            courseId: plan.course,
-            oldDate: currentEnrollmentDate,
-            newDate: newEnrollmentDate
+          // Only actually update if NOT dry run
+          if (!dryRun) {
+            await StudentCourseEnrollment.findByIdAndUpdate(
+              plan.enrollment._id,
+              { $set: { enrollmentDate: newEnrollmentDate } }
+            );
+          }
+          wouldUpdateCount++;
+          wouldUpdate.push({
+            studentName: plan.student ? `${plan.student.firstName} ${plan.student.lastName}` : 'Bilinmiyor',
+            courseName: plan.course ? plan.course.name : 'Bilinmiyor',
+            currentDate: currentEnrollmentDate.toLocaleDateString('tr-TR'),
+            newDate: newEnrollmentDate.toLocaleDateString('tr-TR'),
+            diffDays: Math.round(diffDays)
           });
         }
       }
     }
 
-    res.json({
-      message: `${updatedCount} kayıt tarihi güncellendi`,
-      totalPlans: paymentPlans.length,
-      updatedCount,
-      updates
-    });
+    if (dryRun) {
+      res.json({
+        mode: 'DRY RUN - Hiçbir değişiklik yapılmadı!',
+        message: `${wouldUpdateCount} kayıt güncellenecek (şu an güncellenmedi)`,
+        totalPlans: paymentPlans.length,
+        wouldUpdateCount,
+        wouldUpdate
+      });
+    } else {
+      res.json({
+        mode: 'GERÇEK GÜNCELLEME',
+        message: `${wouldUpdateCount} kayıt tarihi güncellendi`,
+        totalPlans: paymentPlans.length,
+        updatedCount: wouldUpdateCount,
+        updates: wouldUpdate
+      });
+    }
   } catch (error) {
     console.error('Error syncing enrollment dates:', error);
     res.status(500).json({ message: error.message });
