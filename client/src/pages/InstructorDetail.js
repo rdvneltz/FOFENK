@@ -84,6 +84,14 @@ const InstructorDetail = () => {
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear()
   });
+  const [editPaymentDialog, setEditPaymentDialog] = useState({
+    open: false,
+    lesson: null,
+    newPaymentAmount: '',
+    newDuration: '',
+    error: '',
+    saving: false
+  });
 
   useEffect(() => {
     loadInstructor();
@@ -262,6 +270,75 @@ const InstructorDetail = () => {
       loadInstructor();
     } catch (error) {
       alert('Silme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Open edit payment dialog
+  const handleOpenEditPayment = (lesson) => {
+    setEditPaymentDialog({
+      open: true,
+      lesson: lesson,
+      newPaymentAmount: lesson.instructorPaymentAmount?.toString() || '0',
+      newDuration: lesson.actualDuration?.toString() || '',
+      error: '',
+      saving: false
+    });
+  };
+
+  // Save edited payment
+  const handleSaveEditPayment = async () => {
+    const { lesson, newPaymentAmount, newDuration } = editPaymentDialog;
+    const newPayment = parseFloat(newPaymentAmount);
+    const duration = parseFloat(newDuration);
+
+    if (isNaN(newPayment) || newPayment < 0) {
+      setEditPaymentDialog(prev => ({ ...prev, error: 'Lütfen geçerli bir ödeme tutarı girin' }));
+      return;
+    }
+
+    if (newDuration && (isNaN(duration) || duration <= 0)) {
+      setEditPaymentDialog(prev => ({ ...prev, error: 'Lütfen geçerli bir süre girin' }));
+      return;
+    }
+
+    setEditPaymentDialog(prev => ({ ...prev, saving: true, error: '' }));
+
+    try {
+      const oldPayment = lesson.instructorPaymentAmount || 0;
+      const paymentDifference = newPayment - oldPayment;
+
+      // Update the lesson with new payment amount
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        instructorPaymentAmount: newPayment,
+        actualDuration: duration || lesson.actualDuration,
+        updatedBy: user?.username
+      });
+
+      // Adjust instructor balance by the difference
+      if (paymentDifference !== 0) {
+        await api.put(`/instructors/${id}`, {
+          balance: (instructor.balance || 0) + paymentDifference,
+          updatedBy: user?.username
+        });
+      }
+
+      alert(`✅ Ödeme güncellendi!\n\nEski: ₺${oldPayment.toLocaleString('tr-TR')}\nYeni: ₺${newPayment.toLocaleString('tr-TR')}\nFark: ${paymentDifference >= 0 ? '+' : ''}₺${paymentDifference.toLocaleString('tr-TR')}`);
+
+      setEditPaymentDialog({
+        open: false,
+        lesson: null,
+        newPaymentAmount: '',
+        newDuration: '',
+        error: '',
+        saving: false
+      });
+      loadInstructor();
+    } catch (error) {
+      setEditPaymentDialog(prev => ({
+        ...prev,
+        saving: false,
+        error: 'Ödeme güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message)
+      }));
     }
   };
 
@@ -632,21 +709,32 @@ const InstructorDetail = () => {
                                   </Typography>
                                 </TableCell>
                                 <TableCell>
-                                  <Button
-                                    variant="contained"
-                                    color="success"
-                                    size="small"
-                                    startIcon={<PaymentIcon />}
-                                    onClick={() => {
-                                      setPayLessonDialog({
-                                        open: true,
-                                        lesson: lesson,
-                                        cashRegisterId: cashRegisters[0]?._id || ''
-                                      });
-                                    }}
-                                  >
-                                    Öde
-                                  </Button>
+                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                      variant="outlined"
+                                      color="primary"
+                                      size="small"
+                                      startIcon={<Edit />}
+                                      onClick={() => handleOpenEditPayment(lesson)}
+                                    >
+                                      Düzenle
+                                    </Button>
+                                    <Button
+                                      variant="contained"
+                                      color="success"
+                                      size="small"
+                                      startIcon={<PaymentIcon />}
+                                      onClick={() => {
+                                        setPayLessonDialog({
+                                          open: true,
+                                          lesson: lesson,
+                                          cashRegisterId: cashRegisters[0]?._id || ''
+                                        });
+                                      }}
+                                    >
+                                      Öde
+                                    </Button>
+                                  </Box>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -690,6 +778,7 @@ const InstructorDetail = () => {
                               <TableCell>Süre</TableCell>
                               <TableCell>Durum</TableCell>
                               <TableCell>Ödeme</TableCell>
+                              <TableCell>İşlem</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -718,11 +807,16 @@ const InstructorDetail = () => {
                                   </Typography>
                                 </TableCell>
                                 <TableCell>
-                                  <Chip
-                                    label={lesson.status === 'completed' ? 'Tamamlandı' : lesson.status}
-                                    color={lesson.status === 'completed' ? 'success' : 'default'}
-                                    size="small"
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <Chip
+                                      label={lesson.status === 'completed' ? 'Tamamlandı' : lesson.status}
+                                      color={lesson.status === 'completed' ? 'success' : 'default'}
+                                      size="small"
+                                    />
+                                    {lesson.instructorPaymentPaid && (
+                                      <Chip label="Ödendi" color="info" size="small" variant="outlined" />
+                                    )}
+                                  </Box>
                                 </TableCell>
                                 <TableCell>
                                   {lesson.instructorPaymentCalculated ? (
@@ -732,6 +826,23 @@ const InstructorDetail = () => {
                                   ) : (
                                     <Typography variant="body2" color="text.secondary">
                                       Bekliyor
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {lesson.status === 'completed' && lesson.instructorPaymentCalculated && !lesson.instructorPaymentPaid && (
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      startIcon={<Edit />}
+                                      onClick={() => handleOpenEditPayment(lesson)}
+                                    >
+                                      Düzenle
+                                    </Button>
+                                  )}
+                                  {lesson.instructorPaymentPaid && (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Düzenlenemez
                                     </Typography>
                                   )}
                                 </TableCell>
@@ -952,6 +1063,101 @@ const InstructorDetail = () => {
             startIcon={<AccountBalance />}
           >
             Tahakkuk Oluştur
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Payment Dialog */}
+      <Dialog
+        open={editPaymentDialog.open}
+        onClose={() => setEditPaymentDialog({ ...editPaymentDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ders Ödemesini Düzenle</DialogTitle>
+        <DialogContent>
+          {editPaymentDialog.lesson && (
+            <>
+              <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  {editPaymentDialog.lesson.course?.name || 'Ders'}
+                </Typography>
+                <Typography variant="body2">
+                  Tarih: {new Date(editPaymentDialog.lesson.date).toLocaleDateString('tr-TR')}
+                </Typography>
+                <Typography variant="body2">
+                  Saat: {editPaymentDialog.lesson.startTime} - {editPaymentDialog.lesson.endTime}
+                </Typography>
+              </Alert>
+
+              {editPaymentDialog.error && (
+                <Alert severity="error" sx={{ mb: 2 }}>{editPaymentDialog.error}</Alert>
+              )}
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ders Süresi (Saat)"
+                    type="number"
+                    value={editPaymentDialog.newDuration}
+                    onChange={(e) => setEditPaymentDialog({ ...editPaymentDialog, newDuration: e.target.value })}
+                    inputProps={{ step: 0.5, min: 0.5, max: 24 }}
+                    helperText={`Mevcut: ${editPaymentDialog.lesson.actualDuration || '-'} saat`}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ödeme Tutarı (₺)"
+                    type="number"
+                    value={editPaymentDialog.newPaymentAmount}
+                    onChange={(e) => setEditPaymentDialog({ ...editPaymentDialog, newPaymentAmount: e.target.value })}
+                    inputProps={{ step: 0.01, min: 0 }}
+                    helperText={`Mevcut: ₺${editPaymentDialog.lesson.instructorPaymentAmount?.toLocaleString('tr-TR') || 0}`}
+                  />
+                </Grid>
+              </Grid>
+
+              {editPaymentDialog.newPaymentAmount && (
+                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                  <Typography variant="body2">
+                    <strong>Fark:</strong>{' '}
+                    <Typography
+                      component="span"
+                      color={(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) >= 0 ? 'error.main' : 'success.main'}
+                      fontWeight="bold"
+                    >
+                      {(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) >= 0 ? '+' : ''}
+                      ₺{(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)).toLocaleString('tr-TR')}
+                    </Typography>
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) > 0
+                      ? 'Eğitmene ek borç tahakkuk edecek'
+                      : (parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) < 0
+                      ? 'Eğitmen borcundan düşülecek'
+                      : 'Değişiklik yok'}
+                  </Typography>
+                </Box>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setEditPaymentDialog({ ...editPaymentDialog, open: false })}
+            disabled={editPaymentDialog.saving}
+          >
+            İptal
+          </Button>
+          <Button
+            onClick={handleSaveEditPayment}
+            variant="contained"
+            color="primary"
+            disabled={editPaymentDialog.saving}
+          >
+            {editPaymentDialog.saving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
           </Button>
         </DialogActions>
       </Dialog>
