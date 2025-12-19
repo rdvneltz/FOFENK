@@ -7,6 +7,14 @@ const FONT_REGULAR = path.join(__dirname, '../assets/fonts/NotoSans-Regular.ttf'
 const FONT_BOLD = path.join(__dirname, '../assets/fonts/NotoSans-Bold.ttf');
 
 /**
+ * Format currency for display in PDF
+ */
+const formatCurrency = (amount) => {
+  if (amount === null || amount === undefined) return '-';
+  return `₺${Math.round(amount).toLocaleString('tr-TR')}`;
+};
+
+/**
  * Register fonts and return font names
  */
 const registerFonts = (doc) => {
@@ -254,14 +262,21 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           }
           doc.moveDown(0.5);
 
+          // Lesson details header
+          const { lessonDetails } = planData;
+          if (lessonDetails) {
+            doc.fontSize(10).font(fonts.bold)
+              .text('Ders Detaylari', sideMargin, doc.y, { continued: true })
+              .font(fonts.regular)
+              .text(` - Aylik: ${formatCurrency(lessonDetails.monthlyFee)} | Ders Basi: ${formatCurrency(lessonDetails.perLessonFee)}`);
+            doc.moveDown(0.5);
+          }
+
           // Monthly breakdown table
           if (monthlyBreakdown && monthlyBreakdown.length > 0) {
-            doc.fontSize(10).font(fonts.bold).text('Aylık Katılım ve Ücret Detayı:');
-            doc.moveDown(0.3);
-
             // Table headers
             const tableLeft = sideMargin;
-            const col1Width = 120;
+            const col1Width = 140;
             const col2Width = 80;
             const col3Width = 100;
             const tableWidth = doc.page.width - (sideMargin * 2);
@@ -269,15 +284,15 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
             doc.fontSize(9).font(fonts.bold);
             let tableY = doc.y;
             doc.text('Ay', tableLeft, tableY);
-            doc.text('Ders Sayısı', tableLeft + col1Width, tableY);
-            doc.text('Tutar', tableLeft + col1Width + col2Width, tableY);
-            doc.text('Açıklama', tableLeft + col1Width + col2Width + col3Width, tableY);
+            doc.text('Ders', tableLeft + col1Width, tableY);
+            doc.text('Ucret', tableLeft + col1Width + col2Width, tableY);
 
             doc.moveTo(tableLeft, tableY + 12).lineTo(tableLeft + tableWidth, tableY + 12).stroke();
 
             doc.font(fonts.regular);
             tableY += 18;
 
+            let totalLessonCount = 0;
             monthlyBreakdown.forEach((month) => {
               if (tableY > doc.page.height - bottomMargin - 50) {
                 doc.addPage();
@@ -285,14 +300,19 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
               }
 
               doc.text(month.monthName, tableLeft, tableY);
-              doc.text(month.lessonCount.toString(), tableLeft + col1Width, tableY);
-              doc.text(`₺${month.amount.toLocaleString('tr-TR')}`, tableLeft + col1Width + col2Width, tableY);
-              doc.text(month.note || '', tableLeft + col1Width + col2Width + col3Width, tableY, { width: 150 });
+              doc.text(`${month.lessonCount} ders`, tableLeft + col1Width, tableY);
+              doc.text(formatCurrency(month.amount), tableLeft + col1Width + col2Width, tableY);
               tableY += 15;
+              totalLessonCount += month.lessonCount;
             });
 
             doc.moveTo(tableLeft, tableY).lineTo(tableLeft + tableWidth, tableY).stroke();
-            doc.y = tableY + 5;
+
+            // Total lessons row
+            tableY += 5;
+            doc.font(fonts.bold);
+            doc.text(`Toplam: ${totalLessonCount} ders`, tableLeft, tableY);
+            doc.y = tableY + 15;
           }
 
           doc.moveDown(0.5);
@@ -303,23 +323,19 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           const discountedAmount = paymentPlan.discountedAmount || totalAmount;
           const hasDiscount = discountedAmount < totalAmount;
 
-          if (hasDiscount) {
-            doc.fillColor('gray').text(`Toplam Tutar: ₺${totalAmount.toLocaleString('tr-TR')}`, {
-              continued: false,
-              strike: true
-            });
-            const discountPercent = Math.round((1 - discountedAmount / totalAmount) * 100);
-            doc.fillColor('green').text(`%${discountPercent} İndirimli Tutar: ₺${discountedAmount.toLocaleString('tr-TR')}`);
-            doc.fillColor('black');
-          } else {
-            doc.text(`Toplam Tutar: ₺${totalAmount.toLocaleString('tr-TR')}`);
-          }
+          doc.text(`Toplam Tutar: ${formatCurrency(totalAmount)}`);
 
-          // Per lesson calculation
-          if (paymentPlan.totalLessons && paymentPlan.totalLessons > 0) {
-            const perLesson = discountedAmount / paymentPlan.totalLessons;
-            doc.fontSize(9).font(fonts.regular)
-              .text(`(${paymentPlan.totalLessons} ders, ders başı ₺${perLesson.toFixed(0).toLocaleString('tr-TR')})`);
+          if (hasDiscount && lessonDetails) {
+            const discountPercent = Math.round((1 - discountedAmount / totalAmount) * 100);
+            doc.fillColor('green')
+              .text(`%${discountPercent} Indirimli Tutar: ${formatCurrency(discountedAmount)}`);
+            doc.fillColor('black');
+
+            // After-discount per-lesson and monthly calculations
+            doc.fontSize(9).font(fonts.regular);
+            if (lessonDetails.totalLessons > 0) {
+              doc.text(`Indirimli Aylik: ${formatCurrency(lessonDetails.discountedMonthlyFee)} | Indirimli Ders Basi: ${formatCurrency(lessonDetails.discountedPerLessonFee)}`);
+            }
           }
 
           doc.moveDown(1);

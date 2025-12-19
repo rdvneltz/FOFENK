@@ -80,97 +80,94 @@ router.get('/student-status-report/:studentId', async (req, res) => {
 
     const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
       .populate('course')
+      .populate('enrollment')
       .sort({ createdAt: -1 });
-
-    // Get enrollments for the student
-    const enrollments = await StudentCourseEnrollment.find({
-      student: studentId,
-      status: 'active'
-    }).populate('course');
 
     // Build payment plan data with monthly breakdown
     const paymentPlansData = await Promise.all(paymentPlans.map(async (plan) => {
       const course = plan.course;
-      const enrollment = enrollments.find(e => e.course?._id?.toString() === course?._id?.toString());
+      if (!course) {
+        return {
+          paymentPlan: plan.toObject(),
+          course: null,
+          enrollment: null,
+          monthlyBreakdown: [],
+          lessonDetails: null
+        };
+      }
 
-      // Calculate monthly breakdown
-      let monthlyBreakdown = [];
+      // Get enrollment
+      const enrollment = await StudentCourseEnrollment.findOne({
+        student: studentId,
+        course: course._id
+      });
 
-      if (enrollment && plan.monthlyBreakdown && plan.monthlyBreakdown.length > 0) {
-        // Use existing monthly breakdown from payment plan
-        monthlyBreakdown = plan.monthlyBreakdown.map(mb => ({
-          monthName: new Date(mb.year, mb.month - 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }),
-          lessonCount: mb.lessonCount || 0,
-          amount: mb.amount || 0,
-          note: mb.isPartialMonth ? `Kısmi ay (ders başı ₺${mb.perLessonRate || 0})` :
-                `Aylık ₺${mb.monthlyRate || 0}`
-        }));
-      } else if (enrollment) {
-        // Calculate from scheduled lessons if no monthly breakdown exists
-        const startDate = new Date(enrollment.startDate);
-        const endDate = enrollment.endDate ? new Date(enrollment.endDate) : new Date();
+      // Calculate monthly breakdown from scheduled lessons
+      const durationMonths = plan.installments?.length || 8;
+      const enrollmentDate = enrollment?.enrollmentDate || plan.createdAt;
+      const startDate = new Date(enrollmentDate);
 
-        // Get scheduled lessons for this course
+      const monthlyBreakdown = [];
+      let totalLessons = 0;
+
+      // Get course pricing
+      const expectedLessonsPerMonth = course.weeklyFrequency ? course.weeklyFrequency * 4 : 4;
+      const monthlyFee = course.pricePerMonth || 0;
+      const perLessonFee = course.pricePerLesson || (monthlyFee / expectedLessonsPerMonth);
+
+      // Calculate for each month
+      for (let i = 0; i < durationMonths; i++) {
+        const monthStart = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
+        const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + i + 1, 0, 23, 59, 59);
+
+        // Get lessons for this month
         const lessons = await ScheduledLesson.find({
           course: course._id,
           institution: institution._id,
-          date: { $gte: startDate, $lte: endDate },
-          status: { $in: ['completed', 'scheduled'] }
+          date: { $gte: monthStart, $lte: monthEnd },
+          status: { $ne: 'cancelled' }
         });
 
-        // Group by month
-        const monthGroups = {};
-        lessons.forEach(lesson => {
-          const date = new Date(lesson.date);
-          const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
-          if (!monthGroups[key]) {
-            monthGroups[key] = { lessons: [], year: date.getFullYear(), month: date.getMonth() + 1 };
-          }
-          monthGroups[key].lessons.push(lesson);
-        });
+        const lessonCount = lessons.length;
+        totalLessons += lessonCount;
 
-        // Calculate amount per month
-        const monthlyRate = enrollment.monthlyFee || course?.monthlyFee || 0;
-        const perLessonRate = enrollment.perLessonFee || course?.perLessonFee || monthlyRate / 4;
+        // Check if first month is partial (enrollment after month start)
+        const isFirstMonth = i === 0;
+        const enrollmentDay = startDate.getDate();
+        const isPartialMonth = isFirstMonth && enrollmentDay > 1;
 
-        Object.values(monthGroups).forEach(group => {
-          const monthStart = new Date(group.year, group.month - 1, 1);
-          const isPartialMonth = startDate.getFullYear() === group.year &&
-                                 startDate.getMonth() + 1 === group.month &&
-                                 startDate.getDate() > 1;
+        // For partial first month, count only lessons after enrollment
+        let effectiveLessonCount = lessonCount;
+        if (isPartialMonth) {
+          effectiveLessonCount = lessons.filter(l => new Date(l.date) >= startDate).length;
+        }
 
-          const lessonCount = group.lessons.length;
-          let amount, note;
-
-          if (isPartialMonth && lessonCount < 4) {
-            amount = lessonCount * perLessonRate;
-            note = `Kısmi ay (ders başı ₺${perLessonRate.toLocaleString('tr-TR')})`;
-          } else {
-            amount = monthlyRate;
-            note = `Aylık ₺${monthlyRate.toLocaleString('tr-TR')}`;
-          }
-
-          monthlyBreakdown.push({
-            monthName: monthStart.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }),
-            lessonCount,
-            amount,
-            note
-          });
-        });
-
-        // Sort by date
-        monthlyBreakdown.sort((a, b) => {
-          const [monthA, yearA] = a.monthName.split(' ');
-          const [monthB, yearB] = b.monthName.split(' ');
-          return new Date(`${yearA} ${monthA}`) - new Date(`${yearB} ${monthB}`);
+        monthlyBreakdown.push({
+          monthName: monthStart.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }),
+          lessonCount: lessonCount,
+          effectiveLessonCount: effectiveLessonCount,
+          amount: monthlyFee,
+          isPartialMonth: isPartialMonth
         });
       }
 
+      // Calculate lesson details for summary
+      const lessonDetails = {
+        monthlyFee: monthlyFee,
+        perLessonFee: perLessonFee,
+        totalLessons: totalLessons,
+        durationMonths: durationMonths,
+        // After discount calculations
+        discountedMonthlyFee: plan.discountedAmount / durationMonths,
+        discountedPerLessonFee: totalLessons > 0 ? plan.discountedAmount / totalLessons : 0
+      };
+
       return {
         paymentPlan: plan.toObject(),
-        course: course ? course.toObject() : null,
+        course: course.toObject(),
         enrollment: enrollment ? enrollment.toObject() : null,
-        monthlyBreakdown
+        monthlyBreakdown,
+        lessonDetails
       };
     }));
 
