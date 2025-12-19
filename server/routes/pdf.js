@@ -214,16 +214,20 @@ router.get('/student-status-report/:studentId', async (req, res) => {
       });
 
       // Calculate lesson details for summary
+      // For per-lesson calculation, always use expected lessons (4 per month) not actual lessons
+      const expectedTotalLessons = expectedLessonsPerMonth * durationMonths;
+
       const lessonDetails = {
         monthlyFee: monthlyFee,
         perLessonFee: perLessonFee,
         totalLessons: totalLessons,
+        expectedTotalLessons: expectedTotalLessons,
         durationMonths: durationMonths,
         usedPartialPricing: usedPartialPricing,
         firstMonthPartial: firstMonthPartial,
-        // After discount calculations
+        // After discount calculations - use expected lessons per month (4) not actual
         discountedMonthlyFee: plan.discountedAmount / durationMonths,
-        discountedPerLessonFee: totalLessons > 0 ? plan.discountedAmount / totalLessons : 0
+        discountedPerLessonFee: expectedTotalLessons > 0 ? plan.discountedAmount / expectedTotalLessons : 0
       };
 
       return {
