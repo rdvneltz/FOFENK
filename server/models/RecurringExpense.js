@@ -104,6 +104,12 @@ const recurringExpenseSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CashRegister'
   },
+  // Eğitmen (maaş giderleri için)
+  instructor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Instructor',
+    default: null
+  },
   // Aktif mi
   isActive: {
     type: Boolean,

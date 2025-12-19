@@ -162,6 +162,7 @@ const Expenses = () => {
     startDate: new Date().toISOString().split('T')[0],
     endDate: '',
     defaultCashRegister: '',
+    instructor: '',
     isActive: true,
     notes: '',
   });
@@ -330,6 +331,7 @@ const Expenses = () => {
         startDate: recurring.startDate ? recurring.startDate.split('T')[0] : '',
         endDate: recurring.endDate ? recurring.endDate.split('T')[0] : '',
         defaultCashRegister: recurring.defaultCashRegister?._id || '',
+        instructor: recurring.instructor?._id || '',
         isActive: recurring.isActive !== false,
         notes: recurring.notes || '',
       });
@@ -349,6 +351,7 @@ const Expenses = () => {
         startDate: new Date().toISOString().split('T')[0],
         endDate: '',
         defaultCashRegister: cashRegisters[0]?._id || '',
+        instructor: '',
         isActive: true,
         notes: '',
       });
@@ -375,6 +378,7 @@ const Expenses = () => {
 
       if (!data.endDate) delete data.endDate;
       if (!data.defaultCashRegister) delete data.defaultCashRegister;
+      if (!data.instructor) delete data.instructor;
 
       if (selectedRecurring) {
         await api.put(`/recurring-expenses/${selectedRecurring._id}`, data);
@@ -928,8 +932,15 @@ const Expenses = () => {
                           size="small"
                         />
                       </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexWrap: 'wrap' }}>
                         <Chip label={recurring.category} size="small" variant="outlined" />
+                        {recurring.instructor && (
+                          <Chip
+                            label={`${recurring.instructor.firstName} ${recurring.instructor.lastName}`}
+                            size="small"
+                            color="secondary"
+                          />
+                        )}
                         <Typography variant="h6" color="primary.main">
                           {recurring.estimatedAmount?.toLocaleString('tr-TR')} TL
                           {recurring.amountType === 'variable' && ' (tahmini)'}
@@ -1151,6 +1162,33 @@ const Expenses = () => {
                 </Select>
               </FormControl>
             </Grid>
+            {recurringFormData.category === 'Eğitmen Ödemesi' && (
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth required>
+                  <InputLabel>Eğitmen</InputLabel>
+                  <Select
+                    value={recurringFormData.instructor}
+                    onChange={(e) => {
+                      const selectedInstructor = instructors.find(i => i._id === e.target.value);
+                      setRecurringFormData({
+                        ...recurringFormData,
+                        instructor: e.target.value,
+                        // Auto-fill title and amount if not already set
+                        title: recurringFormData.title || (selectedInstructor ? `${selectedInstructor.firstName} ${selectedInstructor.lastName} - Aylık Maaş` : ''),
+                        estimatedAmount: recurringFormData.estimatedAmount || (selectedInstructor?.paymentAmount || ''),
+                      });
+                    }}
+                    label="Eğitmen"
+                  >
+                    {instructors.filter(inst => inst.paymentType === 'monthly').map((inst) => (
+                      <MenuItem key={inst._id} value={inst._id}>
+                        {inst.firstName} {inst.lastName} - {inst.paymentAmount?.toLocaleString('tr-TR')} TL/ay
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
             <Grid item xs={12} md={6}>
               <FormControl component="fieldset">
                 <FormLabel>Tutar Türü</FormLabel>
