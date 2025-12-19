@@ -33,7 +33,7 @@ import {
   Step,
   StepLabel,
 } from '@mui/material';
-import { Warning as WarningIcon, Person, Business, School, Delete } from '@mui/icons-material';
+import { Warning as WarningIcon, Person, Business, School, Delete, CloudUpload, Image as ImageIcon } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -71,6 +71,17 @@ const Settings = () => {
     installment11: 29,
     installment12: 31.5
   });
+
+  // Letterhead settings
+  const [letterhead, setLetterhead] = useState({
+    imageUrl: null,
+    topMargin: 120,
+    bottomMargin: 60,
+    sideMargin: 40
+  });
+  const [letterheadFile, setLetterheadFile] = useState(null);
+  const [letterheadPreview, setLetterheadPreview] = useState(null);
+  const [letterheadUploading, setLetterheadUploading] = useState(false);
 
   const [resetDialog, setResetDialog] = useState({
     open: false,
@@ -150,6 +161,14 @@ const Settings = () => {
             installment12: commissionsMap.installment12 ?? 31.5
           });
         }
+
+        // Load letterhead settings
+        if (response.data.letterhead) {
+          setLetterhead(response.data.letterhead);
+          if (response.data.letterhead.imageUrl) {
+            setLetterheadPreview(response.data.letterhead.imageUrl);
+          }
+        }
       }
     } catch (error) {
       // 404 is normal for new institutions - settings will be created on first save
@@ -208,6 +227,70 @@ const Settings = () => {
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
+  };
+
+  // Letterhead handlers
+  const handleLetterheadFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setLetterheadFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLetterheadPreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUploadLetterhead = async () => {
+    if (!letterheadFile && !letterhead.imageUrl) {
+      setError('Lütfen bir antetli kağıt görseli seçin');
+      return;
+    }
+
+    setLetterheadUploading(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      if (letterheadFile) {
+        formData.append('letterhead', letterheadFile);
+      }
+      formData.append('topMargin', letterhead.topMargin);
+      formData.append('bottomMargin', letterhead.bottomMargin);
+      formData.append('sideMargin', letterhead.sideMargin);
+      formData.append('updatedBy', currentUser?.username);
+
+      await api.post(`/settings/letterhead/${institution._id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      setSuccess('Antetli kağıt başarıyla kaydedildi');
+      setLetterheadFile(null);
+      loadSettings();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Antetli kağıt yüklenirken hata oluştu');
+    } finally {
+      setLetterheadUploading(false);
+    }
+  };
+
+  const handleDeleteLetterhead = async () => {
+    if (!window.confirm('Antetli kağıdı silmek istediğinize emin misiniz?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/settings/letterhead/${institution._id}`, {
+        data: { updatedBy: currentUser?.username }
+      });
+      setLetterhead({ imageUrl: null, topMargin: 120, bottomMargin: 60, sideMargin: 40 });
+      setLetterheadPreview(null);
+      setLetterheadFile(null);
+      setSuccess('Antetli kağıt silindi');
+    } catch (error) {
+      setError(error.response?.data?.message || 'Silme hatası');
+    }
   };
 
   // Load institutions and users for reset dialog
@@ -537,6 +620,162 @@ const Settings = () => {
                 </Button>
               </Box>
             </form>
+
+            <Divider sx={{ my: 4 }} />
+
+            {/* Letterhead Section */}
+            <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>
+              Antetli Kağıt Ayarları
+            </Typography>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              PDF çıktılar için antetli kağıt görseli yükleyin. Bu görsel, Son Durum Raporu gibi belgelerin arka planında kullanılacaktır.
+            </Typography>
+
+            <Grid container spacing={3} sx={{ mt: 1 }}>
+              <Grid item xs={12} md={6}>
+                <Box
+                  sx={{
+                    border: '2px dashed',
+                    borderColor: letterheadPreview ? 'success.main' : 'grey.400',
+                    borderRadius: 2,
+                    p: 3,
+                    textAlign: 'center',
+                    bgcolor: 'grey.50',
+                    minHeight: 200,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {letterheadPreview ? (
+                    <Box sx={{ width: '100%' }}>
+                      <img
+                        src={letterheadPreview}
+                        alt="Antetli Kağıt Önizleme"
+                        style={{
+                          maxWidth: '100%',
+                          maxHeight: 300,
+                          objectFit: 'contain',
+                          border: '1px solid #ddd',
+                          borderRadius: 4
+                        }}
+                      />
+                      <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'center' }}>
+                        <Button
+                          variant="outlined"
+                          component="label"
+                          startIcon={<CloudUpload />}
+                        >
+                          Değiştir
+                          <input
+                            type="file"
+                            hidden
+                            accept="image/*"
+                            onChange={handleLetterheadFileChange}
+                          />
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          color="error"
+                          startIcon={<Delete />}
+                          onClick={handleDeleteLetterhead}
+                        >
+                          Sil
+                        </Button>
+                      </Box>
+                    </Box>
+                  ) : (
+                    <>
+                      <ImageIcon sx={{ fontSize: 60, color: 'grey.400', mb: 2 }} />
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Antetli kağıt görseli yükleyin
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" gutterBottom>
+                        PNG, JPG veya PDF formatında, max 5MB
+                      </Typography>
+                      <Button
+                        variant="contained"
+                        component="label"
+                        startIcon={<CloudUpload />}
+                        sx={{ mt: 2 }}
+                      >
+                        Görsel Seç
+                        <input
+                          type="file"
+                          hidden
+                          accept="image/*"
+                          onChange={handleLetterheadFileChange}
+                        />
+                      </Button>
+                    </>
+                  )}
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Kenar Boşlukları (piksel)
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
+                  Antetli kağıdınıza göre kenar boşluklarını ayarlayın
+                </Typography>
+
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Üst Boşluk (Antet Alanı)"
+                      type="number"
+                      value={letterhead.topMargin}
+                      onChange={(e) => setLetterhead({ ...letterhead, topMargin: parseInt(e.target.value) || 0 })}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">px</InputAdornment>,
+                      }}
+                      helperText="Antet bölgesi için üstten bırakılacak boşluk"
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Yan Boşluk"
+                      type="number"
+                      value={letterhead.sideMargin}
+                      onChange={(e) => setLetterhead({ ...letterhead, sideMargin: parseInt(e.target.value) || 0 })}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">px</InputAdornment>,
+                      }}
+                    />
+                  </Grid>
+                  <Grid item xs={6}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Alt Boşluk"
+                      type="number"
+                      value={letterhead.bottomMargin}
+                      onChange={(e) => setLetterhead({ ...letterhead, bottomMargin: parseInt(e.target.value) || 0 })}
+                      InputProps={{
+                        endAdornment: <InputAdornment position="end">px</InputAdornment>,
+                      }}
+                    />
+                  </Grid>
+                </Grid>
+
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleUploadLetterhead}
+                  disabled={letterheadUploading || (!letterheadFile && !letterhead.imageUrl)}
+                  startIcon={letterheadUploading ? null : <CloudUpload />}
+                  sx={{ mt: 3 }}
+                >
+                  {letterheadUploading ? 'Kaydediliyor...' : 'Antetli Kağıdı Kaydet'}
+                </Button>
+              </Grid>
+            </Grid>
 
             <Divider sx={{ my: 6 }} />
 
