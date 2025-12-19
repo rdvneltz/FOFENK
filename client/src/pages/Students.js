@@ -93,6 +93,24 @@ const Students = () => {
     return age;
   };
 
+  // Get phone number with fallback to parent
+  const getDisplayPhone = (student) => {
+    if (student.phone) {
+      return { phone: student.phone, source: null };
+    }
+    // Check mother's phone
+    const mother = student.parentContacts?.find(p => p.relationship === 'Anne');
+    if (mother?.phone) {
+      return { phone: mother.phone, source: 'Anne' };
+    }
+    // Check father's phone
+    const father = student.parentContacts?.find(p => p.relationship === 'Baba');
+    if (father?.phone) {
+      return { phone: father.phone, source: 'Baba' };
+    }
+    return { phone: null, source: null };
+  };
+
   useEffect(() => {
     if (institution && season) {
       loadData();
@@ -379,11 +397,19 @@ const Students = () => {
                               </Typography>
                             )}
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 0.5 }}>
-                              {student.phone && (
-                                <Typography variant="body2" color="text.secondary">
-                                  {student.phone}
-                                </Typography>
-                              )}
+                              {(() => {
+                                const phoneInfo = getDisplayPhone(student);
+                                return phoneInfo.phone ? (
+                                  <Typography variant="body2" color="text.secondary">
+                                    {phoneInfo.phone}
+                                    {phoneInfo.source && (
+                                      <Typography component="span" variant="caption" sx={{ ml: 0.5, color: 'info.main' }}>
+                                        ({phoneInfo.source})
+                                      </Typography>
+                                    )}
+                                  </Typography>
+                                ) : null;
+                              })()}
                               <Typography
                                 variant="body2"
                                 fontWeight="bold"
@@ -397,11 +423,14 @@ const Students = () => {
                             <IconButton size="small" onClick={() => navigate(`/students/${student._id}`)} color="primary">
                               <Visibility fontSize="small" />
                             </IconButton>
-                            {student.phone && (
-                              <IconButton size="small" component="a" href={`tel:${student.phone}`} color="success">
-                                <Phone fontSize="small" />
-                              </IconButton>
-                            )}
+                            {(() => {
+                              const phoneInfo = getDisplayPhone(student);
+                              return phoneInfo.phone ? (
+                                <IconButton size="small" component="a" href={`tel:${phoneInfo.phone}`} color="success">
+                                  <Phone fontSize="small" />
+                                </IconButton>
+                              ) : null;
+                            })()}
                           </Box>
                         </Box>
                       </CardContent>
@@ -492,7 +521,19 @@ const Students = () => {
                           )}
                         </Box>
                       </TableCell>
-                      <TableCell>{student.phone || '-'}</TableCell>
+                      <TableCell>
+                        {(() => {
+                          const phoneInfo = getDisplayPhone(student);
+                          return phoneInfo.phone ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              {phoneInfo.phone}
+                              {phoneInfo.source && (
+                                <Chip label={phoneInfo.source} size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: '0.65rem' }} />
+                              )}
+                            </Box>
+                          ) : '-';
+                        })()}
+                      </TableCell>
                       <TableCell>{student.dateOfBirth ? calculateAge(student.dateOfBirth) : '-'}</TableCell>
                       <TableCell>
                         {student.status === 'active' ? (
@@ -520,11 +561,16 @@ const Students = () => {
                         <IconButton size="small" onClick={() => navigate(`/students/${student._id}/edit`)} color="info">
                           <Edit />
                         </IconButton>
-                        {student.phone && (
-                          <IconButton size="small" component="a" href={`tel:${student.phone}`} color="success">
-                            <Phone />
-                          </IconButton>
-                        )}
+                        {(() => {
+                          const phoneInfo = getDisplayPhone(student);
+                          return phoneInfo.phone ? (
+                            <Tooltip title={phoneInfo.source ? `${phoneInfo.source} telefonu` : 'Ara'}>
+                              <IconButton size="small" component="a" href={`tel:${phoneInfo.phone}`} color="success">
+                                <Phone />
+                              </IconButton>
+                            </Tooltip>
+                          ) : null;
+                        })()}
                       </TableCell>
                     </TableRow>
                   );

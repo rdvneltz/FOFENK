@@ -13,9 +13,6 @@ import {
   TextField,
   MenuItem,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
   Checkbox,
   FormControlLabel,
   Chip,
@@ -24,24 +21,37 @@ import {
   FormControl,
   InputLabel,
   Select,
+  Stepper,
+  Step,
+  StepLabel,
+  StepContent,
+  Paper,
+  LinearProgress,
+  Collapse,
+  Tooltip,
 } from '@mui/material';
 import {
   Close,
   Edit,
   Delete,
   Save,
-  Calculate,
   CheckCircle,
   Cancel,
   Schedule,
-  Add,
   PersonAdd,
   RemoveCircle,
+  AccessTime,
+  Group,
+  Payment,
+  ExpandMore,
+  ExpandLess,
+  Warning,
+  Done,
+  HourglassEmpty,
 } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import api from '../../api';
 import LoadingSpinner from '../Common/LoadingSpinner';
-import CompleteLessonDialog from './CompleteLessonDialog';
 import EditLessonDialog from './EditLessonDialog';
 
 const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => {
@@ -52,17 +62,37 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   const [instructors, setInstructors] = useState([]);
   const [selectedInstructor, setSelectedInstructor] = useState('');
   const [instructorConfirmed, setInstructorConfirmed] = useState(false);
-  // Additional instructors (max 2)
   const [additionalInstructors, setAdditionalInstructors] = useState([]);
   const [attendance, setAttendance] = useState({});
   const [status, setStatus] = useState('scheduled');
   const [saving, setSaving] = useState(false);
-  const [completeLessonOpen, setCompleteLessonOpen] = useState(false);
   const [editLessonOpen, setEditLessonOpen] = useState(false);
+
+  // Completion form state
+  const [showCompletionForm, setShowCompletionForm] = useState(false);
+  const [actualDuration, setActualDuration] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [additionalPayments, setAdditionalPayments] = useState([]);
+  const [completionError, setCompletionError] = useState('');
+  const [completing, setCompleting] = useState(false);
+
+  // Payment edit state (for completed lessons)
+  const [showPaymentEdit, setShowPaymentEdit] = useState(false);
+  const [editPaymentAmount, setEditPaymentAmount] = useState('');
+  const [editDuration, setEditDuration] = useState('');
+  const [editingPayment, setEditingPayment] = useState(false);
+  const [paymentEditError, setPaymentEditError] = useState('');
+
+  // Expanded sections
+  const [attendanceExpanded, setAttendanceExpanded] = useState(true);
 
   useEffect(() => {
     if (open && lesson) {
       loadLessonDetails();
+      setShowCompletionForm(false);
+      setCompletionError('');
+      setShowPaymentEdit(false);
+      setPaymentEditError('');
     }
   }, [open, lesson]);
 
@@ -70,16 +100,13 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     try {
       setLoading(true);
 
-      // Get full lesson details
       const lessonRes = await api.get(`/scheduled-lessons/${lesson._id}`);
       setLessonData(lessonRes.data);
       setStatus(lessonRes.data.status);
       setSelectedInstructor(lessonRes.data.instructor?._id || '');
       setInstructorConfirmed(lessonRes.data.instructorConfirmed || false);
-      // Load additional instructors
       setAdditionalInstructors(lessonRes.data.additionalInstructors || []);
 
-      // Get enrolled students for this course
       const enrollmentsRes = await api.get('/enrollments', {
         params: {
           courseId: lesson.course._id,
@@ -88,7 +115,6 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       });
       setEnrolledStudents(enrollmentsRes.data);
 
-      // Get all instructors for this institution/season
       const instructorsRes = await api.get('/instructors', {
         params: {
           institutionId: institution._id,
@@ -97,14 +123,12 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       });
       setInstructors(instructorsRes.data);
 
-      // Get attendance records for this lesson
       const attendanceRes = await api.get('/attendance', {
         params: {
           scheduledLessonId: lesson._id
         }
       });
 
-      // Build attendance map
       const attendanceMap = {};
       attendanceRes.data.forEach(att => {
         attendanceMap[att.student._id || att.student] = att.attended;
@@ -118,34 +142,66 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     }
   };
 
-  const handleStatusChange = async (newStatus) => {
-    // If completing lesson, check instructor confirmation first
-    if (newStatus === 'completed') {
-      if (!selectedInstructor) {
-        alert('Dersi tamamlamak için bir eğitmen seçmelisiniz!');
-        return;
-      }
-      if (!instructorConfirmed) {
-        alert('Dersi tamamlamak için ana eğitmenin derse girdiğini onaylamalısınız!');
-        return;
-      }
+  // Calculate planned duration
+  const calculatePlannedDuration = () => {
+    if (!lessonData) return 0;
+    const [startHour, startMin] = lessonData.startTime.split(':').map(Number);
+    const [endHour, endMin] = lessonData.endTime.split(':').map(Number);
+    return (endHour * 60 + endMin - startHour * 60 - startMin) / 60;
+  };
 
-      // Open complete lesson dialog
-      setCompleteLessonOpen(true);
-      return;
+  // Calculate payment based on instructor settings
+  const calculatePayment = (instructor, hours) => {
+    if (!instructor || !instructor.paymentType) return 0;
+    const attendingCount = Object.values(attendance).filter(a => a).length;
+
+    switch (instructor.paymentType) {
+      case 'hourly':
+        return hours * (instructor.paymentAmount || 0);
+      case 'perLesson':
+        return instructor.paymentAmount || 0;
+      case 'perStudent':
+        return attendingCount * (instructor.paymentAmount || 0);
+      default:
+        return 0;
+    }
+  };
+
+  // Initialize completion form
+  const initCompletionForm = () => {
+    const planned = calculatePlannedDuration();
+    setActualDuration(planned.toString());
+
+    const primaryInstructor = instructors.find(i => i._id === selectedInstructor);
+    if (primaryInstructor) {
+      setPaymentAmount(calculatePayment(primaryInstructor, planned).toString());
     }
 
-    // For other status changes, just update
-    try {
-      await api.put(`/scheduled-lessons/${lesson._id}`, {
-        status: newStatus,
-        updatedBy: user?.username
-      });
-      setStatus(newStatus);
-      onUpdated();
-    } catch (error) {
-      alert('Durum güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    // Calculate for additional instructors
+    const confirmedAdditional = additionalInstructors.filter(ai => ai.instructor && ai.confirmed);
+    const additionalDefaults = confirmedAdditional.map(ai => {
+      const inst = instructors.find(i => i._id === (ai.instructor._id || ai.instructor));
+      return inst ? calculatePayment(inst, planned).toString() : '0';
+    });
+    setAdditionalPayments(additionalDefaults);
+  };
+
+  // Handle duration change - recalculate payments
+  const handleDurationChange = (value) => {
+    setActualDuration(value);
+    const hours = parseFloat(value) || 0;
+
+    const primaryInstructor = instructors.find(i => i._id === selectedInstructor);
+    if (primaryInstructor) {
+      setPaymentAmount(calculatePayment(primaryInstructor, hours).toString());
     }
+
+    const confirmedAdditional = additionalInstructors.filter(ai => ai.instructor && ai.confirmed);
+    const newAdditionalPayments = confirmedAdditional.map(ai => {
+      const inst = instructors.find(i => i._id === (ai.instructor._id || ai.instructor));
+      return inst ? calculatePayment(inst, hours).toString() : '0';
+    });
+    setAdditionalPayments(newAdditionalPayments);
   };
 
   const handleInstructorChange = async (newInstructorId) => {
@@ -155,7 +211,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
         updatedBy: user?.username
       });
       setSelectedInstructor(newInstructorId);
-      loadLessonDetails(); // Reload to get new instructor details
+      loadLessonDetails();
       onUpdated();
     } catch (error) {
       alert('Eğitmen güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
@@ -175,13 +231,11 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     }
   };
 
-  // Additional instructors management
   const handleAddAdditionalInstructor = async () => {
     if (additionalInstructors.length >= 2) {
       alert('En fazla 2 ek eğitmen ekleyebilirsiniz!');
       return;
     }
-    // Add empty slot
     const newAdditional = {
       instructor: '',
       confirmed: false,
@@ -195,7 +249,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     const updated = additionalInstructors.filter((_, i) => i !== index);
     try {
       await api.put(`/scheduled-lessons/${lesson._id}`, {
-        additionalInstructors: updated.filter(a => a.instructor), // Only save ones with instructor set
+        additionalInstructors: updated.filter(a => a.instructor),
         updatedBy: user?.username
       });
       setAdditionalInstructors(updated);
@@ -208,12 +262,8 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
 
   const handleAdditionalInstructorChange = async (index, instructorId) => {
     const updated = [...additionalInstructors];
-    updated[index] = {
-      ...updated[index],
-      instructor: instructorId
-    };
+    updated[index] = { ...updated[index], instructor: instructorId };
 
-    // Only save if instructor is selected
     if (instructorId) {
       try {
         await api.put(`/scheduled-lessons/${lesson._id}`, {
@@ -231,10 +281,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
 
   const handleAdditionalInstructorConfirmation = async (index, confirmed) => {
     const updated = [...additionalInstructors];
-    updated[index] = {
-      ...updated[index],
-      confirmed: confirmed
-    };
+    updated[index] = { ...updated[index], confirmed };
 
     try {
       await api.put(`/scheduled-lessons/${lesson._id}`, {
@@ -248,7 +295,6 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     }
   };
 
-  // Get available instructors (exclude already selected ones)
   const getAvailableInstructors = (currentIndex = -1) => {
     const selectedIds = [selectedInstructor];
     additionalInstructors.forEach((ai, idx) => {
@@ -260,87 +306,32 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     return instructors.filter(i => !selectedIds.includes(i._id));
   };
 
-  const handleCompleteLesson = async (completionData) => {
-    try {
-      // Prepare additional instructors data with payments
-      const updatedAdditionalInstructors = (completionData.additionalInstructorPayments || []).map((payment, index) => ({
-        instructor: additionalInstructors[index]?.instructor?._id || additionalInstructors[index]?.instructor,
-        confirmed: additionalInstructors[index]?.confirmed || false,
-        paymentCalculated: true,
-        paymentAmount: payment,
-        paymentPaid: false
-      })).filter(ai => ai.instructor);
-
-      // Update lesson status and actual duration
-      await api.put(`/scheduled-lessons/${lesson._id}`, {
-        status: 'completed',
-        actualDuration: completionData.actualDuration,
-        instructorPaymentCalculated: true,
-        instructorPaymentAmount: completionData.paymentAmount,
-        additionalInstructors: updatedAdditionalInstructors,
-        updatedBy: user?.username
-      });
-
-      // Update primary instructor balance (add unpaid debt)
-      const currentInstructor = instructors.find(i => i._id === selectedInstructor);
-      if (currentInstructor) {
-        await api.put(`/instructors/${selectedInstructor}`, {
-          balance: (currentInstructor.balance || 0) + completionData.paymentAmount,
-          updatedBy: user?.username
-        });
-      }
-
-      // Update additional instructors' balances
-      let totalAdditionalPayment = 0;
-      for (let i = 0; i < (completionData.additionalInstructorPayments || []).length; i++) {
-        const payment = completionData.additionalInstructorPayments[i];
-        if (payment > 0 && additionalInstructors[i]?.instructor) {
-          const instructorId = additionalInstructors[i].instructor._id || additionalInstructors[i].instructor;
-          const instructor = instructors.find(inst => inst._id === instructorId);
-          if (instructor) {
-            await api.put(`/instructors/${instructorId}`, {
-              balance: (instructor.balance || 0) + payment,
-              updatedBy: user?.username
-            });
-            totalAdditionalPayment += payment;
-          }
-        }
-      }
-
-      // NOTE: Expense record will be created when payment is made from InstructorDetail page
-      // This keeps lessons as unpaid until manually paid
-
-      setStatus('completed');
-      const totalPayment = completionData.paymentAmount + totalAdditionalPayment;
-      const additionalInfo = totalAdditionalPayment > 0
-        ? `\n(Ana eğitmen: ₺${completionData.paymentAmount.toFixed(2)}, Ek eğitmenler: ₺${totalAdditionalPayment.toFixed(2)})`
-        : '';
-      alert(`Ders tamamlandı! Toplam ₺${totalPayment.toFixed(2)} borç olarak kaydedildi.${additionalInfo}\nÖdeme yapmak için eğitmen detay sayfasına gidin.`);
-      loadLessonDetails();
-      onUpdated();
-    } catch (error) {
-      alert('Ders tamamlanırken hata oluştu: ' + (error.response?.data?.message || error.message));
-      throw error;
-    }
+  const handleAttendanceChange = (studentId, attended) => {
+    setAttendance({ ...attendance, [studentId]: attended });
   };
 
-  const handleAttendanceChange = (studentId, attended) => {
-    setAttendance({
-      ...attendance,
-      [studentId]: attended
+  // Select all students
+  const handleSelectAll = () => {
+    const allAttended = {};
+    enrolledStudents.forEach(enrollment => {
+      allAttended[enrollment.student._id] = true;
     });
+    setAttendance(allAttended);
+  };
+
+  // Deselect all students
+  const handleDeselectAll = () => {
+    setAttendance({});
   };
 
   const handleSaveAttendance = async () => {
     try {
       setSaving(true);
 
-      // Save attendance for each student
       const promises = enrolledStudents.map(async (enrollment) => {
         const studentId = enrollment.student._id;
         const attended = attendance[studentId] || false;
 
-        // Check if attendance record exists
         const existingAttendance = await api.get('/attendance', {
           params: {
             scheduledLessonId: lesson._id,
@@ -349,13 +340,11 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
         });
 
         if (existingAttendance.data.length > 0) {
-          // Update existing
           await api.put(`/attendance/${existingAttendance.data[0]._id}`, {
             attended,
             updatedBy: user?.username
           });
         } else {
-          // Create new
           await api.post('/attendance', {
             scheduledLesson: lesson._id,
             student: studentId,
@@ -375,62 +364,204 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     }
   };
 
-  const handleCalculateInstructorPayment = async () => {
+  // Start completion process
+  const handleStartCompletion = () => {
+    if (!selectedInstructor) {
+      alert('Dersi tamamlamak için bir eğitmen seçmelisiniz!');
+      return;
+    }
+    if (!instructorConfirmed) {
+      alert('Dersi tamamlamak için ana eğitmenin derse girdiğini onaylamalısınız!');
+      return;
+    }
+
+    initCompletionForm();
+    setShowCompletionForm(true);
+  };
+
+  // Complete the lesson
+  const handleCompleteLesson = async () => {
+    const duration = parseFloat(actualDuration);
+    const payment = parseFloat(paymentAmount);
+
+    if (!actualDuration || isNaN(duration) || duration <= 0) {
+      setCompletionError('Lütfen geçerli bir ders süresi girin');
+      return;
+    }
+
+    if (!paymentAmount || isNaN(payment) || payment < 0) {
+      setCompletionError('Lütfen geçerli bir ödeme tutarı girin');
+      return;
+    }
+
+    setCompleting(true);
+    setCompletionError('');
+
     try {
-      if (!lessonData.instructor) {
-        alert('Bu dersin eğitmeni belirtilmemiş!');
-        return;
-      }
+      // First save attendance automatically
+      const attendancePromises = enrolledStudents.map(async (enrollment) => {
+        const studentId = enrollment.student._id;
+        const attended = attendance[studentId] || false;
 
-      // Get instructor details
-      const instructorRes = await api.get(`/instructors/${lessonData.instructor._id}`);
-      const instructor = instructorRes.data;
+        const existingAttendance = await api.get('/attendance', {
+          params: {
+            scheduledLessonId: lesson._id,
+            studentId: studentId
+          }
+        });
 
-      let paymentAmount = 0;
+        if (existingAttendance.data.length > 0) {
+          await api.put(`/attendance/${existingAttendance.data[0]._id}`, {
+            attended,
+            updatedBy: user?.username
+          });
+        } else {
+          await api.post('/attendance', {
+            scheduledLesson: lesson._id,
+            student: studentId,
+            attended,
+            createdBy: user?.username
+          });
+        }
+      });
+      await Promise.all(attendancePromises);
 
-      // Calculate based on payment type
-      switch (instructor.paymentType) {
-        case 'perLesson':
-          paymentAmount = instructor.paymentAmount;
-          break;
-        case 'hourly':
-          // Calculate hours between start and end time
-          const [startHour, startMin] = lessonData.startTime.split(':').map(Number);
-          const [endHour, endMin] = lessonData.endTime.split(':').map(Number);
-          const hours = (endHour * 60 + endMin - startHour * 60 - startMin) / 60;
-          paymentAmount = hours * instructor.paymentAmount;
-          break;
-        case 'perStudent':
-          // Count attending students
-          const attendingCount = Object.values(attendance).filter(a => a).length;
-          paymentAmount = attendingCount * instructor.paymentAmount;
-          break;
-        case 'monthly':
-          alert('Aylık ödemeli eğitmenler için ders bazında ücret hesaplanmaz.');
-          return;
-        default:
-          alert('Bilinmeyen ödeme tipi!');
-          return;
-      }
+      // Prepare additional instructors data
+      const confirmedAdditional = additionalInstructors.filter(ai => ai.instructor && ai.confirmed);
+      const updatedAdditionalInstructors = confirmedAdditional.map((ai, index) => ({
+        instructor: ai.instructor?._id || ai.instructor,
+        confirmed: ai.confirmed,
+        paymentCalculated: true,
+        paymentAmount: parseFloat(additionalPayments[index]) || 0,
+        paymentPaid: false
+      }));
 
-      // Update lesson with payment amount
+      // Update lesson
       await api.put(`/scheduled-lessons/${lesson._id}`, {
+        status: 'completed',
+        actualDuration: duration,
         instructorPaymentCalculated: true,
-        instructorPaymentAmount: paymentAmount,
+        instructorPaymentAmount: payment,
+        additionalInstructors: updatedAdditionalInstructors,
         updatedBy: user?.username
       });
 
-      // Update instructor balance
-      await api.put(`/instructors/${lessonData.instructor._id}`, {
-        balance: instructor.balance + paymentAmount,
-        updatedBy: user?.username
-      });
+      // Update primary instructor balance
+      const currentInstructor = instructors.find(i => i._id === selectedInstructor);
+      if (currentInstructor) {
+        await api.put(`/instructors/${selectedInstructor}`, {
+          balance: (currentInstructor.balance || 0) + payment,
+          updatedBy: user?.username
+        });
+      }
 
-      alert(`Eğitmen ödemesi hesaplandı: ₺${paymentAmount.toFixed(2)}`);
+      // Update additional instructors' balances
+      let totalAdditionalPayment = 0;
+      for (let i = 0; i < confirmedAdditional.length; i++) {
+        const paymentValue = parseFloat(additionalPayments[i]) || 0;
+        if (paymentValue > 0) {
+          const instructorId = confirmedAdditional[i].instructor._id || confirmedAdditional[i].instructor;
+          const instructor = instructors.find(inst => inst._id === instructorId);
+          if (instructor) {
+            await api.put(`/instructors/${instructorId}`, {
+              balance: (instructor.balance || 0) + paymentValue,
+              updatedBy: user?.username
+            });
+            totalAdditionalPayment += paymentValue;
+          }
+        }
+      }
+
+      setStatus('completed');
+      const totalPayment = payment + totalAdditionalPayment;
+
+      alert(`✅ Ders tamamlandı!\n\n📋 Yoklama kaydedildi: ${Object.values(attendance).filter(a => a).length}/${enrolledStudents.length} katılım\n💰 Toplam ₺${totalPayment.toLocaleString('tr-TR')} borç olarak kaydedildi.\n\nÖdeme yapmak için eğitmen detay sayfasına gidin.`);
+
+      setShowCompletionForm(false);
       loadLessonDetails();
       onUpdated();
     } catch (error) {
-      alert('Ödeme hesaplanırken hata oluştu: ' + (error.response?.data?.message || error.message));
+      setCompletionError('Ders tamamlanırken hata oluştu: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const handleStatusChange = async (newStatus) => {
+    if (newStatus === 'completed') {
+      handleStartCompletion();
+      return;
+    }
+
+    try {
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        status: newStatus,
+        updatedBy: user?.username
+      });
+      setStatus(newStatus);
+      onUpdated();
+    } catch (error) {
+      alert('Durum güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Start editing payment for completed lesson
+  const handleStartPaymentEdit = () => {
+    setEditPaymentAmount(lessonData.instructorPaymentAmount?.toString() || '0');
+    setEditDuration(lessonData.actualDuration?.toString() || '');
+    setPaymentEditError('');
+    setShowPaymentEdit(true);
+  };
+
+  // Save edited payment
+  const handleSavePaymentEdit = async () => {
+    const newPayment = parseFloat(editPaymentAmount);
+    const newDuration = parseFloat(editDuration);
+
+    if (isNaN(newPayment) || newPayment < 0) {
+      setPaymentEditError('Lütfen geçerli bir ödeme tutarı girin');
+      return;
+    }
+
+    if (editDuration && (isNaN(newDuration) || newDuration <= 0)) {
+      setPaymentEditError('Lütfen geçerli bir süre girin');
+      return;
+    }
+
+    setEditingPayment(true);
+    setPaymentEditError('');
+
+    try {
+      const oldPayment = lessonData.instructorPaymentAmount || 0;
+      const paymentDifference = newPayment - oldPayment;
+
+      // Update the lesson with new payment amount
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        instructorPaymentAmount: newPayment,
+        actualDuration: newDuration || lessonData.actualDuration,
+        updatedBy: user?.username
+      });
+
+      // Adjust instructor balance by the difference
+      if (paymentDifference !== 0 && lessonData.instructor?._id) {
+        const instructor = instructors.find(i => i._id === lessonData.instructor._id);
+        if (instructor) {
+          await api.put(`/instructors/${lessonData.instructor._id}`, {
+            balance: (instructor.balance || 0) + paymentDifference,
+            updatedBy: user?.username
+          });
+        }
+      }
+
+      alert(`✅ Ödeme güncellendi!\n\nEski: ₺${oldPayment.toLocaleString('tr-TR')}\nYeni: ₺${newPayment.toLocaleString('tr-TR')}\nFark: ${paymentDifference >= 0 ? '+' : ''}₺${paymentDifference.toLocaleString('tr-TR')}`);
+
+      setShowPaymentEdit(false);
+      loadLessonDetails();
+      onUpdated();
+    } catch (error) {
+      setPaymentEditError('Ödeme güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setEditingPayment(false);
     }
   };
 
@@ -464,418 +595,644 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     return null;
   }
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed':
-        return 'success';
-      case 'cancelled':
-        return 'error';
-      case 'postponed':
-        return 'warning';
-      default:
-        return 'info';
+  const getStatusColor = (s) => {
+    switch (s) {
+      case 'completed': return 'success';
+      case 'cancelled': return 'error';
+      case 'postponed': return 'warning';
+      default: return 'info';
     }
   };
 
-  const getStatusLabel = (status) => {
-    switch (status) {
-      case 'scheduled':
-        return 'Planlandı';
-      case 'completed':
-        return 'Tamamlandı';
-      case 'cancelled':
-        return 'İptal Edildi';
-      case 'postponed':
-        return 'Ertelendi';
-      default:
-        return status;
+  const getStatusLabel = (s) => {
+    switch (s) {
+      case 'scheduled': return 'Planlandı';
+      case 'completed': return 'Tamamlandı';
+      case 'cancelled': return 'İptal Edildi';
+      case 'postponed': return 'Ertelendi';
+      default: return s;
     }
   };
 
   const getPaymentTypeLabel = (type) => {
     switch (type) {
-      case 'perLesson':
-        return 'Ders Başı';
-      case 'hourly':
-        return 'Saat Başı';
-      case 'perStudent':
-        return 'Öğrenci Başı';
-      case 'monthly':
-        return 'Aylık';
-      default:
-        return type;
+      case 'perLesson': return 'Ders Başı';
+      case 'hourly': return 'Saat Başı';
+      case 'perStudent': return 'Öğrenci Başı';
+      case 'monthly': return 'Aylık';
+      default: return type;
     }
   };
 
+  const attendingCount = Object.values(attendance).filter(a => a).length;
+  const plannedDuration = calculatePlannedDuration();
+  const primaryInstructor = instructors.find(i => i._id === selectedInstructor);
+  const confirmedAdditionalCount = additionalInstructors.filter(ai => ai.instructor && ai.confirmed).length;
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6">Ders Detayları</Typography>
-          <IconButton onClick={onClose}>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box>
+            <Typography variant="h5" fontWeight="bold">
+              {lessonData.course?.name || 'Ders'}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+              <Chip
+                label={getStatusLabel(status)}
+                color={getStatusColor(status)}
+                size="small"
+                icon={status === 'completed' ? <Done /> : status === 'scheduled' ? <HourglassEmpty /> : undefined}
+              />
+              <Typography variant="body2" color="text.secondary">
+                {new Date(lessonData.date).toLocaleDateString('tr-TR', {
+                  weekday: 'long',
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric'
+                })}
+              </Typography>
+              <Chip
+                icon={<AccessTime />}
+                label={`${lessonData.startTime} - ${lessonData.endTime}`}
+                size="small"
+                variant="outlined"
+              />
+            </Box>
+          </Box>
+          <IconButton onClick={onClose} size="small">
             <Close />
           </IconButton>
         </Box>
       </DialogTitle>
 
       <DialogContent dividers>
-        <Grid container spacing={3}>
-          {/* Lesson Information */}
-          <Grid item xs={12}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  {lessonData.course?.name || 'Ders'}
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Tarih
-                    </Typography>
-                    <Typography variant="body1">
-                      {new Date(lessonData.date).toLocaleDateString('tr-TR', {
-                        weekday: 'long',
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Saat
-                    </Typography>
-                    <Typography variant="body1">
-                      {lessonData.startTime} - {lessonData.endTime}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={12}>
-                    <Typography variant="body2" color="text.secondary" gutterBottom>
-                      Ana Eğitmen
-                    </Typography>
-                    <FormControl fullWidth size="small">
-                      <Select
-                        value={selectedInstructor}
-                        onChange={(e) => handleInstructorChange(e.target.value)}
-                        displayEmpty
-                      >
-                        <MenuItem value="">
-                          <em>Eğitmen Seçilmedi</em>
-                        </MenuItem>
-                        {instructors.map((instructor) => (
-                          <MenuItem key={instructor._id} value={instructor._id}>
-                            {instructor.firstName} {instructor.lastName}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <FormControlLabel
-                      sx={{ mt: 1 }}
-                      control={
-                        <Checkbox
-                          checked={instructorConfirmed}
-                          onChange={(e) => handleInstructorConfirmation(e.target.checked)}
-                          disabled={!selectedInstructor}
-                        />
-                      }
-                      label="Ana eğitmen derse girdi (onaylandı)"
-                    />
-                    {!instructorConfirmed && selectedInstructor && (
-                      <Alert severity="warning" sx={{ mt: 1 }}>
-                        Dersi tamamlamak için ana eğitmen onayı gereklidir
-                      </Alert>
-                    )}
-                  </Grid>
+        {/* Completion Form - Shown when completing */}
+        {showCompletionForm ? (
+          <Box>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Dersi tamamlamadan önce aşağıdaki bilgileri kontrol edin ve onaylayın.
+            </Alert>
 
-                  {/* Additional Instructors Section */}
-                  <Grid item xs={12}>
-                    <Divider sx={{ my: 1 }} />
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Ek Eğitmenler (Opsiyonel)
-                      </Typography>
-                      {additionalInstructors.length < 2 && (
-                        <Button
-                          size="small"
-                          startIcon={<PersonAdd />}
-                          onClick={handleAddAdditionalInstructor}
-                          disabled={!selectedInstructor}
-                        >
-                          Ek Eğitmen Ekle
-                        </Button>
-                      )}
+            {completionError && (
+              <Alert severity="error" sx={{ mb: 2 }}>{completionError}</Alert>
+            )}
+
+            <Grid container spacing={3}>
+              {/* Duration */}
+              <Grid item xs={12} sm={6}>
+                <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    <AccessTime sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                    Ders Süresi
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Planlanan</Typography>
+                      <Typography variant="h6">{plannedDuration} saat</Typography>
                     </Box>
-
-                    {additionalInstructors.map((ai, index) => {
-                      const instructorId = ai.instructor?._id || ai.instructor;
-                      return (
-                        <Box key={index} sx={{ mb: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                            <Typography variant="subtitle2" color="primary">
-                              {index + 2}. Eğitmen
-                            </Typography>
-                            <Box sx={{ flex: 1 }} />
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleRemoveAdditionalInstructor(index)}
-                            >
-                              <RemoveCircle fontSize="small" />
-                            </IconButton>
-                          </Box>
-                          <FormControl fullWidth size="small" sx={{ mb: 1 }}>
-                            <Select
-                              value={instructorId || ''}
-                              onChange={(e) => handleAdditionalInstructorChange(index, e.target.value)}
-                              displayEmpty
-                            >
-                              <MenuItem value="">
-                                <em>Eğitmen Seçin</em>
-                              </MenuItem>
-                              {getAvailableInstructors(index).map((instructor) => (
-                                <MenuItem key={instructor._id} value={instructor._id}>
-                                  {instructor.firstName} {instructor.lastName}
-                                </MenuItem>
-                              ))}
-                              {/* Also show current selection if any */}
-                              {instructorId && !getAvailableInstructors(index).find(i => i._id === instructorId) && (
-                                <MenuItem value={instructorId}>
-                                  {ai.instructor?.firstName} {ai.instructor?.lastName}
-                                </MenuItem>
-                              )}
-                            </Select>
-                          </FormControl>
-                          {instructorId && (
-                            <FormControlLabel
-                              control={
-                                <Checkbox
-                                  checked={ai.confirmed || false}
-                                  onChange={(e) => handleAdditionalInstructorConfirmation(index, e.target.checked)}
-                                  size="small"
-                                />
-                              }
-                              label="Bu eğitmen derse girdi"
-                            />
-                          )}
-                        </Box>
-                      );
-                    })}
-
-                    {additionalInstructors.length === 0 && selectedInstructor && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', py: 1 }}>
-                        Bu derse ek eğitmen atanmadı. Gerekirse yukarıdaki butona tıklayarak ekleyebilirsiniz.
-                      </Typography>
-                    )}
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Durum
-                    </Typography>
-                    <Box sx={{ mt: 0.5 }}>
-                      <Chip
-                        label={getStatusLabel(status)}
-                        color={getStatusColor(status)}
+                    <Box sx={{ flex: 1 }}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Gerçek Süre (Saat)"
+                        value={actualDuration}
+                        onChange={(e) => handleDurationChange(e.target.value)}
+                        inputProps={{ step: 0.5, min: 0.5, max: 24 }}
                         size="small"
                       />
                     </Box>
-                  </Grid>
-                  {lessonData.notes && (
-                    <Grid item xs={12}>
-                      <Typography variant="body2" color="text.secondary">
-                        Notlar
-                      </Typography>
-                      <Typography variant="body1">{lessonData.notes}</Typography>
-                    </Grid>
-                  )}
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
+                  </Box>
+                </Paper>
+              </Grid>
 
-          {/* Status Update */}
-          <Grid item xs={12}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Durum Güncelle
-                </Typography>
-                <TextField
-                  select
-                  fullWidth
-                  label="Ders Durumu"
-                  value={status}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                  size="small"
-                >
-                  <MenuItem value="scheduled">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Schedule fontSize="small" />
-                      Planlandı
-                    </Box>
-                  </MenuItem>
-                  <MenuItem value="completed">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <CheckCircle fontSize="small" />
-                      Tamamlandı
-                    </Box>
-                  </MenuItem>
-                  <MenuItem value="cancelled">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Cancel fontSize="small" />
-                      İptal Edildi
-                    </Box>
-                  </MenuItem>
-                  <MenuItem value="postponed">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Schedule fontSize="small" />
-                      Ertelendi
-                    </Box>
-                  </MenuItem>
-                </TextField>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Attendance Section */}
-          <Grid item xs={12}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Yoklama
-                </Typography>
-                {enrolledStudents.length === 0 ? (
-                  <Typography color="text.secondary" align="center">
-                    Bu derse kayıtlı öğrenci bulunmuyor
+              {/* Attendance Summary */}
+              <Grid item xs={12} sm={6}>
+                <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    <Group sx={{ fontSize: 16, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                    Yoklama Özeti
                   </Typography>
-                ) : (
-                  <>
-                    <List>
-                      {enrolledStudents.map((enrollment) => (
-                        <ListItem key={enrollment._id} divider>
-                          <ListItemText
-                            primary={
-                              enrollment.student?.firstName && enrollment.student?.lastName
-                                ? `${enrollment.student.firstName} ${enrollment.student.lastName}`
-                                : 'Öğrenci'
-                            }
-                          />
-                          <FormControlLabel
-                            control={
-                              <Checkbox
-                                checked={attendance[enrollment.student._id] || false}
-                                onChange={(e) =>
-                                  handleAttendanceChange(enrollment.student._id, e.target.checked)
-                                }
-                              />
-                            }
-                            label="Katıldı"
-                          />
-                        </ListItem>
-                      ))}
-                    </List>
-                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-                      <Button
-                        variant="contained"
-                        startIcon={<Save />}
-                        onClick={handleSaveAttendance}
-                        disabled={saving}
-                      >
-                        {saving ? 'Kaydediliyor...' : 'Yoklamayı Kaydet'}
-                      </Button>
-                    </Box>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
+                  <Typography variant="h4" color={attendingCount > 0 ? 'success.main' : 'error.main'}>
+                    {attendingCount}/{enrolledStudents.length}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">öğrenci katıldı</Typography>
+                </Paper>
+              </Grid>
 
-          {/* Instructor Payment Section */}
-          {lessonData.instructor && (
+              {/* Primary Instructor Payment */}
+              <Grid item xs={12}>
+                <Paper sx={{ p: 2, border: '2px solid', borderColor: 'primary.main' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Typography variant="subtitle1" fontWeight="bold" color="primary">
+                      Ana Eğitmen: {primaryInstructor?.firstName} {primaryInstructor?.lastName}
+                    </Typography>
+                    <Chip
+                      label={getPaymentTypeLabel(primaryInstructor?.paymentType)}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  </Box>
+                  <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} sm={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        {primaryInstructor?.paymentType === 'hourly' && `Saatlik: ₺${primaryInstructor?.paymentAmount?.toLocaleString('tr-TR')}`}
+                        {primaryInstructor?.paymentType === 'perLesson' && `Ders Başı: ₺${primaryInstructor?.paymentAmount?.toLocaleString('tr-TR')}`}
+                        {primaryInstructor?.paymentType === 'perStudent' && `Öğrenci Başı: ₺${primaryInstructor?.paymentAmount?.toLocaleString('tr-TR')} × ${attendingCount} öğrenci`}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Ödenecek Tutar (₺)"
+                        value={paymentAmount}
+                        onChange={(e) => setPaymentAmount(e.target.value)}
+                        inputProps={{ step: 0.01, min: 0 }}
+                        size="small"
+                      />
+                    </Grid>
+                  </Grid>
+                </Paper>
+              </Grid>
+
+              {/* Additional Instructors Payment */}
+              {additionalInstructors.filter(ai => ai.instructor && ai.confirmed).map((ai, index) => {
+                const inst = instructors.find(i => i._id === (ai.instructor._id || ai.instructor));
+                return (
+                  <Grid item xs={12} key={index}>
+                    <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle2" color="secondary">
+                          {index + 2}. Eğitmen: {inst?.firstName} {inst?.lastName}
+                        </Typography>
+                        <Chip label={getPaymentTypeLabel(inst?.paymentType)} size="small" variant="outlined" />
+                      </Box>
+                      <TextField
+                        fullWidth
+                        type="number"
+                        label="Ödenecek Tutar (₺)"
+                        value={additionalPayments[index] || ''}
+                        onChange={(e) => {
+                          const newPayments = [...additionalPayments];
+                          newPayments[index] = e.target.value;
+                          setAdditionalPayments(newPayments);
+                        }}
+                        inputProps={{ step: 0.01, min: 0 }}
+                        size="small"
+                      />
+                    </Paper>
+                  </Grid>
+                );
+              })}
+
+              {/* Total Payment */}
+              <Grid item xs={12}>
+                <Paper sx={{ p: 2, bgcolor: 'success.50', border: '1px solid', borderColor: 'success.main' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="subtitle1">
+                      <Payment sx={{ fontSize: 18, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                      Toplam Ödeme
+                    </Typography>
+                    <Typography variant="h5" color="success.dark" fontWeight="bold">
+                      ₺{((parseFloat(paymentAmount) || 0) + additionalPayments.reduce((sum, p) => sum + (parseFloat(p) || 0), 0)).toLocaleString('tr-TR')}
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Bu tutar eğitmenlerin bakiyelerine borç olarak eklenecektir.
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+
+            <Box sx={{ display: 'flex', gap: 2, mt: 3 }}>
+              <Button variant="outlined" onClick={() => setShowCompletionForm(false)} disabled={completing}>
+                Geri
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<CheckCircle />}
+                onClick={handleCompleteLesson}
+                disabled={completing}
+                sx={{ flex: 1 }}
+              >
+                {completing ? 'Tamamlanıyor...' : 'Dersi Tamamla'}
+              </Button>
+            </Box>
+          </Box>
+        ) : (
+          /* Main View */
+          <Grid container spacing={2}>
+            {/* Instructor Section */}
             <Grid item xs={12}>
               <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Eğitmen Ödemesi
+                <CardContent sx={{ pb: '16px !important' }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    EĞİTMENLER
                   </Typography>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} sm={6}>
-                      <Typography variant="body2" color="text.secondary">
-                        Ödeme Tipi
-                      </Typography>
-                      <Typography variant="body1">
-                        {getPaymentTypeLabel(lessonData.instructor.paymentType)}
-                      </Typography>
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <Typography variant="body2" color="text.secondary">
-                        Ödeme Tutarı (Birim)
-                      </Typography>
-                      <Typography variant="body1">
-                        ₺{lessonData.instructor.paymentAmount?.toLocaleString('tr-TR') || 0}
-                      </Typography>
-                    </Grid>
-                    {lessonData.instructorPaymentCalculated && (
-                      <Grid item xs={12}>
-                        <Alert severity="success">
-                          Bu ders için eğitmen ödemesi hesaplandı: ₺
-                          {lessonData.instructorPaymentAmount?.toFixed(2) || 0}
-                        </Alert>
+
+                  {/* Primary Instructor */}
+                  <Box sx={{ mb: 2 }}>
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12} sm={6}>
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Ana Eğitmen</InputLabel>
+                          <Select
+                            value={selectedInstructor}
+                            onChange={(e) => handleInstructorChange(e.target.value)}
+                            label="Ana Eğitmen"
+                          >
+                            <MenuItem value=""><em>Seçilmedi</em></MenuItem>
+                            {instructors.map((instructor) => (
+                              <MenuItem key={instructor._id} value={instructor._id}>
+                                {instructor.firstName} {instructor.lastName}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
                       </Grid>
-                    )}
-                    <Grid item xs={12}>
-                      <Button
-                        variant="outlined"
-                        startIcon={<Calculate />}
-                        onClick={handleCalculateInstructorPayment}
-                        disabled={lessonData.instructorPaymentCalculated}
-                        fullWidth
-                      >
-                        {lessonData.instructorPaymentCalculated
-                          ? 'Ödeme Hesaplandı'
-                          : 'Eğitmen Ödemesini Hesapla'}
-                      </Button>
+                      <Grid item xs={12} sm={6}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={instructorConfirmed}
+                              onChange={(e) => handleInstructorConfirmation(e.target.checked)}
+                              disabled={!selectedInstructor}
+                              color="success"
+                            />
+                          }
+                          label={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography variant="body2">Derse girdi</Typography>
+                              {instructorConfirmed && <CheckCircle color="success" sx={{ fontSize: 16 }} />}
+                            </Box>
+                          }
+                        />
+                      </Grid>
                     </Grid>
-                  </Grid>
+                  </Box>
+
+                  {/* Additional Instructors */}
+                  {additionalInstructors.map((ai, index) => {
+                    const instructorId = ai.instructor?._id || ai.instructor;
+                    return (
+                      <Box key={index} sx={{ p: 1.5, bgcolor: 'grey.50', borderRadius: 1, mb: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <Typography variant="subtitle2" color="secondary">
+                            {index + 2}. Eğitmen
+                          </Typography>
+                          <Box sx={{ flex: 1 }} />
+                          <IconButton size="small" color="error" onClick={() => handleRemoveAdditionalInstructor(index)}>
+                            <RemoveCircle fontSize="small" />
+                          </IconButton>
+                        </Box>
+                        <Grid container spacing={2} alignItems="center">
+                          <Grid item xs={12} sm={6}>
+                            <FormControl fullWidth size="small">
+                              <Select
+                                value={instructorId || ''}
+                                onChange={(e) => handleAdditionalInstructorChange(index, e.target.value)}
+                                displayEmpty
+                              >
+                                <MenuItem value=""><em>Eğitmen Seçin</em></MenuItem>
+                                {getAvailableInstructors(index).map((instructor) => (
+                                  <MenuItem key={instructor._id} value={instructor._id}>
+                                    {instructor.firstName} {instructor.lastName}
+                                  </MenuItem>
+                                ))}
+                                {instructorId && !getAvailableInstructors(index).find(i => i._id === instructorId) && (
+                                  <MenuItem value={instructorId}>
+                                    {ai.instructor?.firstName} {ai.instructor?.lastName}
+                                  </MenuItem>
+                                )}
+                              </Select>
+                            </FormControl>
+                          </Grid>
+                          <Grid item xs={12} sm={6}>
+                            {instructorId && (
+                              <FormControlLabel
+                                control={
+                                  <Checkbox
+                                    checked={ai.confirmed || false}
+                                    onChange={(e) => handleAdditionalInstructorConfirmation(index, e.target.checked)}
+                                    size="small"
+                                    color="success"
+                                  />
+                                }
+                                label="Derse girdi"
+                              />
+                            )}
+                          </Grid>
+                        </Grid>
+                      </Box>
+                    );
+                  })}
+
+                  {additionalInstructors.length < 2 && selectedInstructor && (
+                    <Button
+                      size="small"
+                      startIcon={<PersonAdd />}
+                      onClick={handleAddAdditionalInstructor}
+                      sx={{ mt: 1 }}
+                    >
+                      Ek Eğitmen Ekle
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
-          )}
-        </Grid>
+
+            {/* Attendance Section */}
+            <Grid item xs={12}>
+              <Card variant="outlined">
+                <CardContent sx={{ pb: '16px !important' }}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => setAttendanceExpanded(!attendanceExpanded)}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        YOKLAMA
+                      </Typography>
+                      <Chip
+                        label={`${attendingCount}/${enrolledStudents.length}`}
+                        size="small"
+                        color={attendingCount > 0 ? 'success' : 'default'}
+                      />
+                    </Box>
+                    <IconButton size="small">
+                      {attendanceExpanded ? <ExpandLess /> : <ExpandMore />}
+                    </IconButton>
+                  </Box>
+
+                  <Collapse in={attendanceExpanded}>
+                    {enrolledStudents.length === 0 ? (
+                      <Typography color="text.secondary" align="center" sx={{ py: 2 }}>
+                        Bu derse kayıtlı öğrenci bulunmuyor
+                      </Typography>
+                    ) : (
+                      <Box sx={{ mt: 2 }}>
+                        {/* Quick Actions */}
+                        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                          <Button size="small" variant="outlined" onClick={handleSelectAll}>
+                            Tümünü Seç
+                          </Button>
+                          <Button size="small" variant="outlined" onClick={handleDeselectAll}>
+                            Tümünü Kaldır
+                          </Button>
+                        </Box>
+
+                        {/* Student List */}
+                        <Box sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
+                          gap: 1
+                        }}>
+                          {enrolledStudents.map((enrollment) => (
+                            <Paper
+                              key={enrollment._id}
+                              variant="outlined"
+                              sx={{
+                                p: 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                bgcolor: attendance[enrollment.student._id] ? 'success.50' : 'transparent',
+                                borderColor: attendance[enrollment.student._id] ? 'success.main' : 'divider',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                '&:hover': { bgcolor: attendance[enrollment.student._id] ? 'success.100' : 'grey.50' }
+                              }}
+                              onClick={() => handleAttendanceChange(enrollment.student._id, !attendance[enrollment.student._id])}
+                            >
+                              <Checkbox
+                                checked={attendance[enrollment.student._id] || false}
+                                onChange={(e) => handleAttendanceChange(enrollment.student._id, e.target.checked)}
+                                color="success"
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <Typography variant="body2">
+                                {enrollment.student?.firstName} {enrollment.student?.lastName}
+                              </Typography>
+                            </Paper>
+                          ))}
+                        </Box>
+
+                        <Button
+                          variant="contained"
+                          startIcon={<Save />}
+                          onClick={handleSaveAttendance}
+                          disabled={saving}
+                          sx={{ mt: 2 }}
+                          fullWidth
+                        >
+                          {saving ? 'Kaydediliyor...' : 'Yoklamayı Kaydet'}
+                        </Button>
+                      </Box>
+                    )}
+                  </Collapse>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            {/* Status / Completion Section */}
+            <Grid item xs={12}>
+              <Card variant="outlined">
+                <CardContent sx={{ pb: '16px !important' }}>
+                  <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                    DERS DURUMU
+                  </Typography>
+
+                  {status === 'completed' ? (
+                    showPaymentEdit ? (
+                      /* Payment Edit Form */
+                      <Box>
+                        <Alert severity="info" sx={{ mb: 2 }}>
+                          Tamamlanmış dersin ödeme bilgilerini düzenleyebilirsiniz. Fark eğitmen bakiyesine yansıtılacaktır.
+                        </Alert>
+
+                        {paymentEditError && (
+                          <Alert severity="error" sx={{ mb: 2 }}>{paymentEditError}</Alert>
+                        )}
+
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6}>
+                            <TextField
+                              fullWidth
+                              type="number"
+                              label="Ders Süresi (Saat)"
+                              value={editDuration}
+                              onChange={(e) => setEditDuration(e.target.value)}
+                              inputProps={{ step: 0.5, min: 0.5, max: 24 }}
+                              size="small"
+                              helperText={`Mevcut: ${lessonData.actualDuration || '-'} saat`}
+                            />
+                          </Grid>
+                          <Grid item xs={12} sm={6}>
+                            <TextField
+                              fullWidth
+                              type="number"
+                              label="Ödeme Tutarı (₺)"
+                              value={editPaymentAmount}
+                              onChange={(e) => setEditPaymentAmount(e.target.value)}
+                              inputProps={{ step: 0.01, min: 0 }}
+                              size="small"
+                              helperText={`Mevcut: ₺${lessonData.instructorPaymentAmount?.toLocaleString('tr-TR') || 0}`}
+                            />
+                          </Grid>
+                        </Grid>
+
+                        {editPaymentAmount && lessonData.instructorPaymentAmount !== undefined && (
+                          <Paper sx={{ p: 2, mt: 2, bgcolor: 'grey.50' }}>
+                            <Typography variant="body2">
+                              <strong>Fark:</strong>{' '}
+                              <Typography
+                                component="span"
+                                color={(parseFloat(editPaymentAmount) - lessonData.instructorPaymentAmount) >= 0 ? 'error.main' : 'success.main'}
+                                fontWeight="bold"
+                              >
+                                {(parseFloat(editPaymentAmount) - lessonData.instructorPaymentAmount) >= 0 ? '+' : ''}
+                                ₺{(parseFloat(editPaymentAmount) - lessonData.instructorPaymentAmount).toLocaleString('tr-TR')}
+                              </Typography>
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {(parseFloat(editPaymentAmount) - lessonData.instructorPaymentAmount) > 0
+                                ? 'Eğitmene ek borç tahakkuk edecek'
+                                : (parseFloat(editPaymentAmount) - lessonData.instructorPaymentAmount) < 0
+                                ? 'Eğitmen borcundan düşülecek'
+                                : 'Değişiklik yok'}
+                            </Typography>
+                          </Paper>
+                        )}
+
+                        <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+                          <Button
+                            variant="outlined"
+                            onClick={() => setShowPaymentEdit(false)}
+                            disabled={editingPayment}
+                          >
+                            İptal
+                          </Button>
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={handleSavePaymentEdit}
+                            disabled={editingPayment}
+                            sx={{ flex: 1 }}
+                          >
+                            {editingPayment ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+                          </Button>
+                        </Box>
+                      </Box>
+                    ) : (
+                      /* Completed Lesson Info */
+                      <Box>
+                        <Alert
+                          severity="success"
+                          icon={<CheckCircle />}
+                          action={
+                            !lessonData.instructorPaymentPaid && (
+                              <Button color="inherit" size="small" onClick={handleStartPaymentEdit}>
+                                Düzenle
+                              </Button>
+                            )
+                          }
+                        >
+                          <Typography variant="subtitle2">Bu ders tamamlandı</Typography>
+                          {lessonData.instructorPaymentCalculated && (
+                            <Typography variant="body2">
+                              Ödeme: ₺{lessonData.instructorPaymentAmount?.toLocaleString('tr-TR')}
+                              {lessonData.actualDuration && ` • Süre: ${lessonData.actualDuration} saat`}
+                              {lessonData.instructorPaymentPaid && (
+                                <Chip label="Ödendi" color="success" size="small" sx={{ ml: 1 }} />
+                              )}
+                            </Typography>
+                          )}
+                        </Alert>
+                        {lessonData.instructorPaymentPaid && (
+                          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                            Ödeme yapıldığı için düzenleme yapılamaz. Değişiklik için önce ödemeyi iptal edin.
+                          </Typography>
+                        )}
+                      </Box>
+                    )
+                  ) : (
+                    <Box>
+                      {/* Prerequisites Check */}
+                      {(!selectedInstructor || !instructorConfirmed) && (
+                        <Alert severity="warning" sx={{ mb: 2 }}>
+                          <Typography variant="body2">
+                            Dersi tamamlamak için:
+                          </Typography>
+                          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                            {!selectedInstructor && <li>Ana eğitmen seçilmeli</li>}
+                            {selectedInstructor && !instructorConfirmed && <li>Ana eğitmenin derse girdiği onaylanmalı</li>}
+                          </Box>
+                        </Alert>
+                      )}
+
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <Button
+                            variant="contained"
+                            color="success"
+                            fullWidth
+                            startIcon={<CheckCircle />}
+                            onClick={handleStartCompletion}
+                            disabled={!selectedInstructor || !instructorConfirmed}
+                          >
+                            Dersi Tamamla
+                          </Button>
+                        </Grid>
+                        <Grid item xs={6} sm={3}>
+                          <Button
+                            variant="outlined"
+                            color="warning"
+                            fullWidth
+                            onClick={() => handleStatusChange('postponed')}
+                          >
+                            Ertele
+                          </Button>
+                        </Grid>
+                        <Grid item xs={6} sm={3}>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            fullWidth
+                            onClick={() => handleStatusChange('cancelled')}
+                          >
+                            İptal Et
+                          </Button>
+                        </Grid>
+                      </Grid>
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        )}
       </DialogContent>
 
-      <DialogActions>
-        <Button onClick={onClose}>Kapat</Button>
-        <Box sx={{ flex: 1 }} />
-        <Button
-          startIcon={<Delete />}
-          color="error"
-          onClick={handleDeleteLesson}
-        >
-          Sil
-        </Button>
-        <Button
-          startIcon={<Edit />}
-          variant="outlined"
-          onClick={() => setEditLessonOpen(true)}
-        >
-          Düzenle
-        </Button>
-      </DialogActions>
+      {!showCompletionForm && (
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button onClick={onClose}>Kapat</Button>
+          <Box sx={{ flex: 1 }} />
+          <Button startIcon={<Delete />} color="error" onClick={handleDeleteLesson}>
+            Sil
+          </Button>
+          <Button startIcon={<Edit />} variant="outlined" onClick={() => setEditLessonOpen(true)}>
+            Düzenle
+          </Button>
+        </DialogActions>
+      )}
 
-      {/* Complete Lesson Dialog */}
-      <CompleteLessonDialog
-        open={completeLessonOpen}
-        onClose={() => setCompleteLessonOpen(false)}
-        lesson={lessonData}
-        instructor={instructors.find(i => i._id === selectedInstructor)}
-        additionalInstructors={additionalInstructors.filter(ai => ai.instructor && ai.confirmed).map(ai => {
-          const instructorId = ai.instructor?._id || ai.instructor;
-          return instructors.find(i => i._id === instructorId);
-        }).filter(Boolean)}
-        onComplete={handleCompleteLesson}
-      />
-
-      {/* Edit Lesson Dialog */}
       <EditLessonDialog
         open={editLessonOpen}
         onClose={() => setEditLessonOpen(false)}

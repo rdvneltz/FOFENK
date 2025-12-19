@@ -14,6 +14,7 @@ import {
   List,
   ListItem,
   ListItemText,
+  ListItemIcon,
   Chip,
   Avatar,
   Divider,
@@ -23,6 +24,14 @@ import {
   DialogActions,
   TextField,
   MenuItem,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Collapse,
+  IconButton,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -30,7 +39,6 @@ import {
   Phone,
   Email,
   Payment,
-  Undo,
   Add,
   Archive,
   Delete,
@@ -38,6 +46,17 @@ import {
   Refresh,
   LocalOffer,
   School,
+  Person,
+  ContactPhone,
+  Home,
+  MedicalServices,
+  Notifications,
+  ExpandMore,
+  ExpandLess,
+  CheckCircle,
+  Cancel,
+  CalendarToday,
+  AccessTime,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -87,6 +106,19 @@ const getPaymentPlanDiscountChip = (plan) => {
   );
 };
 
+// Calculate age from date of birth
+const calculateAge = (dateOfBirth) => {
+  if (!dateOfBirth) return null;
+  const today = new Date();
+  const birthDate = new Date(dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
+
 const StudentDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -99,6 +131,8 @@ const StudentDetail = () => {
   const [paymentPlans, setPaymentPlans] = useState([]);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [availableCourses, setAvailableCourses] = useState([]);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [enrollDialog, setEnrollDialog] = useState({
     open: false,
     courseId: '',
@@ -132,9 +166,20 @@ const StudentDetail = () => {
     result: null
   });
 
+  // Expanded sections for additional info
+  const [parentInfoExpanded, setParentInfoExpanded] = useState(false);
+  const [emergencyExpanded, setEmergencyExpanded] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
+
   useEffect(() => {
     loadStudent();
   }, [id]);
+
+  useEffect(() => {
+    if (tabValue === 2 && student) {
+      loadAttendanceHistory();
+    }
+  }, [tabValue, student]);
 
   const loadStudent = async () => {
     try {
@@ -157,6 +202,26 @@ const StudentDetail = () => {
       console.error('Error loading student:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAttendanceHistory = async () => {
+    try {
+      setAttendanceLoading(true);
+      const response = await api.get('/attendance', {
+        params: { studentId: id }
+      });
+      // Sort by date descending
+      const sorted = response.data.sort((a, b) => {
+        const dateA = new Date(a.scheduledLesson?.date || 0);
+        const dateB = new Date(b.scheduledLesson?.date || 0);
+        return dateB - dateA;
+      });
+      setAttendanceRecords(sorted);
+    } catch (error) {
+      console.error('Error loading attendance:', error);
+    } finally {
+      setAttendanceLoading(false);
     }
   };
 
@@ -335,9 +400,19 @@ const StudentDetail = () => {
     );
   }
 
+  // Extract parent contacts
+  const mother = student.parentContacts?.find(p => p.relationship === 'Anne');
+  const father = student.parentContacts?.find(p => p.relationship === 'Baba');
+  const emergencyContact = student.emergencyContact;
+
+  // Calculate attendance statistics
+  const attendedCount = attendanceRecords.filter(a => a.attended).length;
+  const totalLessons = attendanceRecords.length;
+  const attendanceRate = totalLessons > 0 ? Math.round((attendedCount / totalLessons) * 100) : 0;
+
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3, flexWrap: 'wrap' }}>
         <Button startIcon={<ArrowBack />} onClick={() => navigate('/students')}>
           Geri
         </Button>
@@ -388,28 +463,40 @@ const StudentDetail = () => {
               <Typography variant="h5" gutterBottom>
                 {student.firstName} {student.lastName}
               </Typography>
-              <Chip
-                label={
-                  student.status === 'active'
-                    ? 'Aktif'
-                    : student.status === 'passive'
-                    ? 'Pasif'
-                    : 'Deneme'
-                }
-                color={student.status === 'active' ? 'success' : 'default'}
-              />
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Chip
+                  label={
+                    student.status === 'active'
+                      ? 'Aktif'
+                      : student.status === 'passive'
+                      ? 'Pasif'
+                      : 'Deneme'
+                  }
+                  color={student.status === 'active' ? 'success' : 'default'}
+                />
+                {student.dateOfBirth && (
+                  <Chip
+                    label={`${calculateAge(student.dateOfBirth)} yaş`}
+                    variant="outlined"
+                    size="small"
+                  />
+                )}
+              </Box>
             </Box>
 
             <Divider sx={{ my: 2 }} />
 
-            <List>
+            {/* Basic Info */}
+            <List dense>
               <ListItem>
+                <ListItemIcon><Person color="action" /></ListItemIcon>
                 <ListItemText
                   primary="TC Kimlik No"
                   secondary={student.tcNo || '-'}
                 />
               </ListItem>
               <ListItem>
+                <ListItemIcon><CalendarToday color="action" /></ListItemIcon>
                 <ListItemText
                   primary="Doğum Tarihi"
                   secondary={
@@ -420,17 +507,153 @@ const StudentDetail = () => {
                 />
               </ListItem>
               <ListItem>
-                <Phone sx={{ mr: 2, color: 'action.active' }} />
-                <ListItemText primary="Telefon" secondary={student.phone || '-'} />
+                <ListItemIcon><Phone color="action" /></ListItemIcon>
+                <ListItemText
+                  primary="Telefon"
+                  secondary={student.phone || '-'}
+                />
               </ListItem>
               <ListItem>
-                <Email sx={{ mr: 2, color: 'action.active' }} />
+                <ListItemIcon><Email color="action" /></ListItemIcon>
                 <ListItemText primary="E-posta" secondary={student.email || '-'} />
               </ListItem>
               <ListItem>
+                <ListItemIcon><Home color="action" /></ListItemIcon>
                 <ListItemText primary="Adres" secondary={student.address || '-'} />
               </ListItem>
             </List>
+
+            {/* Parent Info - Collapsible */}
+            {(mother || father) && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                <Box
+                  sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', py: 1 }}
+                  onClick={() => setParentInfoExpanded(!parentInfoExpanded)}
+                >
+                  <ContactPhone color="action" sx={{ mr: 1 }} />
+                  <Typography variant="subtitle2" sx={{ flex: 1 }}>Veli Bilgileri</Typography>
+                  <IconButton size="small">
+                    {parentInfoExpanded ? <ExpandLess /> : <ExpandMore />}
+                  </IconButton>
+                </Box>
+                <Collapse in={parentInfoExpanded}>
+                  <Box sx={{ pl: 2 }}>
+                    {mother && (
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="caption" color="text.secondary">Anne</Typography>
+                        <Typography variant="body2">{mother.name || '-'}</Typography>
+                        {mother.phone && (
+                          <Typography variant="body2" color="primary">
+                            <Phone sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                            {mother.phone}
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+                    {father && (
+                      <Box sx={{ mb: 1 }}>
+                        <Typography variant="caption" color="text.secondary">Baba</Typography>
+                        <Typography variant="body2">{father.name || '-'}</Typography>
+                        {father.phone && (
+                          <Typography variant="body2" color="primary">
+                            <Phone sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                            {father.phone}
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                </Collapse>
+              </>
+            )}
+
+            {/* Emergency Contact - Collapsible */}
+            {emergencyContact && emergencyContact.name && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                <Box
+                  sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', py: 1 }}
+                  onClick={() => setEmergencyExpanded(!emergencyExpanded)}
+                >
+                  <MedicalServices color="error" sx={{ mr: 1 }} />
+                  <Typography variant="subtitle2" sx={{ flex: 1 }}>Acil Durum</Typography>
+                  <IconButton size="small">
+                    {emergencyExpanded ? <ExpandLess /> : <ExpandMore />}
+                  </IconButton>
+                </Box>
+                <Collapse in={emergencyExpanded}>
+                  <Box sx={{ pl: 2 }}>
+                    <Typography variant="body2">{emergencyContact.name}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {emergencyContact.relationship || 'Yakın'}
+                    </Typography>
+                    {emergencyContact.phone && (
+                      <Typography variant="body2" color="error">
+                        <Phone sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                        {emergencyContact.phone}
+                      </Typography>
+                    )}
+                    {emergencyContact.email && (
+                      <Typography variant="body2" color="text.secondary">
+                        <Email sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'text-bottom' }} />
+                        {emergencyContact.email}
+                      </Typography>
+                    )}
+                  </Box>
+                </Collapse>
+              </>
+            )}
+
+            {/* Health Notes & Other Notes - Collapsible */}
+            {(student.healthNotes || student.notes) && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                <Box
+                  sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer', py: 1 }}
+                  onClick={() => setNotesExpanded(!notesExpanded)}
+                >
+                  <MedicalServices color="warning" sx={{ mr: 1 }} />
+                  <Typography variant="subtitle2" sx={{ flex: 1 }}>Notlar</Typography>
+                  <IconButton size="small">
+                    {notesExpanded ? <ExpandLess /> : <ExpandMore />}
+                  </IconButton>
+                </Box>
+                <Collapse in={notesExpanded}>
+                  <Box sx={{ pl: 2 }}>
+                    {student.healthNotes && (
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="caption" color="error">Sağlık Notları</Typography>
+                        <Typography variant="body2">{student.healthNotes}</Typography>
+                      </Box>
+                    )}
+                    {student.notes && (
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">Diğer Notlar</Typography>
+                        <Typography variant="body2">{student.notes}</Typography>
+                      </Box>
+                    )}
+                  </Box>
+                </Collapse>
+              </>
+            )}
+
+            {/* Notification Settings */}
+            {student.defaultNotificationRecipient && (
+              <>
+                <Divider sx={{ my: 1 }} />
+                <Box sx={{ display: 'flex', alignItems: 'center', py: 1 }}>
+                  <Notifications color="action" sx={{ mr: 1 }} />
+                  <Typography variant="body2" color="text.secondary">
+                    Bildirimler: {
+                      student.defaultNotificationRecipient === 'mother' ? 'Anne' :
+                      student.defaultNotificationRecipient === 'father' ? 'Baba' :
+                      'Öğrenci'
+                    }
+                  </Typography>
+                </Box>
+              </>
+            )}
           </Paper>
 
           {/* Balance Card */}
@@ -476,7 +699,18 @@ const StudentDetail = () => {
             <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
               <Tab label="Kurs Kayıtları" />
               <Tab label="Ödeme Planları" />
-              <Tab label="Yoklama Geçmişi" />
+              <Tab label={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  Yoklama Geçmişi
+                  {totalLessons > 0 && (
+                    <Chip
+                      label={`%${attendanceRate}`}
+                      size="small"
+                      color={attendanceRate >= 80 ? 'success' : attendanceRate >= 60 ? 'warning' : 'error'}
+                    />
+                  )}
+                </Box>
+              } />
             </Tabs>
 
             <Box sx={{ p: 3 }}>
@@ -612,9 +846,87 @@ const StudentDetail = () => {
               {/* Attendance Tab */}
               {tabValue === 2 && (
                 <Box>
-                  <Typography color="text.secondary" align="center">
-                    Yoklama geçmişi yakında eklenecek
-                  </Typography>
+                  {attendanceLoading ? (
+                    <LoadingSpinner message="Yoklama geçmişi yükleniyor..." />
+                  ) : attendanceRecords.length === 0 ? (
+                    <Typography color="text.secondary" align="center">
+                      Henüz yoklama kaydı bulunmuyor
+                    </Typography>
+                  ) : (
+                    <>
+                      {/* Summary */}
+                      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+                        <Paper sx={{ p: 2, flex: 1, minWidth: 120, textAlign: 'center', bgcolor: 'success.50' }}>
+                          <Typography variant="h4" color="success.main">{attendedCount}</Typography>
+                          <Typography variant="caption">Katıldı</Typography>
+                        </Paper>
+                        <Paper sx={{ p: 2, flex: 1, minWidth: 120, textAlign: 'center', bgcolor: 'error.50' }}>
+                          <Typography variant="h4" color="error.main">{totalLessons - attendedCount}</Typography>
+                          <Typography variant="caption">Katılmadı</Typography>
+                        </Paper>
+                        <Paper sx={{ p: 2, flex: 1, minWidth: 120, textAlign: 'center', bgcolor: 'info.50' }}>
+                          <Typography variant="h4" color="info.main">%{attendanceRate}</Typography>
+                          <Typography variant="caption">Katılım Oranı</Typography>
+                        </Paper>
+                      </Box>
+
+                      {/* Attendance Table */}
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Tarih</TableCell>
+                              <TableCell>Ders</TableCell>
+                              <TableCell>Saat</TableCell>
+                              <TableCell align="center">Durum</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {attendanceRecords.map((record) => (
+                              <TableRow key={record._id}>
+                                <TableCell>
+                                  {record.scheduledLesson?.date
+                                    ? new Date(record.scheduledLesson.date).toLocaleDateString('tr-TR', {
+                                        weekday: 'short',
+                                        day: 'numeric',
+                                        month: 'short',
+                                        year: 'numeric'
+                                      })
+                                    : '-'}
+                                </TableCell>
+                                <TableCell>
+                                  {record.scheduledLesson?.course?.name || '-'}
+                                </TableCell>
+                                <TableCell>
+                                  {record.scheduledLesson?.startTime && record.scheduledLesson?.endTime
+                                    ? `${record.scheduledLesson.startTime} - ${record.scheduledLesson.endTime}`
+                                    : '-'}
+                                </TableCell>
+                                <TableCell align="center">
+                                  {record.attended ? (
+                                    <Chip
+                                      icon={<CheckCircle sx={{ fontSize: 16 }} />}
+                                      label="Katıldı"
+                                      color="success"
+                                      size="small"
+                                    />
+                                  ) : (
+                                    <Chip
+                                      icon={<Cancel sx={{ fontSize: 16 }} />}
+                                      label="Katılmadı"
+                                      color="error"
+                                      size="small"
+                                      variant="outlined"
+                                    />
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </>
+                  )}
                 </Box>
               )}
             </Box>
@@ -633,7 +945,7 @@ const StudentDetail = () => {
         <DialogContent>
           {student.balance > 0 && (
             <Typography color="warning.main" sx={{ mb: 2, mt: 1 }}>
-              ⚠️ Bu öğrencinin {student.balance.toLocaleString('tr-TR')} TL ödenmemiş borcu var!
+              Bu öğrencinin {student.balance.toLocaleString('tr-TR')} TL ödenmemiş borcu var!
               Arşivlenen öğrencilerin borçları takip edilmeye devam edilir.
             </Typography>
           )}
@@ -728,7 +1040,7 @@ const StudentDetail = () => {
             <strong>{unenrollDialog.enrollment?.course?.name}</strong> dersinden çıkarmak istediğinize emin misiniz?
           </Typography>
           <Typography color="warning.main" sx={{ mt: 2 }}>
-            ⚠️ Bu işlem geri alınamaz. Öğrenci tekrar kursa kaydedilmek istenirse yeniden kayıt yapılması gerekecektir.
+            Bu işlem geri alınamaz. Öğrenci tekrar kursa kaydedilmek istenirse yeniden kayıt yapılması gerekecektir.
           </Typography>
         </DialogContent>
         <DialogActions>
@@ -867,7 +1179,7 @@ const StudentDetail = () => {
             </Typography>
 
             <Typography variant="body2" sx={{ mb: 2, p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
-              ⚠️ <strong>Dikkat:</strong> Bu işlem mevcut bakiyeyi ödeme planlarındaki{' '}
+              <strong>Dikkat:</strong> Bu işlem mevcut bakiyeyi ödeme planlarındaki{' '}
               (Toplam Tutar - Ödenen Tutar) formülüyle yeniden hesaplar.
             </Typography>
 
@@ -885,7 +1197,7 @@ const StudentDetail = () => {
             {recalculateDialog.result ? (
               <Box sx={{ p: 2, bgcolor: 'success.light', borderRadius: 1, mb: 2 }}>
                 <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                  ✅ Bakiye Başarıyla Yeniden Hesaplandı
+                  Bakiye Başarıyla Yeniden Hesaplandı
                 </Typography>
                 <Typography variant="body2">
                   Eski Bakiye: ₺{recalculateDialog.result.oldBalance?.toLocaleString('tr-TR')}

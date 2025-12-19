@@ -79,10 +79,25 @@ const InstructorDetail = () => {
     cashRegisterId: ''
   });
   const [salaryAccruals, setSalaryAccruals] = useState([]);
+  const [salaryExpenses, setSalaryExpenses] = useState({ recurring: null, expenses: [] });
   const [accrualDialog, setAccrualDialog] = useState({
     open: false,
     month: new Date().getMonth() + 1,
     year: new Date().getFullYear()
+  });
+  const [salaryTemplateDialog, setSalaryTemplateDialog] = useState({
+    open: false,
+    dueDay: 1,
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: '',
+  });
+  const [editPaymentDialog, setEditPaymentDialog] = useState({
+    open: false,
+    lesson: null,
+    newPaymentAmount: '',
+    newDuration: '',
+    error: '',
+    saving: false
   });
 
   useEffect(() => {
@@ -92,7 +107,7 @@ const InstructorDetail = () => {
   const loadInstructor = async () => {
     try {
       setLoading(true);
-      const [detailsRes, cashRes, lessonsRes] = await Promise.all([
+      const [detailsRes, cashRes, lessonsRes, recurringRes] = await Promise.all([
         api.get(`/instructors/${id}/details`),
         api.get(`/cash-registers`, { params: { institution: institution._id } }),
         api.get(`/scheduled-lessons`, {
@@ -102,6 +117,13 @@ const InstructorDetail = () => {
             season: season._id
           }
         }),
+        api.get(`/recurring-expenses`, {
+          params: {
+            institution: institution._id,
+            season: season._id,
+            category: 'Eğitmen Ödemesi'
+          }
+        }),
       ]);
 
       setInstructor(detailsRes.data.instructor);
@@ -109,6 +131,16 @@ const InstructorDetail = () => {
       setSalaryAccruals(detailsRes.data.salaryAccruals || []);
       setStatistics(detailsRes.data.statistics || {});
       setCashRegisters(cashRes.data);
+
+      // Find salary recurring expense for this instructor
+      const salaryRecurring = recurringRes.data.find(r => r.instructor?._id === id);
+      if (salaryRecurring) {
+        // Load expenses for this recurring expense
+        const expensesRes = await api.get(`/recurring-expenses/${salaryRecurring._id}/expenses`);
+        setSalaryExpenses({ recurring: salaryRecurring, expenses: expensesRes.data || [] });
+      } else {
+        setSalaryExpenses({ recurring: null, expenses: [] });
+      }
 
       // Filter and sort lessons - only confirmed lessons
       const confirmedLessons = lessonsRes.data
@@ -265,6 +297,120 @@ const InstructorDetail = () => {
     }
   };
 
+  // Create salary template (recurring expense)
+  const handleCreateSalaryTemplate = async () => {
+    try {
+      const data = {
+        title: `${instructor.firstName} ${instructor.lastName} - Aylık Maaş`,
+        category: 'Eğitmen Ödemesi',
+        description: `${instructor.firstName} ${instructor.lastName} aylık maaş ödemesi`,
+        amountType: 'fixed',
+        estimatedAmount: instructor.paymentAmount || 0,
+        frequency: 'monthly',
+        dueDayType: 'fixed',
+        dueDay: parseInt(salaryTemplateDialog.dueDay),
+        startDate: salaryTemplateDialog.startDate,
+        endDate: salaryTemplateDialog.endDate || undefined,
+        instructor: id,
+        institution: institution._id,
+        season: season._id,
+        isActive: true,
+      };
+
+      const response = await api.post('/recurring-expenses', data);
+      const generatedCount = response.data.generatedCount || 0;
+      alert(`Maaş şablonu oluşturuldu ve ${generatedCount} maaş gideri oluşturuldu!`);
+      setSalaryTemplateDialog({ ...salaryTemplateDialog, open: false });
+      loadInstructor();
+    } catch (error) {
+      alert('Şablon oluşturma hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Pay salary expense
+  const handlePaySalaryExpense = async (expense, cashRegisterId) => {
+    try {
+      await api.post(`/recurring-expenses/pay/${expense._id}`, {
+        amount: expense.amount,
+        cashRegisterId: cashRegisterId,
+        expenseDate: new Date().toISOString().split('T')[0],
+      });
+      alert(`Maaş ödendi: ₺${expense.amount?.toLocaleString('tr-TR')}`);
+      loadInstructor();
+    } catch (error) {
+      alert('Ödeme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Open edit payment dialog
+  const handleOpenEditPayment = (lesson) => {
+    setEditPaymentDialog({
+      open: true,
+      lesson: lesson,
+      newPaymentAmount: lesson.instructorPaymentAmount?.toString() || '0',
+      newDuration: lesson.actualDuration?.toString() || '',
+      error: '',
+      saving: false
+    });
+  };
+
+  // Save edited payment
+  const handleSaveEditPayment = async () => {
+    const { lesson, newPaymentAmount, newDuration } = editPaymentDialog;
+    const newPayment = parseFloat(newPaymentAmount);
+    const duration = parseFloat(newDuration);
+
+    if (isNaN(newPayment) || newPayment < 0) {
+      setEditPaymentDialog(prev => ({ ...prev, error: 'Lütfen geçerli bir ödeme tutarı girin' }));
+      return;
+    }
+
+    if (newDuration && (isNaN(duration) || duration <= 0)) {
+      setEditPaymentDialog(prev => ({ ...prev, error: 'Lütfen geçerli bir süre girin' }));
+      return;
+    }
+
+    setEditPaymentDialog(prev => ({ ...prev, saving: true, error: '' }));
+
+    try {
+      const oldPayment = lesson.instructorPaymentAmount || 0;
+      const paymentDifference = newPayment - oldPayment;
+
+      // Update the lesson with new payment amount
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        instructorPaymentAmount: newPayment,
+        actualDuration: duration || lesson.actualDuration,
+        updatedBy: user?.username
+      });
+
+      // Adjust instructor balance by the difference
+      if (paymentDifference !== 0) {
+        await api.put(`/instructors/${id}`, {
+          balance: (instructor.balance || 0) + paymentDifference,
+          updatedBy: user?.username
+        });
+      }
+
+      alert(`✅ Ödeme güncellendi!\n\nEski: ₺${oldPayment.toLocaleString('tr-TR')}\nYeni: ₺${newPayment.toLocaleString('tr-TR')}\nFark: ${paymentDifference >= 0 ? '+' : ''}₺${paymentDifference.toLocaleString('tr-TR')}`);
+
+      setEditPaymentDialog({
+        open: false,
+        lesson: null,
+        newPaymentAmount: '',
+        newDuration: '',
+        error: '',
+        saving: false
+      });
+      loadInstructor();
+    } catch (error) {
+      setEditPaymentDialog(prev => ({
+        ...prev,
+        saving: false,
+        error: 'Ödeme güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message)
+      }));
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Eğitmen bilgileri yükleniyor..." />;
   }
@@ -295,14 +441,14 @@ const InstructorDetail = () => {
         >
           Düzenle
         </Button>
-        {instructor?.paymentType === 'monthly' && (
+        {instructor?.paymentType === 'monthly' && !salaryExpenses.recurring && (
           <Button
             variant="outlined"
             color="secondary"
             startIcon={<AccountBalance />}
-            onClick={() => setAccrualDialog({ ...accrualDialog, open: true })}
+            onClick={() => setSalaryTemplateDialog({ ...salaryTemplateDialog, open: true })}
           >
-            Maaş Tahakkuk Et
+            Maaş Şablonu Oluştur
           </Button>
         )}
         <Button
@@ -442,7 +588,7 @@ const InstructorDetail = () => {
             <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)}>
               <Tab label="Ödeme Geçmişi" />
               {instructor?.paymentType === 'monthly' && (
-                <Tab label={`Maaş Tahakkukları (${salaryAccruals.length})`} />
+                <Tab label={`Maaş Giderleri (${salaryExpenses.expenses.filter(e => e.status !== 'paid').length})`} />
               )}
               <Tab label={`Ödenmemiş Dersler (${unpaidLessons.length})`} />
               <Tab label="Tüm Dersler" />
@@ -489,79 +635,142 @@ const InstructorDetail = () => {
                 </Box>
               )}
 
-              {/* Salary Accruals Tab - Only for monthly instructors */}
+              {/* Salary Expenses Tab - Only for monthly instructors */}
               {instructor?.paymentType === 'monthly' && tabValue === 1 && (
                 <Box>
                   <Typography variant="h6" gutterBottom>
-                    Maaş Tahakkukları
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Aylık maaş tahakkuk kayıtları. Tahakkuk oluşturulduğunda bakiyeye eklenir.
+                    Maaş Giderleri
                   </Typography>
 
-                  {salaryAccruals.length === 0 ? (
+                  {!salaryExpenses.recurring ? (
                     <Alert severity="info" sx={{ mt: 2 }}>
-                      Henüz maaş tahakkuku bulunmuyor. "Maaş Tahakkuk Et" butonunu kullanarak aylık maaş tahakkuku oluşturabilirsiniz.
+                      <Typography variant="body2" gutterBottom>
+                        Henüz maaş şablonu oluşturulmamış.
+                      </Typography>
+                      <Typography variant="caption">
+                        "Maaş Şablonu Oluştur" butonunu kullanarak aylık maaş giderlerini otomatik oluşturabilirsiniz.
+                      </Typography>
+                      <Box sx={{ mt: 1 }}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<Add />}
+                          onClick={() => setSalaryTemplateDialog({ ...salaryTemplateDialog, open: true })}
+                        >
+                          Maaş Şablonu Oluştur
+                        </Button>
+                      </Box>
                     </Alert>
                   ) : (
                     <>
-                      <Alert severity="info" sx={{ mb: 2, mt: 2 }}>
+                      <Alert severity="success" sx={{ mb: 2 }}>
                         <Typography variant="subtitle2">
-                          Toplam Tahakkuk: <strong>₺{salaryAccruals.reduce((sum, a) => sum + a.amount, 0).toLocaleString('tr-TR')}</strong>
+                          Maaş Şablonu: <strong>{salaryExpenses.recurring.title}</strong>
                         </Typography>
-                        <Typography variant="caption">
-                          {salaryAccruals.length} adet maaş tahakkuku
+                        <Typography variant="body2">
+                          Tutar: ₺{salaryExpenses.recurring.estimatedAmount?.toLocaleString('tr-TR')} |
+                          Vade: Her ayın {salaryExpenses.recurring.dueDay}. günü
                         </Typography>
                       </Alert>
 
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Dönem</TableCell>
-                              <TableCell>Tutar</TableCell>
-                              <TableCell>Açıklama</TableCell>
-                              <TableCell>Oluşturma Tarihi</TableCell>
-                              <TableCell>İşlem</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {salaryAccruals.map((accrual) => {
-                              const monthNames = ['', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-                                'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
-                              return (
-                                <TableRow key={accrual._id}>
-                                  <TableCell>
-                                    <Typography variant="body2" fontWeight="medium">
-                                      {monthNames[accrual.month]} {accrual.year}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Typography variant="body2" color="error" fontWeight="bold">
-                                      ₺{accrual.amount.toLocaleString('tr-TR')}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell>{accrual.description || '-'}</TableCell>
-                                  <TableCell>
-                                    {new Date(accrual.createdAt).toLocaleDateString('tr-TR')}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      variant="outlined"
-                                      color="error"
-                                      size="small"
-                                      startIcon={<Delete />}
-                                      onClick={() => handleDeleteAccrual(accrual._id)}
-                                    >
-                                      Sil
-                                    </Button>
-                                  </TableCell>
+                      {salaryExpenses.expenses.length === 0 ? (
+                        <Typography color="text.secondary" align="center" sx={{ mt: 3 }}>
+                          Henüz maaş gideri oluşturulmamış
+                        </Typography>
+                      ) : (
+                        <>
+                          <Box sx={{ mb: 2, display: 'flex', gap: 2 }}>
+                            <Chip
+                              label={`Bekleyen: ${salaryExpenses.expenses.filter(e => e.status !== 'paid').length}`}
+                              color="warning"
+                              variant="outlined"
+                            />
+                            <Chip
+                              label={`Ödenen: ${salaryExpenses.expenses.filter(e => e.status === 'paid').length}`}
+                              color="success"
+                              variant="outlined"
+                            />
+                            <Chip
+                              label={`Toplam Bekleyen: ₺${salaryExpenses.expenses.filter(e => e.status !== 'paid').reduce((sum, e) => sum + e.amount, 0).toLocaleString('tr-TR')}`}
+                              color="error"
+                            />
+                          </Box>
+
+                          <TableContainer>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow>
+                                  <TableCell>Dönem</TableCell>
+                                  <TableCell>Vade</TableCell>
+                                  <TableCell>Tutar</TableCell>
+                                  <TableCell>Durum</TableCell>
+                                  <TableCell>İşlem</TableCell>
                                 </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
+                              </TableHead>
+                              <TableBody>
+                                {salaryExpenses.expenses.map((expense) => (
+                                  <TableRow key={expense._id} sx={{ bgcolor: expense.status === 'overdue' ? 'error.light' : 'inherit' }}>
+                                    <TableCell>
+                                      <Typography variant="body2" fontWeight="medium">
+                                        {expense.description}
+                                      </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                      {new Date(expense.dueDate).toLocaleDateString('tr-TR')}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Typography variant="body2" color="error" fontWeight="bold">
+                                        ₺{expense.amount?.toLocaleString('tr-TR')}
+                                      </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Chip
+                                        label={
+                                          expense.status === 'paid' ? 'Ödendi' :
+                                          expense.status === 'overdue' ? 'Gecikmiş' : 'Bekliyor'
+                                        }
+                                        color={
+                                          expense.status === 'paid' ? 'success' :
+                                          expense.status === 'overdue' ? 'error' : 'warning'
+                                        }
+                                        size="small"
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      {expense.status !== 'paid' && (
+                                        <FormControl size="small" sx={{ minWidth: 120 }}>
+                                          <Select
+                                            displayEmpty
+                                            value=""
+                                            onChange={(e) => {
+                                              if (e.target.value) {
+                                                handlePaySalaryExpense(expense, e.target.value);
+                                              }
+                                            }}
+                                            renderValue={() => 'Öde'}
+                                          >
+                                            <MenuItem value="" disabled>Kasa Seç</MenuItem>
+                                            {cashRegisters.map((reg) => (
+                                              <MenuItem key={reg._id} value={reg._id}>
+                                                {reg.name}
+                                              </MenuItem>
+                                            ))}
+                                          </Select>
+                                        </FormControl>
+                                      )}
+                                      {expense.status === 'paid' && (
+                                        <Typography variant="caption" color="text.secondary">
+                                          {new Date(expense.expenseDate).toLocaleDateString('tr-TR')}
+                                        </Typography>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        </>
+                      )}
                     </>
                   )}
                 </Box>
@@ -632,21 +841,32 @@ const InstructorDetail = () => {
                                   </Typography>
                                 </TableCell>
                                 <TableCell>
-                                  <Button
-                                    variant="contained"
-                                    color="success"
-                                    size="small"
-                                    startIcon={<PaymentIcon />}
-                                    onClick={() => {
-                                      setPayLessonDialog({
-                                        open: true,
-                                        lesson: lesson,
-                                        cashRegisterId: cashRegisters[0]?._id || ''
-                                      });
-                                    }}
-                                  >
-                                    Öde
-                                  </Button>
+                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Button
+                                      variant="outlined"
+                                      color="primary"
+                                      size="small"
+                                      startIcon={<Edit />}
+                                      onClick={() => handleOpenEditPayment(lesson)}
+                                    >
+                                      Düzenle
+                                    </Button>
+                                    <Button
+                                      variant="contained"
+                                      color="success"
+                                      size="small"
+                                      startIcon={<PaymentIcon />}
+                                      onClick={() => {
+                                        setPayLessonDialog({
+                                          open: true,
+                                          lesson: lesson,
+                                          cashRegisterId: cashRegisters[0]?._id || ''
+                                        });
+                                      }}
+                                    >
+                                      Öde
+                                    </Button>
+                                  </Box>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -690,6 +910,7 @@ const InstructorDetail = () => {
                               <TableCell>Süre</TableCell>
                               <TableCell>Durum</TableCell>
                               <TableCell>Ödeme</TableCell>
+                              <TableCell>İşlem</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -718,11 +939,16 @@ const InstructorDetail = () => {
                                   </Typography>
                                 </TableCell>
                                 <TableCell>
-                                  <Chip
-                                    label={lesson.status === 'completed' ? 'Tamamlandı' : lesson.status}
-                                    color={lesson.status === 'completed' ? 'success' : 'default'}
-                                    size="small"
-                                  />
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                    <Chip
+                                      label={lesson.status === 'completed' ? 'Tamamlandı' : lesson.status}
+                                      color={lesson.status === 'completed' ? 'success' : 'default'}
+                                      size="small"
+                                    />
+                                    {lesson.instructorPaymentPaid && (
+                                      <Chip label="Ödendi" color="info" size="small" variant="outlined" />
+                                    )}
+                                  </Box>
                                 </TableCell>
                                 <TableCell>
                                   {lesson.instructorPaymentCalculated ? (
@@ -732,6 +958,23 @@ const InstructorDetail = () => {
                                   ) : (
                                     <Typography variant="body2" color="text.secondary">
                                       Bekliyor
+                                    </Typography>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {lesson.status === 'completed' && lesson.instructorPaymentCalculated && !lesson.instructorPaymentPaid && (
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      startIcon={<Edit />}
+                                      onClick={() => handleOpenEditPayment(lesson)}
+                                    >
+                                      Düzenle
+                                    </Button>
+                                  )}
+                                  {lesson.instructorPaymentPaid && (
+                                    <Typography variant="caption" color="text.secondary">
+                                      Düzenlenemez
                                     </Typography>
                                   )}
                                 </TableCell>
@@ -952,6 +1195,171 @@ const InstructorDetail = () => {
             startIcon={<AccountBalance />}
           >
             Tahakkuk Oluştur
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Payment Dialog */}
+      <Dialog
+        open={editPaymentDialog.open}
+        onClose={() => setEditPaymentDialog({ ...editPaymentDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ders Ödemesini Düzenle</DialogTitle>
+        <DialogContent>
+          {editPaymentDialog.lesson && (
+            <>
+              <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  {editPaymentDialog.lesson.course?.name || 'Ders'}
+                </Typography>
+                <Typography variant="body2">
+                  Tarih: {new Date(editPaymentDialog.lesson.date).toLocaleDateString('tr-TR')}
+                </Typography>
+                <Typography variant="body2">
+                  Saat: {editPaymentDialog.lesson.startTime} - {editPaymentDialog.lesson.endTime}
+                </Typography>
+              </Alert>
+
+              {editPaymentDialog.error && (
+                <Alert severity="error" sx={{ mb: 2 }}>{editPaymentDialog.error}</Alert>
+              )}
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ders Süresi (Saat)"
+                    type="number"
+                    value={editPaymentDialog.newDuration}
+                    onChange={(e) => setEditPaymentDialog({ ...editPaymentDialog, newDuration: e.target.value })}
+                    inputProps={{ step: 0.5, min: 0.5, max: 24 }}
+                    helperText={`Mevcut: ${editPaymentDialog.lesson.actualDuration || '-'} saat`}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ödeme Tutarı (₺)"
+                    type="number"
+                    value={editPaymentDialog.newPaymentAmount}
+                    onChange={(e) => setEditPaymentDialog({ ...editPaymentDialog, newPaymentAmount: e.target.value })}
+                    inputProps={{ step: 0.01, min: 0 }}
+                    helperText={`Mevcut: ₺${editPaymentDialog.lesson.instructorPaymentAmount?.toLocaleString('tr-TR') || 0}`}
+                  />
+                </Grid>
+              </Grid>
+
+              {editPaymentDialog.newPaymentAmount && (
+                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                  <Typography variant="body2">
+                    <strong>Fark:</strong>{' '}
+                    <Typography
+                      component="span"
+                      color={(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) >= 0 ? 'error.main' : 'success.main'}
+                      fontWeight="bold"
+                    >
+                      {(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) >= 0 ? '+' : ''}
+                      ₺{(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)).toLocaleString('tr-TR')}
+                    </Typography>
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {(parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) > 0
+                      ? 'Eğitmene ek borç tahakkuk edecek'
+                      : (parseFloat(editPaymentDialog.newPaymentAmount) - (editPaymentDialog.lesson.instructorPaymentAmount || 0)) < 0
+                      ? 'Eğitmen borcundan düşülecek'
+                      : 'Değişiklik yok'}
+                  </Typography>
+                </Box>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setEditPaymentDialog({ ...editPaymentDialog, open: false })}
+            disabled={editPaymentDialog.saving}
+          >
+            İptal
+          </Button>
+          <Button
+            onClick={handleSaveEditPayment}
+            variant="contained"
+            color="primary"
+            disabled={editPaymentDialog.saving}
+          >
+            {editPaymentDialog.saving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Salary Template Dialog */}
+      <Dialog
+        open={salaryTemplateDialog.open}
+        onClose={() => setSalaryTemplateDialog({ ...salaryTemplateDialog, open: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Maaş Şablonu Oluştur</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+            <Typography variant="body2">
+              Aylık maaş: <strong>₺{instructor?.paymentAmount?.toLocaleString('tr-TR')}</strong>
+            </Typography>
+            <Typography variant="caption">
+              Bu şablon oluşturulduğunda, belirlenen tarih aralığındaki her ay için maaş gideri otomatik oluşturulacaktır.
+              Maaş ödendiğinde eğitmen bakiyesi otomatik güncellenecektir.
+            </Typography>
+          </Alert>
+
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Maaş Günü (1-31)"
+                type="number"
+                value={salaryTemplateDialog.dueDay}
+                onChange={(e) => setSalaryTemplateDialog({ ...salaryTemplateDialog, dueDay: e.target.value })}
+                inputProps={{ min: 1, max: 31 }}
+                helperText="Her ayın kaçıncı günü maaş vadesi olsun?"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Başlangıç Tarihi"
+                type="date"
+                value={salaryTemplateDialog.startDate}
+                onChange={(e) => setSalaryTemplateDialog({ ...salaryTemplateDialog, startDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Bitiş Tarihi (Opsiyonel)"
+                type="date"
+                value={salaryTemplateDialog.endDate}
+                onChange={(e) => setSalaryTemplateDialog({ ...salaryTemplateDialog, endDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                helperText="Boş bırakılırsa 1 yıl boyunca oluşturulur"
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSalaryTemplateDialog({ ...salaryTemplateDialog, open: false })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleCreateSalaryTemplate}
+            variant="contained"
+            color="secondary"
+            startIcon={<AccountBalance />}
+          >
+            Şablon Oluştur
           </Button>
         </DialogActions>
       </Dialog>

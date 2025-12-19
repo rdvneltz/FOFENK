@@ -3,6 +3,7 @@ const router = express.Router();
 const RecurringExpense = require('../models/RecurringExpense');
 const Expense = require('../models/Expense');
 const CashRegister = require('../models/CashRegister');
+const Instructor = require('../models/Instructor');
 const ActivityLog = require('../models/ActivityLog');
 
 // Get all recurring expenses
@@ -20,6 +21,7 @@ router.get('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('defaultCashRegister', 'name')
+      .populate('instructor', 'firstName lastName paymentAmount')
       .sort({ title: 1 });
 
     res.json(recurringExpenses);
@@ -34,7 +36,8 @@ router.get('/:id', async (req, res) => {
     const recurringExpense = await RecurringExpense.findById(req.params.id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('defaultCashRegister', 'name');
+      .populate('defaultCashRegister', 'name')
+      .populate('instructor', 'firstName lastName paymentAmount');
 
     if (!recurringExpense) {
       return res.status(404).json({ message: 'Düzenli gider bulunamadı' });
@@ -82,7 +85,7 @@ router.post('/', async (req, res) => {
 
       // Only create if within active period (use start/end Date objects, not raw values)
       if (dueDate >= start && dueDate <= end) {
-        await Expense.create({
+        const expenseData = {
           category: savedExpense.category,
           amount: savedExpense.estimatedAmount,
           estimatedAmount: savedExpense.estimatedAmount,
@@ -95,7 +98,12 @@ router.post('/', async (req, res) => {
           institution: savedExpense.institution,
           season: savedExpense.season,
           notes: savedExpense.notes
-        });
+        };
+        // Add instructor if exists (for salary expenses)
+        if (savedExpense.instructor) {
+          expenseData.instructor = savedExpense.instructor;
+        }
+        await Expense.create(expenseData);
         generatedCount++;
       }
 
@@ -115,7 +123,8 @@ router.post('/', async (req, res) => {
     const populated = await RecurringExpense.findById(savedExpense._id)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('defaultCashRegister', 'name');
+      .populate('defaultCashRegister', 'name')
+      .populate('instructor', 'firstName lastName paymentAmount');
 
     // Log activity
     await ActivityLog.create({
@@ -144,7 +153,8 @@ router.put('/:id', async (req, res) => {
     )
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('defaultCashRegister', 'name');
+      .populate('defaultCashRegister', 'name')
+      .populate('instructor', 'firstName lastName paymentAmount');
 
     if (!recurringExpense) {
       return res.status(404).json({ message: 'Düzenli gider bulunamadı' });
@@ -235,7 +245,7 @@ router.post('/:id/generate', async (req, res) => {
         // Only create if within the recurring expense's active period
         if (dueDate >= recurringStart && (!recurringEnd || dueDate <= recurringEnd)) {
 
-          const newExpense = await Expense.create({
+          const expenseData = {
             category: recurringExpense.category,
             amount: recurringExpense.estimatedAmount,
             estimatedAmount: recurringExpense.estimatedAmount,
@@ -248,7 +258,12 @@ router.post('/:id/generate', async (req, res) => {
             institution: recurringExpense.institution,
             season: recurringExpense.season,
             notes: recurringExpense.notes
-          });
+          };
+          // Add instructor if exists (for salary expenses)
+          if (recurringExpense.instructor) {
+            expenseData.instructor = recurringExpense.instructor;
+          }
+          const newExpense = await Expense.create(expenseData);
 
           generatedExpenses.push(newExpense);
         }
@@ -292,7 +307,8 @@ router.post('/pay/:expenseId', async (req, res) => {
   try {
     const { amount, cashRegisterId, notes, expenseDate } = req.body;
 
-    const expense = await Expense.findById(req.params.expenseId);
+    const expense = await Expense.findById(req.params.expenseId)
+      .populate('recurringExpense', 'instructor');
 
     if (!expense) {
       return res.status(404).json({ message: 'Gider bulunamadı' });
@@ -322,6 +338,19 @@ router.post('/pay/:expenseId', async (req, res) => {
     cashRegister.balance -= amount;
     await cashRegister.save();
 
+    // If this is a salary expense (has instructor), update instructor balance
+    const instructorId = expense.instructor || expense.recurringExpense?.instructor;
+    if (instructorId) {
+      const instructor = await Instructor.findById(instructorId);
+      if (instructor) {
+        // Subtract from instructor balance (they got paid, so we owe less)
+        instructor.balance = (instructor.balance || 0) - amount;
+        await instructor.save();
+
+        console.log(`Instructor ${instructor.firstName} ${instructor.lastName} balance updated: -${amount}`);
+      }
+    }
+
     // Log activity
     await ActivityLog.create({
       user: 'system',
@@ -333,14 +362,16 @@ router.post('/pay/:expenseId', async (req, res) => {
       season: expense.season,
       metadata: {
         amount,
-        cashRegister: cashRegister.name
+        cashRegister: cashRegister.name,
+        instructor: instructorId || null
       }
     });
 
     // Return populated expense
     const populated = await Expense.findById(expense._id)
       .populate('cashRegister', 'name')
-      .populate('recurringExpense', 'title');
+      .populate('recurringExpense', 'title instructor')
+      .populate('instructor', 'firstName lastName');
 
     res.json(populated);
   } catch (error) {
@@ -509,8 +540,7 @@ router.post('/generate-all', async (req, res) => {
 
           // Use start/end Date objects for comparison
           if (dueDate >= start && dueDate <= end) {
-
-            await Expense.create({
+            const expenseData = {
               category: recurring.category,
               amount: recurring.estimatedAmount,
               estimatedAmount: recurring.estimatedAmount,
@@ -523,7 +553,12 @@ router.post('/generate-all', async (req, res) => {
               institution: recurring.institution,
               season: recurring.season,
               notes: recurring.notes
-            });
+            };
+            // Add instructor if exists (for salary expenses)
+            if (recurring.instructor) {
+              expenseData.instructor = recurring.instructor;
+            }
+            await Expense.create(expenseData);
 
             totalGenerated++;
           }
