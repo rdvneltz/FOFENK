@@ -186,11 +186,15 @@ const Calendar = () => {
         },
       });
 
-      // Combine all pending expenses
+      // Combine all pending expenses (including all time periods)
       const allExpenses = [
         ...(response.data.overdue || []),
         ...(response.data.thisWeek || []),
-        ...(response.data.upcoming || [])
+        ...(response.data.upcoming || []),
+        ...(response.data.nextMonth || []),
+        ...(response.data.next3Months || []),
+        ...(response.data.next6Months || []),
+        ...(response.data.later || []),
       ];
 
       // Store as array

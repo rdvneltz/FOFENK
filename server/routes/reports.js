@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Student = require('../models/Student');
 const Payment = require('../models/Payment');
 const Expense = require('../models/Expense');
@@ -28,32 +29,30 @@ router.get('/dashboard', async (req, res) => {
     // Active students (status: 'active')
     const activeStudents = await Student.countDocuments({ ...filter, status: 'active' });
 
-    // Date filter for payments and expenses
-    const dateFilter = { ...filter };
-    if (startDate && endDate) {
-      dateFilter.$or = [
-        { paymentDate: { $gte: new Date(startDate), $lte: new Date(endDate) } },
-        { date: { $gte: new Date(startDate), $lte: new Date(endDate) } }
-      ];
-    }
+    // Build aggregate filter with ObjectIds
+    const aggregateFilter = {};
+    if (institutionId) aggregateFilter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) aggregateFilter.season = new mongoose.Types.ObjectId(seasonId);
 
-    // Total income (payments)
-    const paymentsFilter = { ...filter };
+    // Date filter for payments
+    const paymentsFilter = { ...aggregateFilter };
     if (startDate && endDate) {
       paymentsFilter.paymentDate = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
     }
+
+    // Total income (payments) - only completed payments
     const totalIncome = await Payment.aggregate([
-      { $match: paymentsFilter },
+      { $match: { ...paymentsFilter, status: 'completed' } },
       { $group: { _id: null, total: { $sum: '$amount' } } }
     ]);
 
-    // Total expenses
-    const expensesFilter = { ...filter };
+    // Total expenses - only PAID expenses (not pending/overdue)
+    const expensesFilter = { ...aggregateFilter, status: 'paid' };
     if (startDate && endDate) {
-      expensesFilter.date = {
+      expensesFilter.expenseDate = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
