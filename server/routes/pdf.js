@@ -214,20 +214,21 @@ router.get('/student-status-report/:studentId', async (req, res) => {
       });
 
       // Calculate lesson details for summary
-      // For per-lesson calculation, always use expected lessons (4 per month) not actual lessons
-      const expectedTotalLessons = expectedLessonsPerMonth * durationMonths;
+      // Per-lesson fee is ALWAYS calculated as: monthly fee / 4 (expected lessons per month)
+      // This is true even if actual lesson count varies
+      const discountedMonthlyFee = plan.discountedAmount / durationMonths;
+      const discountedPerLessonFee = discountedMonthlyFee / expectedLessonsPerMonth;
 
       const lessonDetails = {
         monthlyFee: monthlyFee,
-        perLessonFee: perLessonFee,
+        perLessonFee: perLessonFee, // = monthlyFee / 4
         totalLessons: totalLessons,
-        expectedTotalLessons: expectedTotalLessons,
         durationMonths: durationMonths,
         usedPartialPricing: usedPartialPricing,
         firstMonthPartial: firstMonthPartial,
-        // After discount calculations - use expected lessons per month (4) not actual
-        discountedMonthlyFee: plan.discountedAmount / durationMonths,
-        discountedPerLessonFee: expectedTotalLessons > 0 ? plan.discountedAmount / expectedTotalLessons : 0
+        // After discount: monthly / 4 = per lesson
+        discountedMonthlyFee: discountedMonthlyFee,
+        discountedPerLessonFee: discountedPerLessonFee
       };
 
       return {
