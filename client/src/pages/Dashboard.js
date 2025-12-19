@@ -953,7 +953,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                   • Bek. Tahsilat: <span style={{ color: '#ff9800' }}>{(upcomingPayments.season?.total || 0).toLocaleString('tr-TR')}₺</span>
                 </Typography>
                 <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
-                  • Bek. Gider: <span style={{ color: '#f44336' }}>{((pendingExpenses.totals?.overdueAmount || 0) + (pendingExpenses.totals?.thisWeekAmount || 0) + (pendingExpenses.totals?.upcomingAmount || 0)).toLocaleString('tr-TR')}₺</span>
+                  • Bek. Gider: <span style={{ color: '#f44336' }}>{(pendingExpenses.totals?.totalAmount || 0).toLocaleString('tr-TR')}₺</span>
                 </Typography>
               </Box>
             </Paper>
