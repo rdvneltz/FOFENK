@@ -381,32 +381,86 @@ router.get('/pending/list', async (req, res) => {
       }
     }
 
-    // Group by status
+    // Calculate date boundaries
+    const in7Days = new Date(now);
+    in7Days.setDate(in7Days.getDate() + 7);
+
+    const in15Days = new Date(now);
+    in15Days.setDate(in15Days.getDate() + 15);
+
+    const in30Days = new Date(now);
+    in30Days.setDate(in30Days.getDate() + 30);
+
+    const in90Days = new Date(now);
+    in90Days.setDate(in90Days.getDate() + 90);
+
+    const in180Days = new Date(now);
+    in180Days.setDate(in180Days.getDate() + 180);
+
+    // Group by time periods
     const overdue = expenses.filter(e => e.status === 'overdue');
+
     const thisWeek = expenses.filter(e => {
       if (e.status !== 'pending') return false;
-      const weekFromNow = new Date();
-      weekFromNow.setDate(weekFromNow.getDate() + 7);
-      return e.dueDate <= weekFromNow;
+      return e.dueDate <= in7Days;
     });
+
     const upcoming = expenses.filter(e => {
       if (e.status !== 'pending') return false;
-      const weekFromNow = new Date();
-      weekFromNow.setDate(weekFromNow.getDate() + 7);
-      return e.dueDate > weekFromNow;
+      return e.dueDate > in7Days && e.dueDate <= in15Days;
     });
+
+    const nextMonth = expenses.filter(e => {
+      if (e.status !== 'pending') return false;
+      return e.dueDate > in15Days && e.dueDate <= in30Days;
+    });
+
+    const next3Months = expenses.filter(e => {
+      if (e.status !== 'pending') return false;
+      return e.dueDate > in30Days && e.dueDate <= in90Days;
+    });
+
+    const next6Months = expenses.filter(e => {
+      if (e.status !== 'pending') return false;
+      return e.dueDate > in90Days && e.dueDate <= in180Days;
+    });
+
+    const later = expenses.filter(e => {
+      if (e.status !== 'pending') return false;
+      return e.dueDate > in180Days;
+    });
+
+    // All pending (non-overdue)
+    const allPending = expenses.filter(e => e.status === 'pending');
 
     res.json({
       overdue,
       thisWeek,
       upcoming,
+      nextMonth,
+      next3Months,
+      next6Months,
+      later,
+      all: allPending,
       totals: {
         overdueCount: overdue.length,
         overdueAmount: overdue.reduce((sum, e) => sum + e.amount, 0),
         thisWeekCount: thisWeek.length,
         thisWeekAmount: thisWeek.reduce((sum, e) => sum + e.amount, 0),
         upcomingCount: upcoming.length,
-        upcomingAmount: upcoming.reduce((sum, e) => sum + e.amount, 0)
+        upcomingAmount: upcoming.reduce((sum, e) => sum + e.amount, 0),
+        nextMonthCount: nextMonth.length,
+        nextMonthAmount: nextMonth.reduce((sum, e) => sum + e.amount, 0),
+        next3MonthsCount: next3Months.length,
+        next3MonthsAmount: next3Months.reduce((sum, e) => sum + e.amount, 0),
+        next6MonthsCount: next6Months.length,
+        next6MonthsAmount: next6Months.reduce((sum, e) => sum + e.amount, 0),
+        laterCount: later.length,
+        laterAmount: later.reduce((sum, e) => sum + e.amount, 0),
+        allCount: allPending.length,
+        allAmount: allPending.reduce((sum, e) => sum + e.amount, 0),
+        totalCount: expenses.length,
+        totalAmount: expenses.reduce((sum, e) => sum + e.amount, 0)
       }
     });
   } catch (error) {

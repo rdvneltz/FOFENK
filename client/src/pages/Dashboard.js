@@ -248,8 +248,9 @@ const Dashboard = () => {
 
   const loadPendingExpenses = async () => {
     try {
+      // No days limit - get all pending expenses for proper totals
       const response = await api.get('/recurring-expenses/pending/list', {
-        params: { institution: institution._id, season: season._id, days: 30 }
+        params: { institution: institution._id, season: season._id }
       });
       setPendingExpenses(response.data);
     } catch (error) {
@@ -997,59 +998,101 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
         </Grid>
 
         {/* Bekleyen Giderler Widget */}
-        {canSeeExpenses && (
-          <Grid item xs={6} sm={6} md={2}>
-            <Paper
-              sx={{
-                p: 1.5,
-                cursor: 'pointer',
-                height: '100%',
-                minHeight: 140,
-                bgcolor: pendingExpenses.totals?.overdueCount > 0 ? 'error.light' :
-                         pendingExpenses.totals?.thisWeekCount > 0 ? 'warning.light' : 'grey.100',
-                '&:hover': { opacity: 0.9 }
-              }}
-              onClick={() => setPendingExpensesDialog({ open: true })}
-            >
-              <Box sx={{ textAlign: 'center', mb: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                  {pendingExpenses.totals?.overdueCount > 0 ? (
-                    <Warning sx={{ fontSize: 24, color: 'error.dark' }} />
-                  ) : (
-                    <Schedule sx={{ fontSize: 24, color: 'text.secondary' }} />
+        {canSeeExpenses && (() => {
+          // Get all expenses sorted by due date for the nearest 5
+          const allExpensesList = [
+            ...(pendingExpenses.overdue || []),
+            ...(pendingExpenses.thisWeek || []),
+            ...(pendingExpenses.upcoming || []),
+            ...(pendingExpenses.nextMonth || []),
+            ...(pendingExpenses.next3Months || []),
+            ...(pendingExpenses.next6Months || []),
+            ...(pendingExpenses.later || []),
+          ].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)).slice(0, 5);
+
+          // This month total (overdue + thisWeek + upcoming + nextMonth roughly = 30 days)
+          const thisMonthAmount = (pendingExpenses.totals?.overdueAmount || 0) +
+            (pendingExpenses.totals?.thisWeekAmount || 0) +
+            (pendingExpenses.totals?.upcomingAmount || 0) +
+            (pendingExpenses.totals?.nextMonthAmount || 0);
+          const thisMonthCount = (pendingExpenses.totals?.overdueCount || 0) +
+            (pendingExpenses.totals?.thisWeekCount || 0) +
+            (pendingExpenses.totals?.upcomingCount || 0) +
+            (pendingExpenses.totals?.nextMonthCount || 0);
+
+          return (
+            <Grid item xs={6} sm={6} md={2}>
+              <Paper
+                sx={{
+                  p: 1,
+                  cursor: 'pointer',
+                  height: '100%',
+                  minHeight: 160,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  bgcolor: pendingExpenses.totals?.overdueCount > 0 ? 'error.light' :
+                           pendingExpenses.totals?.thisWeekCount > 0 ? 'warning.light' : 'grey.100',
+                  '&:hover': { opacity: 0.9 }
+                }}
+                onClick={() => setPendingExpensesDialog({ open: true })}
+              >
+                {/* Top: Bu Ay Bekleyen */}
+                <Box sx={{ textAlign: 'center', pb: 0.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                    {pendingExpenses.totals?.overdueCount > 0 ? (
+                      <Warning sx={{ fontSize: 18, color: 'error.dark' }} />
+                    ) : (
+                      <Schedule sx={{ fontSize: 18, color: 'text.secondary' }} />
+                    )}
+                    <Typography variant="subtitle1" fontWeight="bold">
+                      {thisMonthAmount.toLocaleString('tr-TR')}₺
+                    </Typography>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary">Bu Ay ({thisMonthCount})</Typography>
+                </Box>
+
+                <Divider />
+
+                {/* Middle: Nearest 5 expenses */}
+                <Box sx={{ flex: 1, overflow: 'auto', py: 0.5, '&::-webkit-scrollbar': { width: 2 }, '&::-webkit-scrollbar-thumb': { bgcolor: 'grey.400', borderRadius: 2 } }}>
+                  {allExpensesList.length > 0 ? allExpensesList.map((exp, idx) => {
+                    const isOverdue = exp.status === 'overdue';
+                    const dueDate = new Date(exp.dueDate);
+                    return (
+                      <Box key={exp._id || idx} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.25, borderBottom: idx < allExpensesList.length - 1 ? '1px dashed #ddd' : 'none' }}>
+                        <Typography variant="caption" sx={{ color: isOverdue ? 'error.dark' : 'text.primary', fontWeight: isOverdue ? 'bold' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                          {exp.category}
+                        </Typography>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography variant="caption" sx={{ fontWeight: 'bold', color: isOverdue ? 'error.dark' : 'text.primary' }}>
+                            {exp.amount?.toLocaleString('tr-TR')}₺
+                          </Typography>
+                          <Typography variant="caption" sx={{ display: 'block', fontSize: '0.65rem', color: isOverdue ? 'error.main' : 'text.secondary' }}>
+                            {dueDate.toLocaleDateString('tr-TR', { day: '2-digit', month: 'short' })}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    );
+                  }) : (
+                    <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', py: 1, color: 'success.main' }}>
+                      Bekleyen gider yok
+                    </Typography>
                   )}
-                  <Typography variant="h6">
-                    {((pendingExpenses.totals?.overdueAmount || 0) + (pendingExpenses.totals?.thisWeekAmount || 0)).toLocaleString('tr-TR')}₺
+                </Box>
+
+                <Divider />
+
+                {/* Bottom: Toplam Bekleyen */}
+                <Box sx={{ textAlign: 'center', pt: 0.5, bgcolor: 'rgba(0,0,0,0.05)', mx: -1, mb: -1, px: 1, pb: 0.5, borderRadius: '0 0 4px 4px' }}>
+                  <Typography variant="caption" color="text.secondary">Toplam Bekleyen</Typography>
+                  <Typography variant="subtitle2" fontWeight="bold" color="primary.dark">
+                    {(pendingExpenses.totals?.totalAmount || 0).toLocaleString('tr-TR')}₺ ({pendingExpenses.totals?.totalCount || 0})
                   </Typography>
                 </Box>
-                <Typography variant="caption" color="text.secondary">Bekleyen Giderler</Typography>
-              </Box>
-              <Divider sx={{ mb: 1 }} />
-              <Box sx={{ maxHeight: 70, overflow: 'auto' }}>
-                {pendingExpenses.totals?.overdueCount > 0 && (
-                  <Typography variant="caption" sx={{ display: 'block', py: 0.25, color: 'error.dark', fontWeight: 'bold' }}>
-                    • Gecikmiş: {pendingExpenses.totals.overdueCount} ({(pendingExpenses.totals.overdueAmount || 0).toLocaleString('tr-TR')}₺)
-                  </Typography>
-                )}
-                {pendingExpenses.totals?.thisWeekCount > 0 && (
-                  <Typography variant="caption" sx={{ display: 'block', py: 0.25, color: 'warning.dark' }}>
-                    • Bu Hafta: {pendingExpenses.totals.thisWeekCount} ({(pendingExpenses.totals.thisWeekAmount || 0).toLocaleString('tr-TR')}₺)
-                  </Typography>
-                )}
-                {pendingExpenses.totals?.upcomingCount > 0 && (
-                  <Typography variant="caption" sx={{ display: 'block', py: 0.25 }}>
-                    • Yaklaşan: {pendingExpenses.totals.upcomingCount}
-                  </Typography>
-                )}
-                {!pendingExpenses.totals?.overdueCount && !pendingExpenses.totals?.thisWeekCount && !pendingExpenses.totals?.upcomingCount && (
-                  <Typography variant="caption" sx={{ display: 'block', py: 0.25, color: 'success.main' }}>
-                    Bekleyen gider yok
-                  </Typography>
-                )}
-              </Box>
-            </Paper>
-          </Grid>
-        )}
+              </Paper>
+            </Grid>
+          );
+        })()}
 
         {/* Second Row - Today's Schedule & Urgent */}
         <Grid item xs={12} md={5}>
@@ -1769,10 +1812,10 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
       </Dialog>
 
       {/* Pending Expenses Dialog */}
-      <Dialog open={pendingExpensesDialog.open} onClose={() => setPendingExpensesDialog({ open: false })} maxWidth="md" fullWidth>
+      <Dialog open={pendingExpensesDialog.open} onClose={() => setPendingExpensesDialog({ open: false })} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">Bekleyen Giderler</Typography>
+            <Typography variant="h6">Bekleyen Giderler ({pendingExpenses.totals?.totalCount || 0})</Typography>
             <Box>
               <Button size="small" onClick={() => { setPendingExpensesDialog({ open: false }); navigate('/expenses'); }}>
                 Giderler Sayfasına Git
@@ -1782,49 +1825,44 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
           </Box>
         </DialogTitle>
         <DialogContent>
-          {/* Summary */}
-          <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 2 }}>
-            <Grid container spacing={2}>
-              <Grid item xs={4}>
-                <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'error.light', borderRadius: 1 }}>
-                  <Typography variant="caption" color="error.dark">Gecikmiş</Typography>
-                  <Typography variant="h6" color="error.dark" fontWeight="bold">{pendingExpenses.totals?.overdueCount || 0}</Typography>
-                  <Typography variant="body2" color="error.dark">{(pendingExpenses.totals?.overdueAmount || 0).toLocaleString('tr-TR')} TL</Typography>
-                </Box>
+          {/* Summary Cards */}
+          <Grid container spacing={1} sx={{ mb: 2 }}>
+            {[
+              { key: 'overdue', label: 'Gecikmiş', color: 'error', count: pendingExpenses.totals?.overdueCount, amount: pendingExpenses.totals?.overdueAmount },
+              { key: 'thisWeek', label: 'Bu Hafta (7 gün)', color: 'warning', count: pendingExpenses.totals?.thisWeekCount, amount: pendingExpenses.totals?.thisWeekAmount },
+              { key: 'upcoming', label: 'Yaklaşan (15 gün)', color: 'info', count: pendingExpenses.totals?.upcomingCount, amount: pendingExpenses.totals?.upcomingAmount },
+              { key: 'nextMonth', label: 'Bu Ay (30 gün)', color: 'secondary', count: pendingExpenses.totals?.nextMonthCount, amount: pendingExpenses.totals?.nextMonthAmount },
+              { key: 'next3Months', label: '3 Ay', color: 'primary', count: pendingExpenses.totals?.next3MonthsCount, amount: pendingExpenses.totals?.next3MonthsAmount },
+              { key: 'next6Months', label: '6 Ay', color: 'default', count: pendingExpenses.totals?.next6MonthsCount, amount: pendingExpenses.totals?.next6MonthsAmount },
+            ].map(({ key, label, color, count, amount }) => (
+              <Grid item xs={4} sm={2} key={key}>
+                <Paper sx={{ p: 1, textAlign: 'center', bgcolor: color === 'default' ? 'grey.200' : `${color}.light` }}>
+                  <Typography variant="caption" color={color === 'default' ? 'text.secondary' : `${color}.dark`}>{label}</Typography>
+                  <Typography variant="h6" color={color === 'default' ? 'text.primary' : `${color}.dark`} fontWeight="bold">{count || 0}</Typography>
+                  <Typography variant="caption" color={color === 'default' ? 'text.secondary' : `${color}.dark`}>{(amount || 0).toLocaleString('tr-TR')}₺</Typography>
+                </Paper>
               </Grid>
-              <Grid item xs={4}>
-                <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'warning.light', borderRadius: 1 }}>
-                  <Typography variant="caption" color="warning.dark">Bu Hafta</Typography>
-                  <Typography variant="h6" color="warning.dark" fontWeight="bold">{pendingExpenses.totals?.thisWeekCount || 0}</Typography>
-                  <Typography variant="body2" color="warning.dark">{(pendingExpenses.totals?.thisWeekAmount || 0).toLocaleString('tr-TR')} TL</Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={4}>
-                <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'info.light', borderRadius: 1 }}>
-                  <Typography variant="caption" color="info.dark">Yaklaşan</Typography>
-                  <Typography variant="h6" color="info.dark" fontWeight="bold">{pendingExpenses.totals?.upcomingCount || 0}</Typography>
-                  <Typography variant="body2" color="info.dark">{(pendingExpenses.totals?.upcomingAmount || 0).toLocaleString('tr-TR')} TL</Typography>
-                </Box>
-              </Grid>
-            </Grid>
-            <Box sx={{ textAlign: 'center', mt: 2, p: 1, bgcolor: 'primary.light', borderRadius: 1 }}>
-              <Typography variant="subtitle2" color="primary.dark">Toplam Bekleyen</Typography>
-              <Typography variant="h5" color="primary.dark" fontWeight="bold">
-                {((pendingExpenses.totals?.overdueAmount || 0) + (pendingExpenses.totals?.thisWeekAmount || 0) + (pendingExpenses.totals?.upcomingAmount || 0)).toLocaleString('tr-TR')} TL
-              </Typography>
-            </Box>
+            ))}
+          </Grid>
+
+          {/* Total Summary */}
+          <Box sx={{ mb: 2, p: 1.5, bgcolor: 'primary.main', borderRadius: 1, textAlign: 'center' }}>
+            <Typography variant="subtitle2" color="white">Toplam Bekleyen Gider</Typography>
+            <Typography variant="h5" color="white" fontWeight="bold">
+              {(pendingExpenses.totals?.totalAmount || 0).toLocaleString('tr-TR')} TL
+            </Typography>
           </Box>
 
           {/* Expense List */}
-          {(pendingExpenses.overdue?.length > 0 || pendingExpenses.thisWeek?.length > 0 || pendingExpenses.upcoming?.length > 0) ? (
-            <TableContainer sx={{ maxHeight: 400 }}>
+          {pendingExpenses.totals?.totalCount > 0 ? (
+            <TableContainer sx={{ maxHeight: 350 }}>
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
                     <TableCell>Açıklama</TableCell>
                     <TableCell>Kategori</TableCell>
                     <TableCell>Vade Tarihi</TableCell>
-                    <TableCell>Durum</TableCell>
+                    <TableCell>Dönem</TableCell>
                     <TableCell align="right">Tutar</TableCell>
                   </TableRow>
                 </TableHead>
@@ -1849,13 +1887,53 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
                     </TableRow>
                   ))}
-                  {/* Upcoming expenses */}
+                  {/* Upcoming (15 days) */}
                   {pendingExpenses.upcoming?.map((expense) => (
-                    <TableRow key={expense._id}>
+                    <TableRow key={expense._id} sx={{ bgcolor: 'info.lighter' }}>
                       <TableCell>{expense.description}</TableCell>
                       <TableCell><Chip size="small" label={expense.category} /></TableCell>
                       <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
                       <TableCell><Chip size="small" color="info" label="Yaklaşan" /></TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Next month */}
+                  {pendingExpenses.nextMonth?.map((expense) => (
+                    <TableRow key={expense._id}>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell><Chip size="small" label={expense.category} /></TableCell>
+                      <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell><Chip size="small" color="secondary" label="Bu Ay" /></TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Next 3 months */}
+                  {pendingExpenses.next3Months?.map((expense) => (
+                    <TableRow key={expense._id}>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell><Chip size="small" label={expense.category} /></TableCell>
+                      <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell><Chip size="small" color="primary" label="3 Ay" /></TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Next 6 months */}
+                  {pendingExpenses.next6Months?.map((expense) => (
+                    <TableRow key={expense._id}>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell><Chip size="small" label={expense.category} /></TableCell>
+                      <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell><Chip size="small" label="6 Ay" /></TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Later */}
+                  {pendingExpenses.later?.map((expense) => (
+                    <TableRow key={expense._id}>
+                      <TableCell>{expense.description}</TableCell>
+                      <TableCell><Chip size="small" label={expense.category} /></TableCell>
+                      <TableCell>{new Date(expense.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell><Chip size="small" label="6+ Ay" sx={{ bgcolor: 'grey.300' }} /></TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>{expense.amount?.toLocaleString('tr-TR')} TL</TableCell>
                     </TableRow>
                   ))}

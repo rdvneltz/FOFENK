@@ -537,6 +537,23 @@ const Expenses = () => {
     }
   };
 
+  // Helper to get time period for expense
+  const getExpenseTimePeriod = (expense) => {
+    if (expense.status === 'overdue') return { label: 'Gecikmiş', color: 'error' };
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const dueDate = new Date(expense.dueDate);
+    const diffDays = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 7) return { label: 'Bu Hafta', color: 'warning' };
+    if (diffDays <= 15) return { label: 'Yaklaşan', color: 'info' };
+    if (diffDays <= 30) return { label: 'Bu Ay', color: 'secondary' };
+    if (diffDays <= 90) return { label: '3 Ay', color: 'primary' };
+    if (diffDays <= 180) return { label: '6 Ay', color: 'default' };
+    return { label: '6+ Ay', color: 'default' };
+  };
+
   const filteredExpenses = expenses.filter((expense) =>
     filterCategory === 'all' ? true : expense.category === filterCategory
   );
@@ -547,6 +564,10 @@ const Expenses = () => {
     ...(pendingExpenses.overdue || []),
     ...(pendingExpenses.thisWeek || []),
     ...(pendingExpenses.upcoming || []),
+    ...(pendingExpenses.nextMonth || []),
+    ...(pendingExpenses.next3Months || []),
+    ...(pendingExpenses.next6Months || []),
+    ...(pendingExpenses.later || []),
   ];
 
   if (loading) {
@@ -586,42 +607,65 @@ const Expenses = () => {
       )}
 
       {/* Summary Cards */}
-      <Grid container spacing={2} sx={{ mb: 2 }}>
-        <Grid item xs={6} md={3}>
-          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: 'error.light' }}>
-            <Warning color="error" />
+      <Grid container spacing={1} sx={{ mb: 2 }}>
+        <Grid item xs={4} sm={2}>
+          <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'error.light' }}>
+            <Warning color="error" sx={{ fontSize: 20 }} />
             <Typography variant="h6" color="error.dark">{pendingExpenses.totals?.overdueCount || 0}</Typography>
-            <Typography variant="caption">Gecikmiş</Typography>
-            <Typography variant="body2" fontWeight="bold">
-              {(pendingExpenses.totals?.overdueAmount || 0).toLocaleString('tr-TR')} TL
+            <Typography variant="caption" color="error.dark">Gecikmiş</Typography>
+            <Typography variant="body2" fontWeight="bold" color="error.dark">
+              {(pendingExpenses.totals?.overdueAmount || 0).toLocaleString('tr-TR')}₺
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: 'warning.light' }}>
-            <Schedule color="warning" />
+        <Grid item xs={4} sm={2}>
+          <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'warning.light' }}>
+            <Schedule color="warning" sx={{ fontSize: 20 }} />
             <Typography variant="h6" color="warning.dark">{pendingExpenses.totals?.thisWeekCount || 0}</Typography>
-            <Typography variant="caption">Bu Hafta</Typography>
-            <Typography variant="body2" fontWeight="bold">
-              {(pendingExpenses.totals?.thisWeekAmount || 0).toLocaleString('tr-TR')} TL
+            <Typography variant="caption" color="warning.dark">Bu Hafta</Typography>
+            <Typography variant="body2" fontWeight="bold" color="warning.dark">
+              {(pendingExpenses.totals?.thisWeekAmount || 0).toLocaleString('tr-TR')}₺
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: 'info.light' }}>
-            <CalendarMonth color="info" />
+        <Grid item xs={4} sm={2}>
+          <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'info.light' }}>
+            <CalendarMonth color="info" sx={{ fontSize: 20 }} />
             <Typography variant="h6" color="info.dark">{pendingExpenses.totals?.upcomingCount || 0}</Typography>
-            <Typography variant="caption">Yaklaşan</Typography>
-            <Typography variant="body2" fontWeight="bold">
-              {(pendingExpenses.totals?.upcomingAmount || 0).toLocaleString('tr-TR')} TL
+            <Typography variant="caption" color="info.dark">Yaklaşan (15 gün)</Typography>
+            <Typography variant="body2" fontWeight="bold" color="info.dark">
+              {(pendingExpenses.totals?.upcomingAmount || 0).toLocaleString('tr-TR')}₺
             </Typography>
           </Paper>
         </Grid>
-        <Grid item xs={6} md={3}>
-          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: 'success.light' }}>
-            <TrendingUp color="success" />
-            <Typography variant="h6" color="success.dark">{recurringExpenses.filter(r => r.isActive).length}</Typography>
-            <Typography variant="caption">Aktif Şablon</Typography>
+        <Grid item xs={4} sm={2}>
+          <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'secondary.light' }}>
+            <CalendarMonth sx={{ fontSize: 20, color: 'secondary.dark' }} />
+            <Typography variant="h6" color="secondary.dark">{(pendingExpenses.totals?.nextMonthCount || 0) + (pendingExpenses.totals?.next3MonthsCount || 0)}</Typography>
+            <Typography variant="caption" color="secondary.dark">3 Ay İçinde</Typography>
+            <Typography variant="body2" fontWeight="bold" color="secondary.dark">
+              {((pendingExpenses.totals?.nextMonthAmount || 0) + (pendingExpenses.totals?.next3MonthsAmount || 0)).toLocaleString('tr-TR')}₺
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={4} sm={2}>
+          <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'grey.200' }}>
+            <CalendarMonth sx={{ fontSize: 20, color: 'text.secondary' }} />
+            <Typography variant="h6">{(pendingExpenses.totals?.next6MonthsCount || 0) + (pendingExpenses.totals?.laterCount || 0)}</Typography>
+            <Typography variant="caption">6+ Ay</Typography>
+            <Typography variant="body2" fontWeight="bold">
+              {((pendingExpenses.totals?.next6MonthsAmount || 0) + (pendingExpenses.totals?.laterAmount || 0)).toLocaleString('tr-TR')}₺
+            </Typography>
+          </Paper>
+        </Grid>
+        <Grid item xs={4} sm={2}>
+          <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'primary.light' }}>
+            <TrendingUp sx={{ fontSize: 20, color: 'primary.dark' }} />
+            <Typography variant="h6" color="primary.dark">{pendingExpenses.totals?.totalCount || 0}</Typography>
+            <Typography variant="caption" color="primary.dark">Toplam</Typography>
+            <Typography variant="body2" fontWeight="bold" color="primary.dark">
+              {(pendingExpenses.totals?.totalAmount || 0).toLocaleString('tr-TR')}₺
+            </Typography>
           </Paper>
         </Grid>
       </Grid>
@@ -662,58 +706,60 @@ const Expenses = () => {
             </Paper>
           ) : (
             <Grid container spacing={2}>
-              {allPendingList.map((expense) => (
-                <Grid item xs={12} md={6} key={expense._id}>
-                  <Card sx={{
-                    borderLeft: 4,
-                    borderColor: expense.status === 'overdue' ? 'error.main' :
-                      (new Date(expense.dueDate) <= new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) ? 'warning.main' : 'info.main')
-                  }}>
-                    <CardContent sx={{ pb: '12px !important' }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="subtitle1" fontWeight="bold">
-                            {expense.description}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" display="block">
-                            Vade: {new Date(expense.dueDate).toLocaleDateString('tr-TR')}
-                            {expense.recurringExpense && (
-                              <Chip label="Düzenli" size="small" sx={{ ml: 1 }} icon={<Repeat fontSize="small" />} />
-                            )}
-                          </Typography>
+              {allPendingList.map((expense) => {
+                const timePeriod = getExpenseTimePeriod(expense);
+                return (
+                  <Grid item xs={12} md={6} key={expense._id}>
+                    <Card sx={{
+                      borderLeft: 4,
+                      borderColor: `${timePeriod.color}.main`
+                    }}>
+                      <CardContent sx={{ pb: '12px !important' }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography variant="subtitle1" fontWeight="bold">
+                              {expense.description}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              Vade: {new Date(expense.dueDate).toLocaleDateString('tr-TR')}
+                              {expense.recurringExpense && (
+                                <Chip label="Düzenli" size="small" sx={{ ml: 1 }} icon={<Repeat fontSize="small" />} />
+                              )}
+                            </Typography>
+                          </Box>
+                          <Chip
+                            label={timePeriod.label}
+                            color={timePeriod.color}
+                            size="small"
+                          />
                         </Box>
-                        <Chip
-                          label={getStatusLabel(expense.status)}
-                          color={getStatusColor(expense.status)}
-                          size="small"
-                        />
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Box>
-                          <Chip label={expense.category} size="small" variant="outlined" sx={{ mr: 1 }} />
-                          <Typography variant="h6" component="span" color="error.main">
-                            {expense.amount?.toLocaleString('tr-TR')} TL
-                          </Typography>
-                        </Box>
-                        <Box>
-                          <Tooltip title="Öde">
-                            <IconButton color="success" onClick={() => handleOpenPayDialog(expense)}>
-                              <Payment />
-                            </IconButton>
-                          </Tooltip>
-                          {!expense.isFromRecurring && (
-                            <Tooltip title="Sil">
-                              <IconButton color="error" onClick={() => { setSelectedExpense(expense); setOpenDeleteExpense(true); }}>
-                                <Delete />
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Box>
+                            <Chip label={expense.category} size="small" variant="outlined" sx={{ mr: 1 }} />
+                            <Typography variant="h6" component="span" color="error.main">
+                              {expense.amount?.toLocaleString('tr-TR')} TL
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Tooltip title="Öde">
+                              <IconButton color="success" onClick={() => handleOpenPayDialog(expense)}>
+                                <Payment />
                               </IconButton>
                             </Tooltip>
-                          )}
+                            {!expense.isFromRecurring && (
+                              <Tooltip title="Sil">
+                                <IconButton color="error" onClick={() => { setSelectedExpense(expense); setOpenDeleteExpense(true); }}>
+                                  <Delete />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+                          </Box>
                         </Box>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
             </Grid>
           )}
         </Box>
