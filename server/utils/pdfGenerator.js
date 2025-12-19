@@ -276,7 +276,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           if (monthlyBreakdown && monthlyBreakdown.length > 0) {
             // Table headers
             const tableLeft = sideMargin;
-            const col1Width = 140;
+            const col1Width = 160;
             const col2Width = 80;
             const col3Width = 100;
             const tableWidth = doc.page.width - (sideMargin * 2);
@@ -299,7 +299,9 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
                 tableY = topMargin;
               }
 
-              doc.text(month.monthName, tableLeft, tableY);
+              // Month name with "(Kismi)" label if partial
+              const monthLabel = month.isPartial ? `${month.monthName} (Kismi)` : month.monthName;
+              doc.text(monthLabel, tableLeft, tableY);
               doc.text(`${month.lessonCount} ders`, tableLeft + col1Width, tableY);
               doc.text(formatCurrency(month.amount), tableLeft + col1Width + col2Width, tableY);
               tableY += 15;

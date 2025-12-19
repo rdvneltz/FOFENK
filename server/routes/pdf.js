@@ -105,19 +105,32 @@ router.get('/student-status-report/:studentId', async (req, res) => {
       // Calculate monthly breakdown from scheduled lessons
       const durationMonths = plan.installments?.length || 8;
       const enrollmentDate = enrollment?.enrollmentDate || plan.createdAt;
-      const startDate = new Date(enrollmentDate);
+
+      // Parse date properly - just year-month-day
+      const parseDate = (dateStr) => {
+        if (!dateStr) return new Date();
+        if (typeof dateStr === 'string') {
+          const parts = dateStr.split('T')[0].split('-');
+          return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0);
+        }
+        const d = new Date(dateStr);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+      };
+
+      const startDate = parseDate(enrollmentDate);
 
       const monthlyBreakdown = [];
       let totalLessons = 0;
+      let firstMonthPartial = null;
 
       // Get course pricing
       const expectedLessonsPerMonth = course.weeklyFrequency ? course.weeklyFrequency * 4 : 4;
       const monthlyFee = course.pricePerMonth || 0;
       const perLessonFee = course.pricePerLesson || (monthlyFee / expectedLessonsPerMonth);
 
-      // Calculate for each month
+      // Calculate for each month (same logic as courses.js calculate-monthly-lessons)
       for (let i = 0; i < durationMonths; i++) {
-        const monthStart = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
+        const monthStart = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1, 0, 0, 0, 0);
         const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + i + 1, 0, 23, 59, 59);
 
         // Get lessons for this month
@@ -129,27 +142,76 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         });
 
         const lessonCount = lessons.length;
-        totalLessons += lessonCount;
 
-        // Check if first month is partial (enrollment after month start)
-        const isFirstMonth = i === 0;
-        const enrollmentDay = startDate.getDate();
-        const isPartialMonth = isFirstMonth && enrollmentDay > 1;
+        // For first month, calculate lessons AFTER enrollment date
+        let lessonsAfterEnrollment = lessonCount;
+        let lessonsBeforeEnrollment = 0;
 
-        // For partial first month, count only lessons after enrollment
-        let effectiveLessonCount = lessonCount;
-        if (isPartialMonth) {
-          effectiveLessonCount = lessons.filter(l => new Date(l.date) >= startDate).length;
+        if (i === 0 && enrollmentDate) {
+          lessonsBeforeEnrollment = 0;
+          lessonsAfterEnrollment = 0;
+
+          for (const lesson of lessons) {
+            const lessonDate = parseDate(lesson.date);
+            if (lessonDate < startDate) {
+              lessonsBeforeEnrollment++;
+            } else {
+              lessonsAfterEnrollment++;
+            }
+          }
+
+          // Store partial info if first month has some lessons before enrollment
+          if (lessonsBeforeEnrollment > 0 && lessonsAfterEnrollment > 0) {
+            firstMonthPartial = {
+              totalLessons: lessonCount,
+              lessonsBeforeEnrollment,
+              lessonsAfterEnrollment
+            };
+          }
         }
+
+        totalLessons += (i === 0 ? lessonsAfterEnrollment : lessonCount);
 
         monthlyBreakdown.push({
           monthName: monthStart.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }),
           lessonCount: lessonCount,
-          effectiveLessonCount: effectiveLessonCount,
-          amount: monthlyFee,
-          isPartialMonth: isPartialMonth
+          lessonsAfterEnrollment: i === 0 ? lessonsAfterEnrollment : lessonCount,
+          lessonsBeforeEnrollment: i === 0 ? lessonsBeforeEnrollment : 0,
+          monthlyFee: monthlyFee,
+          perLessonFee: perLessonFee
         });
       }
+
+      // Calculate total by monthly (full month pricing)
+      const totalByMonthly = monthlyFee * durationMonths;
+
+      // Calculate total by partial (first month per-lesson, rest monthly)
+      let totalByPartialFirst = 0;
+      monthlyBreakdown.forEach((month, index) => {
+        if (index === 0 && firstMonthPartial) {
+          totalByPartialFirst += month.lessonsAfterEnrollment * perLessonFee;
+        } else {
+          totalByPartialFirst += monthlyFee;
+        }
+      });
+
+      // Detect if partial pricing was used by comparing stored totalAmount
+      const usedPartialPricing = firstMonthPartial &&
+        Math.abs(plan.totalAmount - totalByPartialFirst) < Math.abs(plan.totalAmount - totalByMonthly);
+
+      // Update monthlyBreakdown with correct amounts based on pricing choice
+      monthlyBreakdown.forEach((month, index) => {
+        if (index === 0 && firstMonthPartial && usedPartialPricing) {
+          // Partial first month: use per-lesson pricing
+          month.lessonCount = month.lessonsAfterEnrollment;
+          month.amount = month.lessonsAfterEnrollment * perLessonFee;
+          month.isPartial = true;
+        } else {
+          // Full monthly pricing
+          month.amount = monthlyFee;
+          month.isPartial = false;
+        }
+      });
 
       // Calculate lesson details for summary
       const lessonDetails = {
@@ -157,6 +219,8 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         perLessonFee: perLessonFee,
         totalLessons: totalLessons,
         durationMonths: durationMonths,
+        usedPartialPricing: usedPartialPricing,
+        firstMonthPartial: firstMonthPartial,
         // After discount calculations
         discountedMonthlyFee: plan.discountedAmount / durationMonths,
         discountedPerLessonFee: totalLessons > 0 ? plan.discountedAmount / totalLessons : 0
