@@ -46,6 +46,25 @@ const settingsSchema = new mongoose.Schema({
     type: [Date],
     default: []
   },
+  // Antetli kağıt ayarları (PDF çıktılar için)
+  letterhead: {
+    imageUrl: {
+      type: String,
+      default: null
+    },
+    topMargin: {
+      type: Number,
+      default: 120 // px - üstten boşluk (antet alanı için)
+    },
+    bottomMargin: {
+      type: Number,
+      default: 60 // px - alttan boşluk
+    },
+    sideMargin: {
+      type: Number,
+      default: 40 // px - yanlardan boşluk
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now

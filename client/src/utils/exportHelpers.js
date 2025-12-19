@@ -1,16 +1,33 @@
 import { saveAs } from 'file-saver';
+import api from '../api';
+
+/**
+ * Get base URL for API
+ */
+const getBaseUrl = () => {
+  return process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production'
+    ? 'https://fofenk.onrender.com/api'
+    : 'http://localhost:5000/api');
+};
 
 /**
  * Download file from URL
- * @param {string} url - API endpoint URL
+ * @param {string} url - API endpoint URL (e.g., /api/export/students)
  * @param {string} filename - Filename for downloaded file
  */
 export const downloadFile = async (url, filename) => {
   try {
-    const response = await fetch(url, {
+    const baseUrl = getBaseUrl();
+    // Remove /api prefix from url since baseUrl already ends with /api
+    const endpoint = url.startsWith('/api') ? url.slice(4) : url;
+    const fullUrl = `${baseUrl}${endpoint}`;
+
+    const token = localStorage.getItem('token');
+    const response = await fetch(fullUrl, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
       },
     });
 

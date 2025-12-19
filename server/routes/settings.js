@@ -1,7 +1,22 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const Settings = require('../models/Settings');
 const ActivityLog = require('../models/ActivityLog');
+
+// Multer configuration for letterhead upload
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit for letterhead
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Sadece resim dosyaları yüklenebilir'), false);
+    }
+  }
+});
 const User = require('../models/User');
 const Student = require('../models/Student');
 const Course = require('../models/Course');
@@ -226,6 +241,97 @@ router.delete('/:id', async (req, res) => {
     });
 
     res.json({ message: 'Ayar silindi' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Upload letterhead image
+router.post('/letterhead/:institutionId', upload.single('letterhead'), async (req, res) => {
+  try {
+    const { institutionId } = req.params;
+    const { topMargin, bottomMargin, sideMargin } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ message: 'Antetli kağıt görseli gerekli' });
+    }
+
+    // Convert to Base64
+    const base64Image = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+
+    // Find or create settings for this institution
+    let settings = await Settings.findOne({ institution: institutionId });
+
+    const letterheadData = {
+      imageUrl: base64Image,
+      topMargin: parseInt(topMargin) || 120,
+      bottomMargin: parseInt(bottomMargin) || 60,
+      sideMargin: parseInt(sideMargin) || 40
+    };
+
+    if (settings) {
+      settings.letterhead = letterheadData;
+      settings.updatedBy = req.body.updatedBy || 'System';
+      await settings.save();
+    } else {
+      settings = await Settings.create({
+        institution: institutionId,
+        letterhead: letterheadData,
+        createdBy: req.body.updatedBy || 'System'
+      });
+    }
+
+    // Log activity
+    await ActivityLog.create({
+      user: req.body.updatedBy || 'System',
+      action: 'update',
+      entity: 'Settings',
+      entityId: settings._id,
+      description: 'Antetli kağıt yüklendi',
+      institution: institutionId
+    });
+
+    res.json({
+      message: 'Antetli kağıt başarıyla yüklendi',
+      letterhead: settings.letterhead
+    });
+  } catch (error) {
+    console.error('Letterhead upload error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Delete letterhead image
+router.delete('/letterhead/:institutionId', async (req, res) => {
+  try {
+    const { institutionId } = req.params;
+
+    const settings = await Settings.findOne({ institution: institutionId });
+
+    if (!settings) {
+      return res.status(404).json({ message: 'Ayarlar bulunamadı' });
+    }
+
+    settings.letterhead = {
+      imageUrl: null,
+      topMargin: 120,
+      bottomMargin: 60,
+      sideMargin: 40
+    };
+    settings.updatedBy = req.body?.updatedBy || 'System';
+    await settings.save();
+
+    // Log activity
+    await ActivityLog.create({
+      user: req.body?.updatedBy || 'System',
+      action: 'update',
+      entity: 'Settings',
+      entityId: settings._id,
+      description: 'Antetli kağıt silindi',
+      institution: institutionId
+    });
+
+    res.json({ message: 'Antetli kağıt silindi' });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

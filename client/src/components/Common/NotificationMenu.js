@@ -9,7 +9,7 @@ import {
   Box,
   CircularProgress,
 } from '@mui/material';
-import { WhatsApp, Email, Message } from '@mui/icons-material';
+import { WhatsApp, Email, Message, Description } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import api from '../../api';
 import { sendWhatsAppMessage, replaceTemplateVariables, DEFAULT_WHATSAPP_TEMPLATES } from '../../utils/whatsappHelper';
@@ -52,6 +52,8 @@ const NotificationMenu = ({
   onEmailClick,
   mode = 'full',
   pageContext = null, // Page context for filtering templates
+  extraOptions = [], // Extra menu options: [{ icon, label, onClick }]
+  studentId = null, // For status report generation
 }) => {
   const { institution } = useApp();
   const [templates, setTemplates] = useState([]);
@@ -295,6 +297,45 @@ const NotificationMenu = ({
                 </ListItemIcon>
                 <ListItemText primary="Email yok" secondary="Email adresi kayıtlı değil" />
               </MenuItem>
+            )}
+
+            {/* Status Report Option for students page */}
+            {pageContext === 'students' && studentId && (
+              <>
+                <Divider />
+                <MenuItem
+                  onClick={() => {
+                    // Open status report in new tab for download
+                    const baseUrl = process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production'
+                      ? 'https://fofenk.onrender.com/api'
+                      : 'http://localhost:5000/api');
+                    const url = `${baseUrl}/pdf/student-status-report/${studentId}?institutionId=${institution?._id}`;
+                    window.open(url, '_blank');
+                    onClose();
+                  }}
+                >
+                  <ListItemIcon>
+                    <Description color="secondary" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Son Durum Raporu"
+                    secondary="PDF oluştur ve indir"
+                  />
+                </MenuItem>
+              </>
+            )}
+
+            {/* Extra custom options */}
+            {extraOptions.length > 0 && (
+              <>
+                <Divider />
+                {extraOptions.map((option, idx) => (
+                  <MenuItem key={idx} onClick={() => { option.onClick?.(); onClose(); }}>
+                    {option.icon && <ListItemIcon>{option.icon}</ListItemIcon>}
+                    <ListItemText primary={option.label} secondary={option.secondary} />
+                  </MenuItem>
+                ))}
+              </>
             )}
           </>
         )}
