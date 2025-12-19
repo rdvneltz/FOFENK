@@ -253,12 +253,15 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
           doc.fontSize(10).font(fonts.regular);
           if (enrollment) {
-            doc.text(`Kayıt Tarihi: ${new Date(enrollment.startDate).toLocaleDateString('tr-TR')}`);
-            const startMonth = new Date(enrollment.startDate).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
-            const endMonth = enrollment.endDate
-              ? new Date(enrollment.endDate).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
-              : 'Devam Ediyor';
-            doc.text(`Kayıt Dönemi: ${startMonth} - ${endMonth}`);
+            const enrollDate = enrollment.enrollmentDate ? new Date(enrollment.enrollmentDate) : null;
+            if (enrollDate && !isNaN(enrollDate.getTime())) {
+              doc.text(`Kayıt Tarihi: ${enrollDate.toLocaleDateString('tr-TR')}`);
+              const startMonth = enrollDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+              const endMonth = enrollment.endDate
+                ? new Date(enrollment.endDate).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
+                : 'Devam Ediyor';
+              doc.text(`Kayıt Dönemi: ${startMonth} - ${endMonth}`);
+            }
           }
           doc.moveDown(0.5);
 
