@@ -2,6 +2,23 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const path = require('path');
 
+// Font paths for Turkish character support
+const FONT_REGULAR = path.join(__dirname, '../assets/fonts/Roboto-Regular.ttf');
+const FONT_BOLD = path.join(__dirname, '../assets/fonts/Roboto-Bold.ttf');
+
+/**
+ * Register fonts and return font names
+ */
+const registerFonts = (doc) => {
+  // Check if fonts exist, otherwise fall back to Helvetica
+  if (fs.existsSync(FONT_REGULAR) && fs.existsSync(FONT_BOLD)) {
+    doc.registerFont('Regular', FONT_REGULAR);
+    doc.registerFont('Bold', FONT_BOLD);
+    return { regular: 'Regular', bold: 'Bold' };
+  }
+  return { regular: 'Helvetica', bold: 'Helvetica-Bold' };
+};
+
 /**
  * Ödeme planı PDF'i oluşturur
  * @param {Object} paymentPlan - Ödeme planı bilgileri
@@ -15,6 +32,7 @@ const generatePaymentPlanPDF = (paymentPlan, student, course, institution, outpu
     try {
       const doc = new PDFDocument({ margin: 50 });
       const writeStream = fs.createWriteStream(outputPath);
+      const fonts = registerFonts(doc);
 
       doc.pipe(writeStream);
 
@@ -30,17 +48,17 @@ const generatePaymentPlanPDF = (paymentPlan, student, course, institution, outpu
       }
 
       // Kurum bilgileri
-      doc.fontSize(20).text(institution.name, { align: 'center' });
-      doc.fontSize(10).text(institution.address || '', { align: 'center' });
+      doc.font(fonts.bold).fontSize(20).text(institution.name, { align: 'center' });
+      doc.font(fonts.regular).fontSize(10).text(institution.address || '', { align: 'center' });
       doc.text(`Tel: ${institution.phone || ''}`, { align: 'center' });
       doc.moveDown(2);
 
       // Başlık
-      doc.fontSize(16).text('ÖDEME PLANI', { align: 'center', underline: true });
+      doc.font(fonts.bold).fontSize(16).text('ÖDEME PLANI', { align: 'center', underline: true });
       doc.moveDown(2);
 
       // Öğrenci ve ders bilgileri
-      doc.fontSize(12);
+      doc.font(fonts.regular).fontSize(12);
       doc.text(`Öğrenci: ${student.firstName} ${student.lastName}`);
       doc.text(`Ders: ${course.name}`);
       doc.text(`Ödeme Tipi: ${getPaymentTypeText(paymentPlan.paymentType)}`);
@@ -157,6 +175,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
       });
 
       const writeStream = fs.createWriteStream(outputPath);
+      const fonts = registerFonts(doc);
       doc.pipe(writeStream);
 
       // If letterhead image exists, draw it as background
@@ -173,22 +192,22 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
       doc.y = topMargin;
 
       // Report title
-      doc.fontSize(16).font('Helvetica-Bold')
+      doc.fontSize(16).font(fonts.bold)
         .text('ÖĞRENCİ KAYIT DURUM RAPORU', sideMargin, doc.y, { align: 'center' });
       doc.moveDown(0.5);
 
       // Generation date
-      doc.fontSize(9).font('Helvetica')
+      doc.fontSize(9).font(fonts.regular)
         .text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, { align: 'center' });
       doc.moveDown(1.5);
 
       // Student info box
-      doc.fontSize(11).font('Helvetica-Bold')
+      doc.fontSize(11).font(fonts.bold)
         .text('ÖĞRENCİ BİLGİLERİ', sideMargin);
       doc.moveTo(sideMargin, doc.y + 2).lineTo(doc.page.width - sideMargin, doc.y + 2).stroke();
       doc.moveDown(0.5);
 
-      doc.fontSize(10).font('Helvetica');
+      doc.fontSize(10).font(fonts.regular);
       doc.text(`Ad Soyad: ${student.firstName} ${student.lastName}`);
       if (student.phone) doc.text(`Telefon: ${student.phone}`);
       if (student.email) doc.text(`E-posta: ${student.email}`);
@@ -219,12 +238,12 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           }
 
           // Course header
-          doc.fontSize(11).font('Helvetica-Bold')
+          doc.fontSize(11).font(fonts.bold)
             .text(`${planIndex + 1}. KURS: ${course?.name || 'Bilinmiyor'}`, sideMargin);
           doc.moveTo(sideMargin, doc.y + 2).lineTo(doc.page.width - sideMargin, doc.y + 2).stroke();
           doc.moveDown(0.5);
 
-          doc.fontSize(10).font('Helvetica');
+          doc.fontSize(10).font(fonts.regular);
           if (enrollment) {
             doc.text(`Kayıt Tarihi: ${new Date(enrollment.startDate).toLocaleDateString('tr-TR')}`);
             const startMonth = new Date(enrollment.startDate).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
@@ -237,7 +256,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
           // Monthly breakdown table
           if (monthlyBreakdown && monthlyBreakdown.length > 0) {
-            doc.fontSize(10).font('Helvetica-Bold').text('Aylık Katılım ve Ücret Detayı:');
+            doc.fontSize(10).font(fonts.bold).text('Aylık Katılım ve Ücret Detayı:');
             doc.moveDown(0.3);
 
             // Table headers
@@ -247,7 +266,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
             const col3Width = 100;
             const tableWidth = doc.page.width - (sideMargin * 2);
 
-            doc.fontSize(9).font('Helvetica-Bold');
+            doc.fontSize(9).font(fonts.bold);
             let tableY = doc.y;
             doc.text('Ay', tableLeft, tableY);
             doc.text('Ders Sayısı', tableLeft + col1Width, tableY);
@@ -256,7 +275,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
             doc.moveTo(tableLeft, tableY + 12).lineTo(tableLeft + tableWidth, tableY + 12).stroke();
 
-            doc.font('Helvetica');
+            doc.font(fonts.regular);
             tableY += 18;
 
             monthlyBreakdown.forEach((month) => {
@@ -279,7 +298,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           doc.moveDown(0.5);
 
           // Total amount section
-          doc.fontSize(10).font('Helvetica-Bold');
+          doc.fontSize(10).font(fonts.bold);
           const totalAmount = paymentPlan.totalAmount || 0;
           const discountedAmount = paymentPlan.discountedAmount || totalAmount;
           const hasDiscount = discountedAmount < totalAmount;
@@ -299,7 +318,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           // Per lesson calculation
           if (paymentPlan.totalLessons && paymentPlan.totalLessons > 0) {
             const perLesson = discountedAmount / paymentPlan.totalLessons;
-            doc.fontSize(9).font('Helvetica')
+            doc.fontSize(9).font(fonts.regular)
               .text(`(${paymentPlan.totalLessons} ders, ders başı ₺${perLesson.toFixed(0).toLocaleString('tr-TR')})`);
           }
 
@@ -307,13 +326,13 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
           // Payment plan installments
           if (paymentPlan.installments && paymentPlan.installments.length > 0) {
-            doc.fontSize(10).font('Helvetica-Bold').text('Ödeme Planı:');
+            doc.fontSize(10).font(fonts.bold).text('Ödeme Planı:');
             doc.moveDown(0.3);
 
             const instTableLeft = sideMargin;
             let instY = doc.y;
 
-            doc.fontSize(9).font('Helvetica-Bold');
+            doc.fontSize(9).font(fonts.bold);
             doc.text('Taksit', instTableLeft, instY);
             doc.text('Vade Tarihi', instTableLeft + 60, instY);
             doc.text('Tutar', instTableLeft + 160, instY);
@@ -322,7 +341,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
             doc.moveTo(instTableLeft, instY + 12).lineTo(doc.page.width - sideMargin, instY + 12).stroke();
 
-            doc.font('Helvetica');
+            doc.font(fonts.regular);
             instY += 18;
 
             paymentPlan.installments.forEach((inst, idx) => {
@@ -360,12 +379,12 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           const paidAmount = paymentPlan.paidAmount || 0;
           const remainingAmount = discountedAmount - paidAmount;
           if (remainingAmount > 0) {
-            doc.fontSize(10).font('Helvetica-Bold')
+            doc.fontSize(10).font(fonts.bold)
               .fillColor('red')
               .text(`Kalan Borç: ₺${remainingAmount.toLocaleString('tr-TR')}`);
             doc.fillColor('black');
           } else {
-            doc.fontSize(10).font('Helvetica-Bold')
+            doc.fontSize(10).font(fonts.bold)
               .fillColor('green')
               .text('TÜM ÖDEMELER TAMAMLANMIŞTIR');
             doc.fillColor('black');
@@ -381,7 +400,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
       const pageCount = doc.bufferedPageRange().count;
       for (let i = 0; i < pageCount; i++) {
         doc.switchToPage(i);
-        doc.fontSize(8).font('Helvetica')
+        doc.fontSize(8).font(fonts.regular)
           .text(
             `${institution.name} - Sayfa ${i + 1}/${pageCount}`,
             sideMargin,
