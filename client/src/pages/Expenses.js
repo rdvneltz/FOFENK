@@ -499,8 +499,14 @@ const Expenses = () => {
   // === Delete Pending Expense ===
   const handleDeletePendingExpense = async () => {
     try {
-      await api.delete(`/expenses/${selectedExpense._id}`);
-      setSuccess('Bekleyen gider silindi');
+      // Use recurring expense endpoint for recurring expenses to avoid balance issues
+      if (selectedExpense.isFromRecurring) {
+        await api.delete(`/recurring-expenses/expense/${selectedExpense._id}`);
+        setSuccess('Tekil gider silindi (düzenli şablon etkilenmedi)');
+      } else {
+        await api.delete(`/expenses/${selectedExpense._id}`);
+        setSuccess('Bekleyen gider silindi');
+      }
       setOpenDeleteExpense(false);
       setSelectedExpense(null);
       loadData();
@@ -750,13 +756,11 @@ const Expenses = () => {
                                 <Payment />
                               </IconButton>
                             </Tooltip>
-                            {!expense.isFromRecurring && (
-                              <Tooltip title="Sil">
-                                <IconButton color="error" onClick={() => { setSelectedExpense(expense); setOpenDeleteExpense(true); }}>
-                                  <Delete />
-                                </IconButton>
-                              </Tooltip>
-                            )}
+                            <Tooltip title={expense.isFromRecurring ? "Bu Ayı Sil" : "Sil"}>
+                              <IconButton color="error" onClick={() => { setSelectedExpense(expense); setOpenDeleteExpense(true); }}>
+                                <Delete />
+                              </IconButton>
+                            </Tooltip>
                           </Box>
                         </Box>
                       </CardContent>
@@ -1460,15 +1464,33 @@ const Expenses = () => {
 
       {/* Delete Pending Expense Confirm */}
       <Dialog open={openDeleteExpense} onClose={() => setOpenDeleteExpense(false)}>
-        <DialogTitle>Bekleyen Gideri Sil</DialogTitle>
+        <DialogTitle>
+          {selectedExpense?.isFromRecurring ? 'Tekil Gideri Sil' : 'Bekleyen Gideri Sil'}
+        </DialogTitle>
         <DialogContent>
-          <Alert severity="warning" sx={{ mt: 1 }}>
-            Bu gider silinecek. Bu işlem geri alınamaz.
-          </Alert>
+          {selectedExpense?.isFromRecurring ? (
+            <Alert severity="info" sx={{ mt: 1 }}>
+              <Typography variant="body2" gutterBottom>
+                <strong>{selectedExpense?.description}</strong>
+              </Typography>
+              <Typography variant="body2">
+                Bu sadece bu aya ait gideri siler. Düzenli gider şablonu ve diğer aylar etkilenmez.
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Örn: Kira hediye edildi, internet kampanya yapıldı vb.
+              </Typography>
+            </Alert>
+          ) : (
+            <Alert severity="warning" sx={{ mt: 1 }}>
+              Bu gider silinecek. Bu işlem geri alınamaz.
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDeleteExpense(false)}>İptal</Button>
-          <Button color="error" variant="contained" onClick={handleDeletePendingExpense}>Sil</Button>
+          <Button color="error" variant="contained" onClick={handleDeletePendingExpense}>
+            {selectedExpense?.isFromRecurring ? 'Bu Ayı Sil' : 'Sil'}
+          </Button>
         </DialogActions>
       </Dialog>
 
