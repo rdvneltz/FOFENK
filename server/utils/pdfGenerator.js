@@ -3,8 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Font paths for Turkish character support
-const FONT_REGULAR = path.join(__dirname, '../assets/fonts/Roboto-Regular.ttf');
-const FONT_BOLD = path.join(__dirname, '../assets/fonts/Roboto-Bold.ttf');
+const FONT_REGULAR = path.join(__dirname, '../assets/fonts/NotoSans-Regular.ttf');
+const FONT_BOLD = path.join(__dirname, '../assets/fonts/NotoSans-Bold.ttf');
 
 /**
  * Register fonts and return font names
