@@ -27,9 +27,11 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
+  const [enrolledStudents, setEnrolledStudents] = useState([]);
   const [formData, setFormData] = useState({
     courseId: '',
     instructorId: '',
+    studentId: '',  // For birebir (one-on-one) lessons
     startTime: '10:00',
     endTime: '12:00',
     notes: ''
@@ -44,10 +46,12 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
       setFormData({
         courseId: '',
         instructorId: '',
+        studentId: '',
         startTime: '10:00',
         endTime: '12:00',
         notes: ''
       });
+      setEnrolledStudents([]);
       setError('');
     }
   }, [open, institution, season]);
@@ -80,12 +84,46 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
     }
   };
 
+  const fetchEnrolledStudents = async (courseId) => {
+    if (!courseId) {
+      setEnrolledStudents([]);
+      return;
+    }
+    try {
+      const response = await api.get('/enrollments', {
+        params: {
+          courseId: courseId,
+          institutionId: institution._id,
+          seasonId: season._id
+        }
+      });
+      // Extract students from enrollments
+      const students = response.data
+        .filter(e => e.student)
+        .map(e => ({
+          _id: e.student._id,
+          firstName: e.student.firstName,
+          lastName: e.student.lastName
+        }));
+      setEnrolledStudents(students);
+    } catch (error) {
+      console.error('Error fetching enrolled students:', error);
+      setEnrolledStudents([]);
+    }
+  };
+
   const handleChange = (field, value) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
     setError('');
+
+    // When course changes, fetch enrolled students and reset student selection
+    if (field === 'courseId') {
+      setFormData(prev => ({ ...prev, studentId: '' }));
+      fetchEnrolledStudents(value);
+    }
   };
 
   const validateForm = () => {
@@ -114,6 +152,7 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
       const lessonData = {
         course: formData.courseId,
         instructor: formData.instructorId || null,
+        student: formData.studentId || null,  // For birebir (one-on-one) lessons
         date: selectedDate,
         startTime: formData.startTime,
         endTime: formData.endTime,
@@ -142,10 +181,12 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
     setFormData({
       courseId: '',
       instructorId: '',
+      studentId: '',
       startTime: '10:00',
       endTime: '12:00',
       notes: ''
     });
+    setEnrolledStudents([]);
     setError('');
     onClose();
   };
@@ -218,6 +259,30 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
               </Select>
             </FormControl>
           </Grid>
+
+          {/* Student Selection - for birebir (one-on-one) lessons */}
+          {enrolledStudents.length > 0 && (
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Öğrenci (Birebir Ders)</InputLabel>
+                <Select
+                  value={formData.studentId}
+                  onChange={(e) => handleChange('studentId', e.target.value)}
+                  label="Öğrenci (Birebir Ders)"
+                >
+                  <MenuItem value="">Grup Dersi (Tüm Öğrenciler)</MenuItem>
+                  {enrolledStudents.map((student) => (
+                    <MenuItem key={student._id} value={student._id}>
+                      {student.firstName} {student.lastName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                Birebir ders için öğrenci seçin. Grup dersi ise boş bırakın.
+              </Typography>
+            </Grid>
+          )}
 
           {/* Time Range */}
           <Grid item xs={6}>

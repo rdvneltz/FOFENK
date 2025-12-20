@@ -25,6 +25,7 @@ const PUBLIC_HOLIDAYS = [
  * @param {Object} params - Schedule parameters
  * @param {String} params.courseId - Course ID
  * @param {String} params.instructorId - Instructor ID
+ * @param {String} params.studentId - Student ID (for one-on-one/birebir lessons)
  * @param {Date} params.startDate - Start date
  * @param {Date} params.endDate - End date
  * @param {Array} params.daysOfWeek - Days of week (0=Sunday, 1=Monday, ..., 6=Saturday)
@@ -41,6 +42,7 @@ const generateSchedule = async (params) => {
   const {
     courseId,
     instructorId,
+    studentId,
     startDate,
     endDate,
     daysOfWeek,
@@ -136,7 +138,7 @@ const generateSchedule = async (params) => {
   const createdLessons = [];
 
   for (const date of lessonDates) {
-    const lesson = new ScheduledLesson({
+    const lessonData = {
       course: courseId,
       instructor: instructorId,
       date: date,
@@ -147,7 +149,14 @@ const generateSchedule = async (params) => {
       institution: institutionId,
       createdBy: createdBy,
       notes: notes || ''
-    });
+    };
+
+    // Add student for one-on-one (birebir) lessons
+    if (studentId) {
+      lessonData.student = studentId;
+    }
+
+    const lesson = new ScheduledLesson(lessonData);
 
     await lesson.save();
     createdLessons.push(lesson);

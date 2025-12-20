@@ -232,6 +232,7 @@ const PaymentPlan = () => {
 
       const response = await api.post('/courses/calculate-monthly-lessons', {
         courseId: enrollment.course._id,
+        studentId: studentId,  // Pass studentId for birebir (one-on-one) lesson filtering
         startDate: enrollmentDateToUse,
         durationMonths: parseInt(durationMonths),
         enrollmentDate: enrollmentDateToUse

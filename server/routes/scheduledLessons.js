@@ -7,7 +7,7 @@ const scheduleGenerator = require('../utils/scheduleGenerator');
 // Get all scheduled lessons with filtering
 router.get('/', async (req, res) => {
   try {
-    const { courseId, instructorId, startDate, endDate, month, year } = req.query;
+    const { courseId, instructorId, studentId, startDate, endDate, month, year } = req.query;
     // Accept both 'institution' and 'institutionId' parameters for compatibility
     const institutionId = req.query.institution || req.query.institutionId;
     const seasonId = req.query.season || req.query.seasonId;
@@ -17,6 +17,7 @@ router.get('/', async (req, res) => {
     if (seasonId) filter.season = seasonId;
     if (courseId) filter.course = courseId;
     if (instructorId) filter.instructor = instructorId;
+    if (studentId) filter.student = studentId;
 
     // Month/year filter for calendar view
     if (month && year) {
@@ -47,6 +48,7 @@ router.get('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
+      .populate('student', 'firstName lastName')
       .populate('instructor', 'firstName lastName')
       .populate('additionalInstructors.instructor', 'firstName lastName')
       .sort({ date: 1, startTime: 1 });
@@ -64,6 +66,7 @@ router.get('/:id', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
+      .populate('student', 'firstName lastName')
       .populate('instructor', 'firstName lastName email phone paymentType paymentAmount')
       .populate('additionalInstructors.instructor', 'firstName lastName email phone paymentType paymentAmount');
 
@@ -97,6 +100,7 @@ router.post('/', async (req, res) => {
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('course', 'name')
+      .populate('student', 'firstName lastName')
       .populate('instructor', 'firstName lastName')
       .populate('additionalInstructors.instructor', 'firstName lastName');
 
@@ -116,6 +120,7 @@ router.put('/:id', async (req, res) => {
     ).populate('institution', 'name')
      .populate('season', 'name startDate endDate')
      .populate('course', 'name')
+     .populate('student', 'firstName lastName')
      .populate('instructor', 'firstName lastName paymentType paymentAmount')
      .populate('additionalInstructors.instructor', 'firstName lastName paymentType paymentAmount');
 
@@ -254,6 +259,7 @@ router.post('/generate-schedule', async (req, res) => {
     const {
       courseId,
       instructorId,
+      studentId,
       startDate,
       endDate,
       daysOfWeek,
@@ -270,6 +276,7 @@ router.post('/generate-schedule', async (req, res) => {
     const result = await scheduleGenerator.generateSchedule({
       courseId,
       instructorId,
+      studentId,
       startDate,
       endDate,
       daysOfWeek,

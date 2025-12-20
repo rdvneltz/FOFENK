@@ -156,7 +156,7 @@ router.delete('/:id', async (req, res) => {
 // Calculate monthly lesson details for a course
 router.post('/calculate-monthly-lessons', async (req, res) => {
   try {
-    const { courseId, startDate, durationMonths, enrollmentDate } = req.body;
+    const { courseId, studentId, startDate, durationMonths, enrollmentDate } = req.body;
     const ScheduledLesson = require('../models/ScheduledLesson');
 
     const course = await Course.findById(courseId);
@@ -188,15 +188,28 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
       const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1, 0, 0, 0, 0);
       const monthEnd = new Date(start.getFullYear(), start.getMonth() + i + 1, 1, 0, 0, 0, 0);
 
-      // Tüm dersleri al ve tarihleri karşılaştır (MongoDB timezone sorunlarını aşmak için)
-      const allLessons = await ScheduledLesson.find({
+      // Get lessons - filter by student for birebir (one-on-one) courses
+      // For birebir: only count lessons assigned to this specific student
+      // For group: count lessons with no student assigned (shared by all)
+      const lessonQuery = {
         course: courseId,
         date: {
           $gte: monthStart,
           $lt: monthEnd
         },
         status: { $ne: 'cancelled' }
-      }).select('date');
+      };
+
+      // If studentId is provided, filter for this student's lessons OR group lessons
+      if (studentId) {
+        lessonQuery.$or = [
+          { student: studentId },           // Lessons specifically for this student (birebir)
+          { student: null },                // Group lessons (no student assigned)
+          { student: { $exists: false } }   // Legacy lessons without student field
+        ];
+      }
+
+      const allLessons = await ScheduledLesson.find(lessonQuery).select('date');
 
       const lessonCount = allLessons.length;
 

@@ -32,6 +32,11 @@ const scheduledLessonSchema = new mongoose.Schema({
     ref: 'Course',
     required: true
   },
+  // Student for one-on-one (birebir) lessons - null for group lessons
+  student: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Student'
+  },
   // Primary instructor
   instructor: {
     type: mongoose.Schema.Types.ObjectId,
