@@ -365,7 +365,10 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           // Total amount section
           doc.fontSize(10).font(fonts.bold);
           const totalAmount = paymentPlan.totalAmount || 0;
-          const discountedAmount = paymentPlan.discountedAmount || totalAmount;
+          // IMPORTANT: Use explicit check for discountedAmount because 0 is valid for full scholarship!
+          const discountedAmount = paymentPlan.discountedAmount !== undefined && paymentPlan.discountedAmount !== null
+            ? paymentPlan.discountedAmount
+            : totalAmount;
           const hasDiscount = discountedAmount < totalAmount;
           const isFullScholarship = discountedAmount === 0 || paymentPlan.discountType === 'fullScholarship';
 
