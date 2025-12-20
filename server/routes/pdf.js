@@ -244,10 +244,39 @@ router.get('/student-status-report/:studentId', async (req, res) => {
 
       // Calculate lesson details for summary
       // Discount ratio is applied to monthly fee, then per-lesson is monthly/4
-      // This ensures: (fullMonths × discountedMonthly) + (partialLessons × discountedPerLesson) = discountedAmount
       const discountRatio = plan.totalAmount > 0 ? plan.discountedAmount / plan.totalAmount : 1;
-      const discountedMonthlyFee = monthlyFee * discountRatio;
-      const discountedPerLessonFee = discountedMonthlyFee / expectedLessonsPerMonth;
+      const hasDiscount = plan.discountedAmount < plan.totalAmount;
+
+      // Use FLOOR for discounted amounts to avoid overcharging
+      const discountedMonthlyFee = Math.floor(monthlyFee * discountRatio);
+      const discountedPerLessonFee = Math.floor(discountedMonthlyFee / expectedLessonsPerMonth);
+
+      // Calculate discounted amounts for each month and track the total
+      let calculatedDiscountedTotal = 0;
+      monthlyBreakdown.forEach((month, index) => {
+        if (month.isPartial) {
+          // Partial month: lessons × discounted per-lesson fee
+          month.discountedAmount = month.lessonCount * discountedPerLessonFee;
+        } else {
+          // Full month: discounted monthly fee
+          month.discountedAmount = discountedMonthlyFee;
+        }
+        calculatedDiscountedTotal += month.discountedAmount;
+      });
+
+      // Add rounding difference to the LAST FULL MONTH (not partial)
+      // This ensures total exactly matches discountedAmount
+      const roundingDifference = plan.discountedAmount - calculatedDiscountedTotal;
+      if (hasDiscount && roundingDifference !== 0) {
+        // Find last non-partial month
+        for (let i = monthlyBreakdown.length - 1; i >= 0; i--) {
+          if (!monthlyBreakdown[i].isPartial) {
+            monthlyBreakdown[i].discountedAmount += roundingDifference;
+            monthlyBreakdown[i].hasRoundingAdjustment = true;
+            break;
+          }
+        }
+      }
 
       const lessonDetails = {
         monthlyFee: monthlyFee,
@@ -257,7 +286,8 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         usedPartialPricing: usedPartialPricing,
         firstMonthPartial: firstMonthPartial,
         discountRatio: discountRatio,
-        // After discount: apply ratio to monthly, then /4 for per-lesson
+        hasDiscount: hasDiscount,
+        // After discount: floor to avoid overcharging
         discountedMonthlyFee: discountedMonthlyFee,
         discountedPerLessonFee: discountedPerLessonFee
       };
