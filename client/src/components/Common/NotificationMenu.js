@@ -8,8 +8,16 @@ import {
   Typography,
   Box,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  List,
+  ListItemButton,
+  Avatar,
 } from '@mui/material';
-import { WhatsApp, Email, Message, Description } from '@mui/icons-material';
+import { WhatsApp, Email, Message, Description, Download, Share, Person, Phone } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import api from '../../api';
 import { sendWhatsAppMessage, replaceTemplateVariables, DEFAULT_WHATSAPP_TEMPLATES } from '../../utils/whatsappHelper';
@@ -54,12 +62,213 @@ const NotificationMenu = ({
   pageContext = null, // Page context for filtering templates
   extraOptions = [], // Extra menu options: [{ icon, label, onClick }]
   studentId = null, // For status report generation
+  studentData = null, // Full student data for phone selection
 }) => {
   const { institution } = useApp();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(false);
   const [subMenuAnchor, setSubMenuAnchor] = useState(null);
   const [selectedChannel, setSelectedChannel] = useState(null); // 'whatsapp' or 'email'
+
+  // PDF share states
+  const [pdfMenuAnchor, setPdfMenuAnchor] = useState(null);
+  const [phoneSelectOpen, setPhoneSelectOpen] = useState(false);
+  const [availablePhones, setAvailablePhones] = useState([]);
+  const [pdfShareMode, setPdfShareMode] = useState(null); // 'whatsapp' or 'email'
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+
+  // Get notification phone number from student data
+  const getNotificationPhone = (student) => {
+    if (!student) return null;
+
+    const { defaultNotificationRecipient, phone, parentContacts, emergencyContact } = student;
+
+    // Priority based on defaultNotificationRecipient
+    if (defaultNotificationRecipient === 'student' && phone) {
+      return { phone, name: `${student.firstName} ${student.lastName}`, type: 'Öğrenci' };
+    }
+    if (defaultNotificationRecipient === 'mother') {
+      const mother = parentContacts?.find(p => p.relationship === 'Anne');
+      if (mother?.phone) return { phone: mother.phone, name: mother.name, type: 'Anne' };
+    }
+    if (defaultNotificationRecipient === 'father') {
+      const father = parentContacts?.find(p => p.relationship === 'Baba');
+      if (father?.phone) return { phone: father.phone, name: father.name, type: 'Baba' };
+    }
+
+    // Fallback: student phone first
+    if (phone) return { phone, name: `${student.firstName} ${student.lastName}`, type: 'Öğrenci' };
+
+    // Then parents
+    const parentWithPhone = parentContacts?.find(p => p.phone);
+    if (parentWithPhone) return { phone: parentWithPhone.phone, name: parentWithPhone.name, type: parentWithPhone.relationship };
+
+    // Finally emergency contact
+    if (emergencyContact?.phone) return { phone: emergencyContact.phone, name: emergencyContact.name, type: 'Acil Durum' };
+
+    return null;
+  };
+
+  // Get all available phones for selection
+  const getAllPhones = (student) => {
+    if (!student) return [];
+    const phones = [];
+
+    if (student.phone) {
+      phones.push({ phone: student.phone, name: `${student.firstName} ${student.lastName}`, type: 'Öğrenci' });
+    }
+
+    student.parentContacts?.forEach(p => {
+      if (p.phone) {
+        phones.push({ phone: p.phone, name: p.name, type: p.relationship });
+      }
+    });
+
+    if (student.emergencyContact?.phone) {
+      phones.push({ phone: student.emergencyContact.phone, name: student.emergencyContact.name, type: 'Acil Durum' });
+    }
+
+    return phones;
+  };
+
+  // PDF URL builder
+  const getPdfUrl = () => {
+    const baseUrl = process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production'
+      ? 'https://fofenk.onrender.com/api'
+      : 'http://localhost:5000/api');
+    return `${baseUrl}/pdf/student-status-report/${studentId}?institutionId=${institution?._id}`;
+  };
+
+  // Handle PDF download
+  const handlePdfDownload = () => {
+    window.open(getPdfUrl(), '_blank');
+    setPdfMenuAnchor(null);
+    onClose();
+  };
+
+  // Handle PDF share to WhatsApp
+  const handlePdfWhatsApp = async (selectedPhone = null) => {
+    const student = studentData;
+    if (!student) {
+      alert('Öğrenci bilgisi bulunamadı');
+      return;
+    }
+
+    let phoneToUse = selectedPhone;
+
+    // If no phone selected, determine automatically
+    if (!phoneToUse) {
+      const notificationPhone = getNotificationPhone(student);
+      const allPhones = getAllPhones(student);
+
+      // If default notification recipient is set and phone exists, use it
+      if (student.defaultNotificationRecipient && notificationPhone) {
+        phoneToUse = notificationPhone;
+      }
+      // If only one phone available, use it
+      else if (allPhones.length === 1) {
+        phoneToUse = allPhones[0];
+      }
+      // If multiple phones and no default, ask user
+      else if (allPhones.length > 1) {
+        setAvailablePhones(allPhones);
+        setPdfShareMode('whatsapp');
+        setPhoneSelectOpen(true);
+        setPdfMenuAnchor(null);
+        return;
+      }
+      // No phone available
+      else {
+        alert('Kayıtlı telefon numarası bulunamadı');
+        return;
+      }
+    }
+
+    // Generate PDF and share
+    setPdfGenerating(true);
+    try {
+      const response = await fetch(getPdfUrl());
+      const blob = await response.blob();
+      const fileName = `Durum_Raporu_${student.firstName}_${student.lastName}.pdf`;
+
+      // Check if Web Share API is supported (mobile)
+      if (navigator.share && navigator.canShare) {
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+        const shareData = {
+          files: [file],
+          title: 'Öğrenci Durum Raporu',
+          text: `Merhaba, ${student.firstName} ${student.lastName} öğrencisinin detaylı kurs kayıt ve ödeme bilgileri ektedir.\n\n${institution?.name || 'Fofora Tiyatro'}`,
+        };
+
+        if (navigator.canShare(shareData)) {
+          await navigator.share(shareData);
+          setPdfMenuAnchor(null);
+          setPhoneSelectOpen(false);
+          onClose();
+          return;
+        }
+      }
+
+      // Fallback: Download and open WhatsApp with message
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      window.URL.revokeObjectURL(url);
+
+      // Open WhatsApp with message (user will attach the downloaded file)
+      const message = `Merhaba, ${student.firstName} ${student.lastName} öğrencisinin detaylı kurs kayıt ve ödeme bilgileri ektedir.\n\n${institution?.name || 'Fofora Tiyatro'}`;
+      sendWhatsAppMessage(phoneToUse.phone, message, {});
+
+    } catch (error) {
+      console.error('PDF share error:', error);
+      alert('PDF oluşturulurken bir hata oluştu');
+    } finally {
+      setPdfGenerating(false);
+      setPdfMenuAnchor(null);
+      setPhoneSelectOpen(false);
+      onClose();
+    }
+  };
+
+  // Handle PDF share to Email
+  const handlePdfEmail = () => {
+    const student = studentData;
+    if (!student) {
+      alert('Öğrenci bilgisi bulunamadı');
+      return;
+    }
+
+    // Download the PDF first
+    const link = document.createElement('a');
+    link.href = getPdfUrl();
+    link.download = `Durum_Raporu_${student.firstName}_${student.lastName}.pdf`;
+    link.target = '_blank';
+    link.click();
+
+    // Open mailto with subject and body (user will attach the file)
+    const email = recipientData.email || student.email || '';
+    const subject = `${student.firstName} ${student.lastName} - Kurs Kayıt ve Ödeme Bilgileri`;
+    const body = `Merhaba,\n\n${student.firstName} ${student.lastName} öğrencisinin detaylı kurs kayıt ve ödeme bilgileri ekte sunulmuştur.\n\nSaygılarımızla,\n${institution?.name || 'Fofora Tiyatro'}`;
+
+    if (email) {
+      window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    } else {
+      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
+
+    setPdfMenuAnchor(null);
+    onClose();
+  };
+
+  // Handle phone selection
+  const handlePhoneSelect = (phoneData) => {
+    setPhoneSelectOpen(false);
+    if (pdfShareMode === 'whatsapp') {
+      handlePdfWhatsApp(phoneData);
+    }
+  };
 
   // Load templates from database
   useEffect(() => {
@@ -304,22 +513,15 @@ const NotificationMenu = ({
               <>
                 <Divider />
                 <MenuItem
-                  onClick={() => {
-                    // Open status report in new tab for download
-                    const baseUrl = process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production'
-                      ? 'https://fofenk.onrender.com/api'
-                      : 'http://localhost:5000/api');
-                    const url = `${baseUrl}/pdf/student-status-report/${studentId}?institutionId=${institution?._id}`;
-                    window.open(url, '_blank');
-                    onClose();
-                  }}
+                  onClick={(e) => setPdfMenuAnchor(e.currentTarget)}
+                  disabled={pdfGenerating}
                 >
                   <ListItemIcon>
-                    <Description color="secondary" />
+                    {pdfGenerating ? <CircularProgress size={20} /> : <Description color="secondary" />}
                   </ListItemIcon>
                   <ListItemText
                     primary="Son Durum Raporu"
-                    secondary="PDF oluştur ve indir"
+                    secondary={pdfGenerating ? 'Oluşturuluyor...' : 'PDF oluştur ve paylaş'}
                   />
                 </MenuItem>
               </>
@@ -367,6 +569,94 @@ const NotificationMenu = ({
           </MenuItem>
         ))}
       </Menu>
+
+      {/* PDF Share Options Submenu */}
+      <Menu
+        anchorEl={pdfMenuAnchor}
+        open={Boolean(pdfMenuAnchor)}
+        onClose={() => setPdfMenuAnchor(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        PaperProps={{ sx: { minWidth: 220 } }}
+      >
+        <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: 'text.secondary' }}>
+          PDF İşlemleri
+        </Typography>
+        <Divider />
+        <MenuItem onClick={handlePdfDownload}>
+          <ListItemIcon>
+            <Download color="primary" />
+          </ListItemIcon>
+          <ListItemText primary="İndir" />
+        </MenuItem>
+        <MenuItem onClick={() => handlePdfWhatsApp()}>
+          <ListItemIcon>
+            <WhatsApp sx={{ color: '#25D366' }} />
+          </ListItemIcon>
+          <ListItemText primary="WhatsApp'a Gönder" />
+        </MenuItem>
+        <MenuItem onClick={handlePdfEmail}>
+          <ListItemIcon>
+            <Email color="info" />
+          </ListItemIcon>
+          <ListItemText primary="Email'e Gönder" />
+        </MenuItem>
+      </Menu>
+
+      {/* Phone Selection Dialog */}
+      <Dialog
+        open={phoneSelectOpen}
+        onClose={() => setPhoneSelectOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Phone color="primary" />
+            Telefon Numarası Seçin
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            PDF'i hangi numaraya göndermek istiyorsunuz?
+          </Typography>
+          <List>
+            {availablePhones.map((phoneData, index) => (
+              <ListItemButton
+                key={index}
+                onClick={() => handlePhoneSelect(phoneData)}
+                sx={{
+                  border: 1,
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  mb: 1,
+                }}
+              >
+                <Avatar sx={{ mr: 2, bgcolor: 'primary.light' }}>
+                  <Person />
+                </Avatar>
+                <ListItemText
+                  primary={phoneData.name}
+                  secondary={
+                    <Box component="span">
+                      <Typography component="span" variant="body2" color="text.secondary">
+                        {phoneData.type}
+                      </Typography>
+                      {' • '}
+                      <Typography component="span" variant="body2" color="primary">
+                        {phoneData.phone}
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </ListItemButton>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPhoneSelectOpen(false)}>İptal</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

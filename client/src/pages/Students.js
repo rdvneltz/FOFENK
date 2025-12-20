@@ -612,6 +612,7 @@ const Students = () => {
         onEmailClick={handleEmailFromNotification}
         pageContext="students"
         studentId={notificationMenu.student?._id}
+        studentData={notificationMenu.student}
       />
 
       {/* Single Email Dialog (from notification) */}
