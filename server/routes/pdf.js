@@ -9,6 +9,7 @@ const Institution = require('../models/Institution');
 const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 const Settings = require('../models/Settings');
 const ScheduledLesson = require('../models/ScheduledLesson');
+const Season = require('../models/Season');
 const { generatePaymentPlanPDF, generateStudentStatusReportPDF } = require('../utils/pdfGenerator');
 
 // Ödeme planı PDF'i oluştur
@@ -81,6 +82,7 @@ router.get('/student-status-report/:studentId', async (req, res) => {
     const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
       .populate('course')
       .populate('enrollment')
+      .populate('season')
       .sort({ createdAt: -1 });
 
     // Build payment plan data with monthly breakdown
@@ -102,9 +104,36 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         course: course._id
       });
 
-      // Calculate monthly breakdown from scheduled lessons
-      const durationMonths = plan.installments?.length || 8;
+      // Get enrollment start date
       const enrollmentDate = enrollment?.enrollmentDate || plan.createdAt;
+
+      // Calculate durationMonths from enrollment/season dates (NOT from installments count!)
+      // End date priority: enrollment.endDate > season.endDate > fallback 8 months
+      let endDate = null;
+      if (enrollment?.endDate) {
+        endDate = new Date(enrollment.endDate);
+      } else if (plan.season?.endDate) {
+        endDate = new Date(plan.season.endDate);
+      }
+
+      let durationMonths;
+      if (endDate) {
+        const startDate = new Date(enrollmentDate);
+        // Calculate month difference
+        durationMonths = (endDate.getFullYear() - startDate.getFullYear()) * 12 +
+          (endDate.getMonth() - startDate.getMonth()) + 1; // +1 to include both start and end months
+        // Ensure minimum 1 month
+        if (durationMonths < 1) durationMonths = 1;
+      } else {
+        // Fallback: estimate from totalAmount and monthlyFee
+        const monthlyFee = course.pricePerMonth || 0;
+        if (monthlyFee > 0) {
+          durationMonths = Math.round(plan.totalAmount / monthlyFee);
+          if (durationMonths < 1) durationMonths = 1;
+        } else {
+          durationMonths = 8; // Last resort fallback
+        }
+      }
 
       // Parse date properly - just year-month-day
       const parseDate = (dateStr) => {
