@@ -729,6 +729,23 @@ router.post('/:id/pay-installment', async (req, res) => {
       return res.status(404).json({ message: 'Taksit bulunamadı' });
     }
 
+    // Calculate remaining amount for this installment
+    const installmentPaidAmount = installment.paidAmount || 0;
+    const installmentRemaining = (installment.amount || 0) - installmentPaidAmount;
+
+    // Check if this is the last unpaid installment
+    const unpaidInstallments = paymentPlan.installments.filter(inst => !inst.isPaid);
+    const isLastInstallment = unpaidInstallments.length === 1 &&
+      unpaidInstallments[0].installmentNumber === installmentNumber;
+
+    // Prevent overpayment on the last installment
+    if (isLastInstallment && amount > installmentRemaining) {
+      return res.status(400).json({
+        message: `Son taksit için fazla ödeme yapılamaz. Maksimum ödeme tutarı: ₺${installmentRemaining.toLocaleString('tr-TR')}`,
+        maxAmount: installmentRemaining
+      });
+    }
+
     // Determine if this is a credit card payment - check both plan type and installment type
     const isCreditCardPayment = paymentPlan.paymentType === 'creditCard' ||
       installmentPaymentMethod === 'creditCard' ||
@@ -858,15 +875,60 @@ router.post('/:id/pay-installment', async (req, res) => {
       });
     }
 
-    // Update installment
-    installment.isPaid = true;
-    installment.paidAmount = amount;
-    installment.paidDate = paymentDate || new Date();
-    installment.isInvoiced = isInvoiced;
+    // Update installment - handle partial payments correctly
+    const previousPaidAmount = installment.paidAmount || 0;
+    const newTotalPaidAmount = previousPaidAmount + amount;
+    const installmentAmount = installment.amount || 0;
+
+    // Check if this completes the installment
+    const isFullyPaid = newTotalPaidAmount >= installmentAmount;
+
+    // Calculate excess amount for this installment
+    const thisInstallmentExcess = isFullyPaid ? (newTotalPaidAmount - installmentAmount) : 0;
+
+    installment.paidAmount = newTotalPaidAmount;
+    installment.isPaid = isFullyPaid;
+    installment.lastPaymentDate = paymentDate || new Date();
+    if (isFullyPaid) {
+      installment.paidDate = paymentDate || new Date();
+    }
+    installment.isInvoiced = isInvoiced || installment.isInvoiced;
+
+    // If there's excess from this installment, apply to next unpaid installments
+    if (thisInstallmentExcess > 0) {
+      let remainingExcess = thisInstallmentExcess;
+      const futureInstallments = paymentPlan.installments
+        .filter(inst => !inst.isPaid && inst.installmentNumber > installmentNumber)
+        .sort((a, b) => a.installmentNumber - b.installmentNumber);
+
+      for (const futureInst of futureInstallments) {
+        if (remainingExcess <= 0) break;
+
+        const futureInstAmount = futureInst.amount || 0;
+        const futurePaidAmount = futureInst.paidAmount || 0;
+        const futureRemaining = futureInstAmount - futurePaidAmount;
+
+        if (futureRemaining > 0) {
+          const applyAmount = Math.min(remainingExcess, futureRemaining);
+          futureInst.paidAmount = (futureInst.paidAmount || 0) + applyAmount;
+          futureInst.isPaid = futureInst.paidAmount >= futureInstAmount;
+          if (futureInst.isPaid) {
+            futureInst.paidDate = paymentDate || new Date();
+          }
+          remainingExcess -= applyAmount;
+        }
+      }
+
+      // If still excess and no more installments, this is overpayment on last installment
+      if (remainingExcess > 0) {
+        // Cap the paid amount at the installment amount for the last installment
+        installment.paidAmount = installmentAmount;
+      }
+    }
 
     // Update payment plan totals
     paymentPlan.paidAmount = (paymentPlan.paidAmount || 0) + amount;
-    paymentPlan.remainingAmount = paymentPlan.discountedAmount - paymentPlan.paidAmount;
+    paymentPlan.remainingAmount = Math.max(0, paymentPlan.discountedAmount - paymentPlan.paidAmount);
 
     // Check if all installments are paid or remaining amounts are 0
     const allPaid = paymentPlan.installments.every(inst => inst.isPaid || inst.amount <= 0);

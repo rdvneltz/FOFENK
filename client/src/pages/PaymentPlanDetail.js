@@ -919,11 +919,32 @@ Fofora Tiyatro`;
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={installment.isPaid ? 'Ödendi' : 'Bekliyor'}
-                          color={installment.isPaid ? 'success' : 'warning'}
-                          size="small"
-                        />
+                        {(() => {
+                          const paidAmount = installment.paidAmount || 0;
+                          const totalAmount = installment.amount || 0;
+                          const isPartiallyPaid = paidAmount > 0 && paidAmount < totalAmount;
+                          const isFullyPaid = installment.isPaid;
+
+                          return (
+                            <Box>
+                              <Chip
+                                label={isFullyPaid ? 'Ödendi' : isPartiallyPaid ? 'Kısmi Ödeme' : 'Bekliyor'}
+                                color={isFullyPaid ? 'success' : isPartiallyPaid ? 'info' : 'warning'}
+                                size="small"
+                              />
+                              {(isPartiallyPaid || isFullyPaid) && (
+                                <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>
+                                  ₺{paidAmount.toLocaleString('tr-TR')} / ₺{totalAmount.toLocaleString('tr-TR')}
+                                </Typography>
+                              )}
+                              {isPartiallyPaid && (
+                                <Typography variant="caption" color="error" display="block">
+                                  Kalan: ₺{(totalAmount - paidAmount).toLocaleString('tr-TR')}
+                                </Typography>
+                              )}
+                            </Box>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell align="right">
                         {!installment.isPaid && (

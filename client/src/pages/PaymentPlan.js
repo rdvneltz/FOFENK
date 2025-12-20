@@ -592,7 +592,9 @@ const PaymentPlan = () => {
         season: season._id,
         notes: formData.description,
         createdBy: user?.username || 'System',
-        cashRegister: hasCreditCard ? selectedCashRegister : undefined
+        cashRegister: hasCreditCard ? selectedCashRegister : undefined,
+        // IMPORTANT: Send enrollmentDate to update the enrollment record
+        enrollmentDate: formData.enrollmentDate
       };
 
       const response = await api.post('/payment-plans', paymentPlanData);

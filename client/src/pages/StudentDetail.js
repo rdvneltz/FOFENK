@@ -439,7 +439,7 @@ const StudentDetail = () => {
           startIcon={<Payment />}
           onClick={() => navigate(`/payment-plan/${id}`)}
         >
-          Ödeme Al
+          Ödeme Planı Oluştur
         </Button>
       </Box>
 
