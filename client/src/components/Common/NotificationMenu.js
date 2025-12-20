@@ -77,6 +77,9 @@ const NotificationMenu = ({
   const [pdfShareMode, setPdfShareMode] = useState(null); // 'whatsapp' or 'email'
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
+  // Detect mobile device
+  const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
   // Get notification phone number from student data
   const getNotificationPhone = (student) => {
     if (!student) return null;
@@ -186,18 +189,20 @@ const NotificationMenu = ({
 
     // Generate PDF and share
     setPdfGenerating(true);
+    const message = `Merhaba, ${student.firstName} ${student.lastName} öğrencisinin detaylı kurs kayıt ve ödeme bilgileri ektedir.\n\n${institution?.name || 'Fofora Tiyatro'}`;
+    const fileName = `Durum_Raporu_${student.firstName}_${student.lastName}.pdf`;
+
     try {
       const response = await fetch(getPdfUrl());
       const blob = await response.blob();
-      const fileName = `Durum_Raporu_${student.firstName}_${student.lastName}.pdf`;
 
-      // Check if Web Share API is supported (mobile)
-      if (navigator.share && navigator.canShare) {
+      // MOBILE: Use Web Share API
+      if (isMobile && navigator.share && navigator.canShare) {
         const file = new File([blob], fileName, { type: 'application/pdf' });
         const shareData = {
           files: [file],
           title: 'Öğrenci Durum Raporu',
-          text: `Merhaba, ${student.firstName} ${student.lastName} öğrencisinin detaylı kurs kayıt ve ödeme bilgileri ektedir.\n\n${institution?.name || 'Fofora Tiyatro'}`,
+          text: message,
         };
 
         if (navigator.canShare(shareData)) {
@@ -209,17 +214,26 @@ const NotificationMenu = ({
         }
       }
 
-      // Fallback: Download and open WhatsApp with message
+      // DESKTOP: Download PDF first, then open WhatsApp Web
+      // Download the PDF
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = fileName;
+      document.body.appendChild(a);
       a.click();
+      document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
 
-      // Open WhatsApp with message (user will attach the downloaded file)
-      const message = `Merhaba, ${student.firstName} ${student.lastName} öğrencisinin detaylı kurs kayıt ve ödeme bilgileri ektedir.\n\n${institution?.name || 'Fofora Tiyatro'}`;
-      sendWhatsAppMessage(phoneToUse.phone, message, {});
+      // Wait a moment for download to start, then open WhatsApp
+      setTimeout(() => {
+        sendWhatsAppMessage(phoneToUse.phone, message, {});
+      }, 500);
+
+      // Show info alert
+      setTimeout(() => {
+        alert(`PDF indirildi: "${fileName}"\n\nWhatsApp açıldığında indirilen dosyayı ekleyerek gönderin.`);
+      }, 600);
 
     } catch (error) {
       console.error('PDF share error:', error);
@@ -233,33 +247,55 @@ const NotificationMenu = ({
   };
 
   // Handle PDF share to Email
-  const handlePdfEmail = () => {
+  const handlePdfEmail = async () => {
     const student = studentData;
     if (!student) {
       alert('Öğrenci bilgisi bulunamadı');
       return;
     }
 
-    // Download the PDF first
-    const link = document.createElement('a');
-    link.href = getPdfUrl();
-    link.download = `Durum_Raporu_${student.firstName}_${student.lastName}.pdf`;
-    link.target = '_blank';
-    link.click();
-
-    // Open mailto with subject and body (user will attach the file)
+    setPdfGenerating(true);
+    const fileName = `Durum_Raporu_${student.firstName}_${student.lastName}.pdf`;
     const email = recipientData.email || student.email || '';
     const subject = `${student.firstName} ${student.lastName} - Kurs Kayıt ve Ödeme Bilgileri`;
     const body = `Merhaba,\n\n${student.firstName} ${student.lastName} öğrencisinin detaylı kurs kayıt ve ödeme bilgileri ekte sunulmuştur.\n\nSaygılarımızla,\n${institution?.name || 'Fofora Tiyatro'}`;
 
-    if (email) {
-      window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    } else {
-      window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-    }
+    try {
+      // Download PDF first
+      const response = await fetch(getPdfUrl());
+      const blob = await response.blob();
 
-    setPdfMenuAnchor(null);
-    onClose();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      // Wait for download, then open mailto
+      setTimeout(() => {
+        if (email) {
+          window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        } else {
+          window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+        }
+      }, 500);
+
+      // Show info alert
+      setTimeout(() => {
+        alert(`PDF indirildi: "${fileName}"\n\nMail uygulaması açıldığında indirilen dosyayı ek olarak ekleyin.`);
+      }, 600);
+
+    } catch (error) {
+      console.error('PDF email error:', error);
+      alert('PDF oluşturulurken bir hata oluştu');
+    } finally {
+      setPdfGenerating(false);
+      setPdfMenuAnchor(null);
+      onClose();
+    }
   };
 
   // Handle phone selection
