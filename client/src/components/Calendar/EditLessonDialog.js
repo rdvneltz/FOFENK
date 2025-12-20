@@ -47,7 +47,7 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
-  const [enrolledStudents, setEnrolledStudents] = useState([]);
+  const [allStudents, setAllStudents] = useState([]);  // All students in institution
   const [futureCount, setFutureCount] = useState(0);
 
   const [formData, setFormData] = useState({
@@ -98,24 +98,20 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
       });
       setInstructors(instructorsRes.data);
 
-      // Fetch enrolled students for this course
-      if (courseId) {
-        const enrollmentsRes = await api.get('/enrollments', {
-          params: {
-            courseId: courseId,
-            institutionId: institution._id,
-            seasonId: season._id
-          }
-        });
-        const students = enrollmentsRes.data
-          .filter(e => e.student)
-          .map(e => ({
-            _id: e.student._id,
-            firstName: e.student.firstName,
-            lastName: e.student.lastName
-          }));
-        setEnrolledStudents(students);
-      }
+      // Fetch all students in institution
+      const studentsRes = await api.get('/students', {
+        params: {
+          institutionId: institution._id
+        }
+      });
+      const students = studentsRes.data
+        .map(s => ({
+          _id: s._id,
+          firstName: s.firstName,
+          lastName: s.lastName
+        }))
+        .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`, 'tr'));
+      setAllStudents(students);
 
       // Count future lessons for this course
       const futureRes = await api.get('/scheduled-lessons', {
@@ -251,7 +247,6 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
       studentId: '',
       notes: '',
     });
-    setEnrolledStudents([]);
     setError('');
     setUpdateScope('single');
     onClose();
@@ -449,7 +444,7 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
           </Grid>
 
           {/* Student Selection - for birebir (one-on-one) lessons - only for single lesson update */}
-          {updateScope === 'single' && enrolledStudents.length > 0 && (
+          {updateScope === 'single' && allStudents.length > 0 && (
             <Grid item xs={12}>
               <FormControl fullWidth>
                 <InputLabel>Öğrenci (Birebir Ders)</InputLabel>
@@ -459,7 +454,7 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
                   label="Öğrenci (Birebir Ders)"
                 >
                   <MenuItem value="">Grup Dersi (Tüm Öğrenciler)</MenuItem>
-                  {enrolledStudents.map((student) => (
+                  {allStudents.map((student) => (
                     <MenuItem key={student._id} value={student._id}>
                       {student.firstName} {student.lastName}
                     </MenuItem>
