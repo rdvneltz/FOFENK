@@ -132,14 +132,26 @@ const InstructorDetail = () => {
       setStatistics(detailsRes.data.statistics || {});
       setCashRegisters(cashRes.data);
 
-      // Find salary recurring expense for this instructor
-      const salaryRecurring = recurringRes.data.find(r => r.instructor?._id === id);
-      if (salaryRecurring) {
-        // Load expenses for this recurring expense
-        const expensesRes = await api.get(`/recurring-expenses/${salaryRecurring._id}/expenses`);
-        setSalaryExpenses({ recurring: salaryRecurring, expenses: expensesRes.data || [] });
+      // Use salary expenses from API response (includes recurring and unpaid)
+      const salaryData = detailsRes.data.salaryExpenses || { recurring: null, unpaid: [] };
+
+      // If we have a recurring expense, fetch all its expenses for the full list
+      if (salaryData.recurring) {
+        try {
+          const expensesRes = await api.get(`/recurring-expenses/${salaryData.recurring._id}/expenses`);
+          setSalaryExpenses({ recurring: salaryData.recurring, expenses: expensesRes.data || [] });
+        } catch (err) {
+          setSalaryExpenses({ recurring: salaryData.recurring, expenses: salaryData.unpaid || [] });
+        }
       } else {
-        setSalaryExpenses({ recurring: null, expenses: [] });
+        // Fallback: check recurringExpenses for this instructor
+        const salaryRecurring = recurringRes.data.find(r => r.instructor?._id === id);
+        if (salaryRecurring) {
+          const expensesRes = await api.get(`/recurring-expenses/${salaryRecurring._id}/expenses`);
+          setSalaryExpenses({ recurring: salaryRecurring, expenses: expensesRes.data || [] });
+        } else {
+          setSalaryExpenses({ recurring: null, expenses: [] });
+        }
       }
 
       // Filter and sort lessons - only confirmed lessons
@@ -441,14 +453,14 @@ const InstructorDetail = () => {
         >
           Düzenle
         </Button>
-        {instructor?.paymentType === 'monthly' && !salaryExpenses.recurring && (
+        {instructor?.paymentType === 'monthly' && (
           <Button
             variant="outlined"
             color="secondary"
             startIcon={<AccountBalance />}
             onClick={() => setSalaryTemplateDialog({ ...salaryTemplateDialog, open: true })}
           >
-            Maaş Şablonu Oluştur
+            {salaryExpenses.recurring ? 'Ek Gider Şablonu' : 'Maaş Şablonu Oluştur'}
           </Button>
         )}
         <Button
@@ -513,7 +525,12 @@ const InstructorDetail = () => {
               </ListItem>
               <ListItem>
                 <ListItemText
-                  primary="Ödeme Tutarı"
+                  primary={
+                    instructor.paymentType === 'monthly' ? 'Aylık Maaş' :
+                    instructor.paymentType === 'perLesson' ? 'Ders Başı Ücret' :
+                    instructor.paymentType === 'hourly' ? 'Saatlik Ücret' :
+                    instructor.paymentType === 'perStudent' ? 'Öğrenci Başı Ücret' : 'Ödeme Tutarı'
+                  }
                   secondary={`₺${(instructor.paymentAmount || 0).toLocaleString('tr-TR')}`}
                 />
               </ListItem>
@@ -536,13 +553,13 @@ const InstructorDetail = () => {
             </Typography>
             <Typography
               variant="h3"
-              color={statistics.balance > 0 ? 'error.main' : 'success.main'}
+              color={statistics.balance < 0 ? 'error.main' : 'success.main'}
             >
-              {statistics.balance > 0 ? '+' : ''}₺
+              {statistics.balance < 0 ? '-' : ''}₺
               {Math.abs(statistics.balance || 0).toLocaleString('tr-TR')}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {statistics.balance > 0 ? 'Borcumuz' : 'Ödendi'}
+              {statistics.balance < 0 ? `Borcumuz (${statistics.unpaidCount || 0} ödenmemiş maaş)` : 'Tüm ödemeler yapıldı'}
             </Typography>
           </Paper>
 
