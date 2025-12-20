@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const ScheduledLesson = require('../models/ScheduledLesson');
+const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 const ActivityLog = require('../models/ActivityLog');
 const scheduleGenerator = require('../utils/scheduleGenerator');
 
@@ -85,6 +86,29 @@ router.post('/', async (req, res) => {
     const scheduledLesson = new ScheduledLesson(req.body);
     const newScheduledLesson = await scheduledLesson.save();
 
+    // For birebir (one-on-one) lessons: auto-create enrollment if not exists
+    if (req.body.student && req.body.course && req.body.season) {
+      const existingEnrollment = await StudentCourseEnrollment.findOne({
+        student: req.body.student,
+        course: req.body.course,
+        season: req.body.season
+      });
+
+      if (!existingEnrollment) {
+        const newEnrollment = new StudentCourseEnrollment({
+          student: req.body.student,
+          course: req.body.course,
+          enrollmentDate: req.body.date || new Date(),
+          season: req.body.season,
+          institution: req.body.institution,
+          isActive: true,
+          notes: 'Birebir ders ile otomatik oluşturuldu',
+          createdBy: req.body.createdBy
+        });
+        await newEnrollment.save();
+      }
+    }
+
     // Log activity
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
@@ -126,6 +150,29 @@ router.put('/:id', async (req, res) => {
 
     if (!scheduledLesson) {
       return res.status(404).json({ message: 'Planlanmış ders bulunamadı' });
+    }
+
+    // For birebir lessons: auto-create enrollment if student was added
+    if (req.body.student && scheduledLesson.course && scheduledLesson.season) {
+      const existingEnrollment = await StudentCourseEnrollment.findOne({
+        student: req.body.student,
+        course: scheduledLesson.course._id,
+        season: scheduledLesson.season._id
+      });
+
+      if (!existingEnrollment) {
+        const newEnrollment = new StudentCourseEnrollment({
+          student: req.body.student,
+          course: scheduledLesson.course._id,
+          enrollmentDate: scheduledLesson.date || new Date(),
+          season: scheduledLesson.season._id,
+          institution: scheduledLesson.institution._id,
+          isActive: true,
+          notes: 'Birebir ders ile otomatik oluşturuldu',
+          createdBy: req.body.updatedBy
+        });
+        await newEnrollment.save();
+      }
     }
 
     // Log activity

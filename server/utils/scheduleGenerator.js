@@ -1,4 +1,5 @@
 const ScheduledLesson = require('../models/ScheduledLesson');
+const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 
 // Turkish public holidays (2024-2025)
 const PUBLIC_HOLIDAYS = [
@@ -162,10 +163,39 @@ const generateSchedule = async (params) => {
     createdLessons.push(lesson);
   }
 
+  // For birebir (one-on-one) lessons: auto-create enrollment if not exists
+  let enrollmentCreated = false;
+  if (studentId && createdLessons.length > 0) {
+    // Check if enrollment already exists for this student+course+season
+    const existingEnrollment = await StudentCourseEnrollment.findOne({
+      student: studentId,
+      course: courseId,
+      season: seasonId
+    });
+
+    if (!existingEnrollment) {
+      // Create enrollment with first lesson date as enrollment date
+      const firstLessonDate = lessonDates[0];
+      const newEnrollment = new StudentCourseEnrollment({
+        student: studentId,
+        course: courseId,
+        enrollmentDate: firstLessonDate,
+        season: seasonId,
+        institution: institutionId,
+        isActive: true,
+        notes: 'Birebir ders programı ile otomatik oluşturuldu',
+        createdBy: createdBy
+      });
+      await newEnrollment.save();
+      enrollmentCreated = true;
+    }
+  }
+
   return {
     success: true,
     count: createdLessons.length,
     lessons: createdLessons,
+    enrollmentCreated: enrollmentCreated,
     skippedDays: lessonDates.length < calculateMaxPossibleDays(start, end, daysOfWeek)
   };
 };
