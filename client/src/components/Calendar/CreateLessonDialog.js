@@ -88,7 +88,8 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
     try {
       const response = await api.get('/students', {
         params: {
-          institutionId: institution._id
+          institutionId: institution._id,
+          seasonId: season._id
         }
       });
       // Sort students by name

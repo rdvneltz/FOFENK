@@ -101,7 +101,8 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
       // Fetch all students in institution
       const studentsRes = await api.get('/students', {
         params: {
-          institutionId: institution._id
+          institutionId: institution._id,
+          seasonId: season._id
         }
       });
       const students = studentsRes.data
