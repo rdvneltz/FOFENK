@@ -132,8 +132,8 @@ const InstructorDetail = () => {
       setStatistics(detailsRes.data.statistics || {});
       setCashRegisters(cashRes.data);
 
-      // Use salary expenses from API response (includes recurring and unpaid)
-      const salaryData = detailsRes.data.salaryExpenses || { recurring: null, unpaid: [] };
+      // Use salary expenses from API response (includes recurring and overdue)
+      const salaryData = detailsRes.data.salaryExpenses || { recurring: null, overdue: [] };
 
       // If we have a recurring expense, fetch all its expenses for the full list
       if (salaryData.recurring) {
@@ -141,7 +141,7 @@ const InstructorDetail = () => {
           const expensesRes = await api.get(`/recurring-expenses/${salaryData.recurring._id}/expenses`);
           setSalaryExpenses({ recurring: salaryData.recurring, expenses: expensesRes.data || [] });
         } catch (err) {
-          setSalaryExpenses({ recurring: salaryData.recurring, expenses: salaryData.unpaid || [] });
+          setSalaryExpenses({ recurring: salaryData.recurring, expenses: salaryData.overdue || [] });
         }
       } else {
         // Fallback: check recurringExpenses for this instructor
@@ -559,7 +559,7 @@ const InstructorDetail = () => {
               {Math.abs(statistics.balance || 0).toLocaleString('tr-TR')}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {statistics.balance < 0 ? `Borcumuz (${statistics.unpaidCount || 0} ödenmemiş maaş)` : 'Tüm ödemeler yapıldı'}
+              {statistics.balance < 0 ? `Borcumuz (${statistics.overdueCount || 0} gecikmiş maaş)` : 'Tüm ödemeler yapıldı'}
             </Typography>
           </Paper>
 

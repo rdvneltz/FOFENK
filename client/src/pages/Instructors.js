@@ -237,9 +237,9 @@ const Instructors = () => {
                   <TableCell>
                     <Typography
                       variant="body2"
-                      color={instructor.balance > 0 ? 'error.main' : 'success.main'}
+                      color={instructor.balance < 0 ? 'error.main' : 'success.main'}
                     >
-                      {instructor.balance > 0 ? '+' : ''}
+                      {instructor.balance < 0 ? '-' : ''}
                       ₺{Math.abs(instructor.balance || 0).toLocaleString('tr-TR')}
                     </Typography>
                   </TableCell>
