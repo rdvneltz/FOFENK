@@ -115,10 +115,23 @@ const generatePaymentPlanPDF = (paymentPlan, student, course, institution, outpu
         let currentY = tableTop + 25;
 
         paymentPlan.installments.forEach((installment, index) => {
+          const paidAmount = installment.paidAmount || 0;
+          const totalAmount = installment.amount || 0;
+          const isPartiallyPaid = paidAmount > 0 && paidAmount < totalAmount;
+
           doc.text(installment.installmentNumber.toString(), col1, currentY);
           doc.text(new Date(installment.dueDate).toLocaleDateString('tr-TR'), col2, currentY);
-          doc.text(`${installment.amount.toFixed(2)} TL`, col3, currentY);
-          doc.text(installment.isPaid ? 'Ödendi' : 'Bekliyor', col4, currentY);
+
+          // Show amount with partial payment info
+          if (isPartiallyPaid) {
+            doc.text(`${paidAmount.toFixed(2)} / ${totalAmount.toFixed(2)} TL`, col3, currentY);
+          } else {
+            doc.text(`${totalAmount.toFixed(2)} TL`, col3, currentY);
+          }
+
+          // Show status
+          const status = installment.isPaid ? 'Ödendi' : isPartiallyPaid ? 'Kısmi' : 'Bekliyor';
+          doc.text(status, col4, currentY);
           currentY += 20;
         });
 
@@ -399,18 +412,31 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
               }
 
               const isPaid = inst.isPaid;
+              const paidAmount = inst.paidAmount || 0;
+              const totalAmount = inst.amount || 0;
+              const isPartiallyPaid = paidAmount > 0 && paidAmount < totalAmount;
+
               doc.text(`${idx + 1}. Taksit`, instTableLeft, instY);
               doc.text(new Date(inst.dueDate).toLocaleDateString('tr-TR'), instTableLeft + 60, instY);
 
               if (isPaid) {
-                doc.fillColor('gray').text(`₺${inst.amount.toLocaleString('tr-TR')}`, instTableLeft + 160, instY, { strike: true });
+                // Fully paid - show strikethrough and green "ÖDENDİ"
+                doc.fillColor('gray').text(`₺${totalAmount.toLocaleString('tr-TR')}`, instTableLeft + 160, instY, { strike: true });
                 doc.fillColor('green').text('ÖDENDİ', instTableLeft + 260, instY);
                 doc.fillColor('black');
                 if (inst.paidDate) {
                   doc.text(new Date(inst.paidDate).toLocaleDateString('tr-TR'), instTableLeft + 340, instY);
                 }
+              } else if (isPartiallyPaid) {
+                // Partially paid - show paid/total and "KISMİ" in blue
+                const remaining = totalAmount - paidAmount;
+                doc.text(`₺${paidAmount.toLocaleString('tr-TR')} / ₺${totalAmount.toLocaleString('tr-TR')}`, instTableLeft + 160, instY);
+                doc.fillColor('blue').text('KISMİ', instTableLeft + 260, instY);
+                doc.fillColor('red').fontSize(8).text(`Kalan: ₺${remaining.toLocaleString('tr-TR')}`, instTableLeft + 310, instY);
+                doc.fillColor('black').fontSize(10);
               } else {
-                doc.text(`₺${inst.amount.toLocaleString('tr-TR')}`, instTableLeft + 160, instY);
+                // Not paid - show amount and status
+                doc.text(`₺${totalAmount.toLocaleString('tr-TR')}`, instTableLeft + 160, instY);
                 const isOverdue = new Date(inst.dueDate) < new Date();
                 doc.fillColor(isOverdue ? 'red' : 'orange')
                   .text(isOverdue ? 'GECİKMİŞ' : 'BEKLİYOR', instTableLeft + 260, instY);

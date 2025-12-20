@@ -46,10 +46,23 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
   const hasPreConfiguredVat = installment?.isInvoiced && installment?.vat > 0;
   const hasPreConfiguredCommission = installment?.paymentMethod === 'creditCard' && installment?.commission > 0;
 
+  // Calculate remaining amount for partial payments
+  const installmentPaidAmount = installment?.paidAmount || 0;
+  const installmentTotalAmount = installment?.amount || 0;
+  const installmentRemainingAmount = installmentTotalAmount - installmentPaidAmount;
+  const isPartiallyPaid = installmentPaidAmount > 0 && installmentPaidAmount < installmentTotalAmount;
+
+  // Check if this is the last unpaid installment
+  const unpaidInstallments = paymentPlan?.installments?.filter(inst => !inst.isPaid) || [];
+  const isLastInstallment = unpaidInstallments.length === 1 &&
+    unpaidInstallments[0]?.installmentNumber === installment?.installmentNumber;
+
   useEffect(() => {
     if (installment) {
+      // Default amount is remaining amount (for partial payments support)
+      const remainingAmount = (installment.amount || 0) - (installment.paidAmount || 0);
       setFormData({
-        amount: installment.amount.toString(),
+        amount: remainingAmount.toString(),
         cashRegisterId: cashRegisters.length > 0 ? cashRegisters[0]._id : '',
         isInvoiced: installment.isInvoiced || false,
         paymentDate: new Date(),
@@ -64,8 +77,9 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
     if (!installment || !paymentPlan) return null;
 
     const enteredAmount = parseFloat(formData.amount) || 0;
-    const installmentAmount = installment.amount || 0;
-    const excess = enteredAmount - installmentAmount;
+    // Use remaining amount instead of total amount for partial payments
+    const remainingForThisInstallment = (installment.amount || 0) - (installment.paidAmount || 0);
+    const excess = enteredAmount - remainingForThisInstallment;
 
     if (excess <= 0) return null;
 
@@ -170,6 +184,30 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
             </Alert>
           )}
 
+          {/* Partial Payment Info */}
+          {isPartiallyPaid && (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" fontWeight="bold">
+                ℹ️ Bu taksit için daha önce kısmi ödeme yapılmış
+              </Typography>
+              <Typography variant="body2">
+                Taksit Tutarı: ₺{installmentTotalAmount.toLocaleString('tr-TR')} |
+                Ödenen: ₺{installmentPaidAmount.toLocaleString('tr-TR')} |
+                <strong> Kalan: ₺{installmentRemainingAmount.toLocaleString('tr-TR')}</strong>
+              </Typography>
+            </Alert>
+          )}
+
+          {/* Last Installment Warning */}
+          {isLastInstallment && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              <Typography variant="body2">
+                ⚠️ Bu son taksittir. Kalan tutardan fazla ödeme yapılamaz.
+                Maksimum ödeme: <strong>₺{installmentRemainingAmount.toLocaleString('tr-TR')}</strong>
+              </Typography>
+            </Alert>
+          )}
+
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12} sm={6}>
               <TextField
@@ -178,8 +216,17 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
                 type="number"
                 value={formData.amount}
                 onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                inputProps={{ min: 0, step: 0.01 }}
-                helperText={`Taksit tutarı: ₺${(installment?.amount || 0).toLocaleString('tr-TR')}`}
+                inputProps={{
+                  min: 0,
+                  step: 0.01,
+                  max: isLastInstallment ? installmentRemainingAmount : undefined
+                }}
+                helperText={
+                  isPartiallyPaid
+                    ? `Kalan tutar: ₺${installmentRemainingAmount.toLocaleString('tr-TR')} (Toplam: ₺${installmentTotalAmount.toLocaleString('tr-TR')})`
+                    : `Taksit tutarı: ₺${installmentTotalAmount.toLocaleString('tr-TR')}`
+                }
+                error={isLastInstallment && parseFloat(formData.amount) > installmentRemainingAmount}
               />
             </Grid>
 
