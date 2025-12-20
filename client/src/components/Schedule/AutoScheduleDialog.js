@@ -46,7 +46,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
-  const [enrolledStudents, setEnrolledStudents] = useState([]);
+  const [allStudents, setAllStudents] = useState([]);  // All students in institution
   const [formData, setFormData] = useState({
     courseId: '',
     instructorId: '',
@@ -68,6 +68,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
     if (open && institution && season) {
       fetchCourses();
       fetchInstructors();
+      fetchAllStudents();  // Fetch all students
     }
   }, [open, institution, season]);
 
@@ -99,31 +100,25 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
     }
   };
 
-  const fetchEnrolledStudents = async (courseId) => {
-    if (!courseId) {
-      setEnrolledStudents([]);
-      return;
-    }
+  const fetchAllStudents = async () => {
     try {
-      const response = await api.get('/enrollments', {
+      const response = await api.get('/students', {
         params: {
-          courseId: courseId,
-          institutionId: institution._id,
-          seasonId: season._id
+          institutionId: institution._id
         }
       });
-      // Extract students from enrollments
+      // Sort students by name
       const students = response.data
-        .filter(e => e.student)
-        .map(e => ({
-          _id: e.student._id,
-          firstName: e.student.firstName,
-          lastName: e.student.lastName
-        }));
-      setEnrolledStudents(students);
+        .map(s => ({
+          _id: s._id,
+          firstName: s.firstName,
+          lastName: s.lastName
+        }))
+        .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`, 'tr'));
+      setAllStudents(students);
     } catch (error) {
-      console.error('Error fetching enrolled students:', error);
-      setEnrolledStudents([]);
+      console.error('Error fetching students:', error);
+      setAllStudents([]);
     }
   };
 
@@ -133,12 +128,6 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
       [field]: value
     }));
     setError('');
-
-    // When course changes, fetch enrolled students and reset student selection
-    if (field === 'courseId') {
-      setFormData(prev => ({ ...prev, studentId: '' }));
-      fetchEnrolledStudents(value);
-    }
   };
 
   const handleDayToggle = (dayValue) => {
@@ -275,7 +264,6 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
       skipHolidays: true,
       notes: ''
     });
-    setEnrolledStudents([]);
     setError('');
     setConflicts(null);
     setShowConfirmDialog(false);
@@ -332,7 +320,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
           </Grid>
 
           {/* Student Selection - for birebir (one-on-one) lessons */}
-          {enrolledStudents.length > 0 && (
+          {allStudents.length > 0 && (
             <Grid item xs={12}>
               <FormControl fullWidth>
                 <InputLabel>Öğrenci (Birebir Ders)</InputLabel>
@@ -342,7 +330,7 @@ const AutoScheduleDialog = ({ open, onClose, onSuccess }) => {
                   label="Öğrenci (Birebir Ders)"
                 >
                   <MenuItem value="">Grup Dersi (Tüm Öğrenciler)</MenuItem>
-                  {enrolledStudents.map((student) => (
+                  {allStudents.map((student) => (
                     <MenuItem key={student._id} value={student._id}>
                       {student.firstName} {student.lastName}
                     </MenuItem>
