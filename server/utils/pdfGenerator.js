@@ -277,11 +277,13 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
           // Monthly breakdown table
           if (monthlyBreakdown && monthlyBreakdown.length > 0) {
+            const hasDiscount = lessonDetails?.hasDiscount;
+
             // Table headers
             const tableLeft = sideMargin;
-            const col1Width = 160;
-            const col2Width = 80;
-            const col3Width = 100;
+            const col1Width = 150;
+            const col2Width = 70;
+            const col3Width = hasDiscount ? 160 : 100; // Wider for discount display
             const tableWidth = doc.page.width - (sideMargin * 2);
 
             doc.fontSize(9).font(fonts.bold);
@@ -296,6 +298,8 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
             tableY += 18;
 
             let totalLessonCount = 0;
+            let totalDiscountedAmount = 0;
+
             monthlyBreakdown.forEach((month) => {
               if (tableY > doc.page.height - bottomMargin - 50) {
                 doc.addPage();
@@ -304,9 +308,26 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
               // Month name with "(Kismi)" label if partial
               const monthLabel = month.isPartial ? `${month.monthName} (Kismi)` : month.monthName;
-              doc.text(monthLabel, tableLeft, tableY);
+              doc.fillColor('black').text(monthLabel, tableLeft, tableY);
               doc.text(`${month.lessonCount} ders`, tableLeft + col1Width, tableY);
-              doc.text(formatCurrency(month.amount), tableLeft + col1Width + col2Width, tableY);
+
+              // Price column: show strikethrough original + green discounted if has discount
+              if (hasDiscount && month.discountedAmount !== undefined) {
+                // Strikethrough original price
+                doc.fillColor('gray')
+                  .text(formatCurrency(month.amount), tableLeft + col1Width + col2Width, tableY, {
+                    strike: true,
+                    continued: true
+                  });
+                // Green discounted price
+                doc.fillColor('green')
+                  .text(` ${formatCurrency(month.discountedAmount)}`, { strike: false });
+                doc.fillColor('black');
+                totalDiscountedAmount += month.discountedAmount;
+              } else {
+                doc.text(formatCurrency(month.amount), tableLeft + col1Width + col2Width, tableY);
+              }
+
               tableY += 15;
               totalLessonCount += month.lessonCount;
             });
@@ -315,8 +336,14 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
             // Total lessons row
             tableY += 5;
-            doc.font(fonts.bold);
-            doc.text(`Toplam: ${totalLessonCount} ders`, tableLeft, tableY);
+            doc.font(fonts.bold).fillColor('black');
+            if (hasDiscount) {
+              doc.text(`Toplam: ${totalLessonCount} ders`, tableLeft, tableY, { continued: true });
+              doc.fillColor('green').text(` = ${formatCurrency(totalDiscountedAmount)}`);
+              doc.fillColor('black');
+            } else {
+              doc.text(`Toplam: ${totalLessonCount} ders`, tableLeft, tableY);
+            }
             doc.y = tableY + 15;
           }
 
