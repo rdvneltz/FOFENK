@@ -417,13 +417,13 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
         doc.text('Bu öğrenci için aktif ödeme planı bulunmamaktadır.');
       }
 
-      // Footer
-      const pageCount = doc.bufferedPageRange().count;
-      for (let i = 0; i < pageCount; i++) {
-        doc.switchToPage(i);
+      // Footer - add page numbers
+      const range = doc.bufferedPageRange();
+      for (let i = 0; i < range.count; i++) {
+        doc.switchToPage(range.start + i);
         doc.fontSize(8).font(fonts.regular)
           .text(
-            `${institution.name} - Sayfa ${i + 1}/${pageCount}`,
+            `${institution.name} - Sayfa ${i + 1}/${range.count}`,
             sideMargin,
             doc.page.height - bottomMargin + 10,
             { align: 'center', width: doc.page.width - (sideMargin * 2) }
