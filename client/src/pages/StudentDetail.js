@@ -150,6 +150,11 @@ const StudentDetail = () => {
     open: false,
     enrollment: null
   });
+  const [editEnrollmentDialog, setEditEnrollmentDialog] = useState({
+    open: false,
+    enrollment: null,
+    enrollmentDate: ''
+  });
   const [balanceDialog, setBalanceDialog] = useState({
     open: false,
     adjustment: '',
@@ -297,6 +302,30 @@ const StudentDetail = () => {
       loadStudent(); // Reload to update the list
     } catch (error) {
       alert('Kurstan çıkarma hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleOpenEditEnrollment = (enrollment) => {
+    const date = new Date(enrollment.enrollmentDate);
+    const formattedDate = date.toISOString().split('T')[0]; // YYYY-MM-DD format
+    setEditEnrollmentDialog({
+      open: true,
+      enrollment: enrollment,
+      enrollmentDate: formattedDate
+    });
+  };
+
+  const handleUpdateEnrollmentDate = async () => {
+    try {
+      await api.put(`/enrollments/${editEnrollmentDialog.enrollment._id}`, {
+        enrollmentDate: editEnrollmentDialog.enrollmentDate,
+        updatedBy: user?.username
+      });
+      alert('Kayıt tarihi başarıyla güncellendi');
+      setEditEnrollmentDialog({ open: false, enrollment: null, enrollmentDate: '' });
+      loadStudent(); // Reload to update the list
+    } catch (error) {
+      alert('Kayıt tarihi güncelleme hatası: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -754,6 +783,14 @@ const StudentDetail = () => {
                             <CardActions>
                               <Button
                                 size="small"
+                                color="primary"
+                                startIcon={<Edit />}
+                                onClick={() => handleOpenEditEnrollment(enrollment)}
+                              >
+                                Tarihi Düzenle
+                              </Button>
+                              <Button
+                                size="small"
                                 color="error"
                                 startIcon={<Delete />}
                                 onClick={() => setUnenrollDialog({ open: true, enrollment: enrollment })}
@@ -1053,6 +1090,44 @@ const StudentDetail = () => {
             color="error"
           >
             Kurstan Çıkar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Enrollment Date Dialog */}
+      <Dialog
+        open={editEnrollmentDialog.open}
+        onClose={() => setEditEnrollmentDialog({ open: false, enrollment: null, enrollmentDate: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Kayıt Tarihini Düzenle</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mt: 1, mb: 2 }}>
+            <strong>{editEnrollmentDialog.enrollment?.course?.name}</strong> kursu için kayıt tarihini düzenleyin.
+          </Typography>
+          <TextField
+            fullWidth
+            type="date"
+            label="Kayıt Tarihi"
+            value={editEnrollmentDialog.enrollmentDate}
+            onChange={(e) => setEditEnrollmentDialog(prev => ({ ...prev, enrollmentDate: e.target.value }))}
+            InputLabelProps={{ shrink: true }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            Not: Bu tarih değişikliği PDF raporlarında da yansıyacaktır.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditEnrollmentDialog({ open: false, enrollment: null, enrollmentDate: '' })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleUpdateEnrollmentDate}
+            variant="contained"
+            color="primary"
+          >
+            Kaydet
           </Button>
         </DialogActions>
       </Dialog>
