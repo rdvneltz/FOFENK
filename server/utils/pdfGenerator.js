@@ -367,10 +367,16 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           const totalAmount = paymentPlan.totalAmount || 0;
           const discountedAmount = paymentPlan.discountedAmount || totalAmount;
           const hasDiscount = discountedAmount < totalAmount;
+          const isFullScholarship = discountedAmount === 0 || paymentPlan.discountType === 'fullScholarship';
 
           doc.text(`Toplam Tutar: ${formatCurrency(totalAmount)}`);
 
-          if (hasDiscount && lessonDetails) {
+          if (isFullScholarship) {
+            // Full scholarship - show special banner
+            doc.fillColor('green')
+              .text('%100 TAM BURSLU');
+            doc.fillColor('black');
+          } else if (hasDiscount && lessonDetails) {
             const discountPercent = Math.round((1 - discountedAmount / totalAmount) * 100);
             doc.fillColor('green')
               .text(`%${discountPercent} Indirimli Tutar: ${formatCurrency(discountedAmount)}`);
@@ -449,10 +455,17 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
             doc.y = instY + 10;
           }
 
-          // Remaining balance
+          // Remaining balance - handle full scholarship differently
           const paidAmount = paymentPlan.paidAmount || 0;
           const remainingAmount = discountedAmount - paidAmount;
-          if (remainingAmount > 0) {
+
+          if (isFullScholarship) {
+            // Full scholarship - no debt, show special message with watermark effect
+            doc.fontSize(12).font(fonts.bold)
+              .fillColor('green')
+              .text('✓ TAM BURSLU - BORCU YOKTUR', { align: 'right' });
+            doc.fillColor('black');
+          } else if (remainingAmount > 0) {
             doc.fontSize(10).font(fonts.bold)
               .fillColor('red')
               .text(`Kalan Borç: ₺${remainingAmount.toLocaleString('tr-TR')}`);
