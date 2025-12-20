@@ -40,7 +40,17 @@ const LessonCard = ({ lesson, onClick }) => {
           </Typography>
         </Box>
 
-        {lesson.studentCount && (
+        {/* Show student name for birebir (one-on-one) lessons */}
+        {lesson.studentName && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 1 }}>
+            <Group fontSize="small" color="secondary" />
+            <Typography variant="body2" color="secondary.main" fontWeight="medium">
+              Birebir: {lesson.studentName}
+            </Typography>
+          </Box>
+        )}
+
+        {lesson.studentCount && !lesson.studentName && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Group fontSize="small" color="action" />
             <Typography variant="body2" color="text.secondary">

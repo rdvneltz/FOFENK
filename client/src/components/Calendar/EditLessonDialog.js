@@ -47,6 +47,7 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
+  const [enrolledStudents, setEnrolledStudents] = useState([]);
   const [futureCount, setFutureCount] = useState(0);
 
   const [formData, setFormData] = useState({
@@ -54,6 +55,7 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
     startTime: '',
     endTime: '',
     instructorId: '',
+    studentId: '',  // For birebir (one-on-one) lessons
     notes: '',
   });
 
@@ -76,6 +78,8 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
 
   const fetchData = async () => {
     try {
+      const courseId = lesson.course?._id || lesson.course;
+
       // Fetch courses
       const coursesRes = await api.get('/courses', {
         params: {
@@ -94,10 +98,29 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
       });
       setInstructors(instructorsRes.data);
 
+      // Fetch enrolled students for this course
+      if (courseId) {
+        const enrollmentsRes = await api.get('/enrollments', {
+          params: {
+            courseId: courseId,
+            institutionId: institution._id,
+            seasonId: season._id
+          }
+        });
+        const students = enrollmentsRes.data
+          .filter(e => e.student)
+          .map(e => ({
+            _id: e.student._id,
+            firstName: e.student.firstName,
+            lastName: e.student.lastName
+          }));
+        setEnrolledStudents(students);
+      }
+
       // Count future lessons for this course
       const futureRes = await api.get('/scheduled-lessons', {
         params: {
-          courseId: lesson.course?._id || lesson.course,
+          courseId: courseId,
           startDate: new Date(lesson.date).toISOString(),
           status: 'scheduled'
         }
@@ -123,6 +146,7 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
       startTime: lesson.startTime || '',
       endTime: lesson.endTime || '',
       instructorId: lesson.instructor?._id || lesson.instructor || '',
+      studentId: lesson.student?._id || lesson.student || '',
       notes: lesson.notes || '',
     });
     setUpdateScope('single');
@@ -179,6 +203,7 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
           startTime: formData.startTime,
           endTime: formData.endTime,
           instructor: formData.instructorId || null,
+          student: formData.studentId || null,  // For birebir (one-on-one) lessons
           notes: formData.notes,
           updatedBy: user?.username || 'System'
         });
@@ -223,8 +248,10 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
       startTime: '',
       endTime: '',
       instructorId: '',
+      studentId: '',
       notes: '',
     });
+    setEnrolledStudents([]);
     setError('');
     setUpdateScope('single');
     onClose();
@@ -420,6 +447,30 @@ const EditLessonDialog = ({ open, onClose, lesson, onSuccess }) => {
               </Select>
             </FormControl>
           </Grid>
+
+          {/* Student Selection - for birebir (one-on-one) lessons - only for single lesson update */}
+          {updateScope === 'single' && enrolledStudents.length > 0 && (
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Öğrenci (Birebir Ders)</InputLabel>
+                <Select
+                  value={formData.studentId}
+                  onChange={(e) => handleChange('studentId', e.target.value)}
+                  label="Öğrenci (Birebir Ders)"
+                >
+                  <MenuItem value="">Grup Dersi (Tüm Öğrenciler)</MenuItem>
+                  {enrolledStudents.map((student) => (
+                    <MenuItem key={student._id} value={student._id}>
+                      {student.firstName} {student.lastName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                Birebir ders için öğrenci seçin. Grup dersi ise boş bırakın.
+              </Typography>
+            </Grid>
+          )}
 
           {/* Notes/Description */}
           <Grid item xs={12}>

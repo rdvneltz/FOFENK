@@ -163,11 +163,18 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + i + 1, 0, 23, 59, 59);
 
         // Get lessons for this month
+        // For birebir (one-on-one) courses: only count lessons assigned to this student
+        // For group courses: count lessons with no student assigned (shared by all)
         const lessons = await ScheduledLesson.find({
           course: course._id,
           institution: institution._id,
           date: { $gte: monthStart, $lte: monthEnd },
-          status: { $ne: 'cancelled' }
+          status: { $ne: 'cancelled' },
+          $or: [
+            { student: studentId },           // Lessons specifically for this student (birebir)
+            { student: null },                // Group lessons (no student assigned)
+            { student: { $exists: false } }   // Legacy lessons without student field
+          ]
         });
 
         const lessonCount = lessons.length;

@@ -637,6 +637,16 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
             <Typography variant="h5" fontWeight="bold">
               {lessonData.course?.name || 'Ders'}
             </Typography>
+            {/* Show student name for birebir (one-on-one) lessons */}
+            {lessonData.student && (
+              <Chip
+                icon={<Group />}
+                label={`Birebir: ${lessonData.student.firstName} ${lessonData.student.lastName}`}
+                size="small"
+                color="secondary"
+                sx={{ mt: 0.5, mb: 0.5 }}
+              />
+            )}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
               <Chip
                 label={getStatusLabel(status)}
