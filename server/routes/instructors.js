@@ -7,6 +7,7 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all instructors with filtering
 router.get('/', async (req, res) => {
   try {
+    const Expense = require('../models/Expense');
     const { institution, institutionId, season, seasonId } = req.query;
     const filter = {};
 
@@ -23,7 +24,24 @@ router.get('/', async (req, res) => {
       .populate('season', 'name')
       .sort({ lastName: 1, firstName: 1 });
 
-    res.json(instructors);
+    // Calculate balance from overdue expenses for each instructor
+    const instructorsWithBalance = await Promise.all(
+      instructors.map(async (instructor) => {
+        const overdueExpenses = await Expense.find({
+          instructor: instructor._id,
+          category: 'Eğitmen Ödemesi',
+          status: 'overdue'
+        });
+        const overdueBalance = overdueExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+        // Return instructor with calculated balance (negative = we owe them)
+        const instructorObj = instructor.toObject();
+        instructorObj.balance = -overdueBalance;
+        return instructorObj;
+      })
+    );
+
+    res.json(instructorsWithBalance);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -69,11 +87,11 @@ router.get('/:id/details', async (req, res) => {
       .populate('cashRegister', 'name')
       .sort({ expenseDate: -1 });
 
-    // Get UNPAID expenses for balance calculation
-    const unpaidExpenses = await Expense.find({
+    // Get OVERDUE expenses for balance calculation (only past due date, not future pending)
+    const overdueExpenses = await Expense.find({
       instructor: req.params.id,
       category: 'Eğitmen Ödemesi',
-      status: { $in: ['pending', 'overdue'] }
+      status: 'overdue'
     });
 
     // Get recurring expense (salary template) for this instructor
@@ -96,9 +114,9 @@ router.get('/:id/details', async (req, res) => {
     // Calculate total paid (only from paid expenses)
     const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
-    // Calculate balance from unpaid expenses (negative = we owe them money)
-    const unpaidBalance = unpaidExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const calculatedBalance = -unpaidBalance; // Negative because we owe them
+    // Calculate balance from OVERDUE expenses only (negative = we owe them money)
+    const overdueBalance = overdueExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const calculatedBalance = -overdueBalance; // Negative because we owe them
 
     // Calculate total accrued (for monthly instructors)
     const totalAccrued = salaryAccruals.reduce((sum, accrual) => sum + accrual.amount, 0);
@@ -119,13 +137,13 @@ router.get('/:id/details', async (req, res) => {
       salaryAccruals,
       salaryExpenses: {
         recurring: salaryRecurring,
-        unpaid: unpaidExpenses
+        overdue: overdueExpenses
       },
       statistics: {
         totalPaid,
         totalAccrued,
         balance: calculatedBalance,
-        unpaidCount: unpaidExpenses.length,
+        overdueCount: overdueExpenses.length,
         completedLessons,
         expectedPayment: instructor.paymentType === 'perLesson' ? expectedPayment : null,
         paymentType: instructor.paymentType,
