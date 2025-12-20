@@ -49,6 +49,7 @@ router.get('/:id', async (req, res) => {
 router.get('/:id/details', async (req, res) => {
   try {
     const Expense = require('../models/Expense');
+    const RecurringExpense = require('../models/RecurringExpense');
     const ScheduledLesson = require('../models/ScheduledLesson');
 
     const instructor = await Instructor.findById(req.params.id)
@@ -59,13 +60,27 @@ router.get('/:id/details', async (req, res) => {
       return res.status(404).json({ message: 'Eğitmen bulunamadı' });
     }
 
-    // Get all instructor payments (expenses with category "Eğitmen Ödemesi")
+    // Get only PAID instructor payments for payment history
     const payments = await Expense.find({
       instructor: req.params.id,
-      category: 'Eğitmen Ödemesi'
+      category: 'Eğitmen Ödemesi',
+      status: 'paid'
     })
       .populate('cashRegister', 'name')
       .sort({ expenseDate: -1 });
+
+    // Get UNPAID expenses for balance calculation
+    const unpaidExpenses = await Expense.find({
+      instructor: req.params.id,
+      category: 'Eğitmen Ödemesi',
+      status: { $in: ['pending', 'overdue'] }
+    });
+
+    // Get recurring expense (salary template) for this instructor
+    const salaryRecurring = await RecurringExpense.findOne({
+      instructor: req.params.id,
+      category: 'Eğitmen Ödemesi'
+    });
 
     // Get salary accruals for monthly instructors
     const salaryAccruals = await SalaryAccrual.find({
@@ -78,8 +93,12 @@ router.get('/:id/details', async (req, res) => {
       status: 'completed'
     });
 
-    // Calculate total paid
+    // Calculate total paid (only from paid expenses)
     const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
+    // Calculate balance from unpaid expenses (negative = we owe them money)
+    const unpaidBalance = unpaidExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+    const calculatedBalance = -unpaidBalance; // Negative because we owe them
 
     // Calculate total accrued (for monthly instructors)
     const totalAccrued = salaryAccruals.reduce((sum, accrual) => sum + accrual.amount, 0);
@@ -98,10 +117,15 @@ router.get('/:id/details', async (req, res) => {
       instructor,
       payments,
       salaryAccruals,
+      salaryExpenses: {
+        recurring: salaryRecurring,
+        unpaid: unpaidExpenses
+      },
       statistics: {
         totalPaid,
         totalAccrued,
-        balance: instructor.balance,
+        balance: calculatedBalance,
+        unpaidCount: unpaidExpenses.length,
         completedLessons,
         expectedPayment: instructor.paymentType === 'perLesson' ? expectedPayment : null,
         paymentType: instructor.paymentType,
