@@ -156,16 +156,38 @@ recurringExpenseSchema.pre('save', function(next) {
   next();
 });
 
-// Virtual to get next due date
+// Virtual to get next due date - supports monthly, quarterly, and yearly frequencies
 recurringExpenseSchema.virtual('nextDueDate').get(function() {
   const now = new Date();
   const dueDay = this.dueDayType === 'fixed' ? this.dueDay : this.dueDayRangeStart;
 
   let nextDate = new Date(now.getFullYear(), now.getMonth(), dueDay);
 
-  // If the due date has passed this month, move to next month
+  // If the due date has passed this month, calculate next occurrence based on frequency
   if (nextDate < now) {
-    nextDate.setMonth(nextDate.getMonth() + 1);
+    switch (this.frequency) {
+      case 'quarterly':
+        // Move to next quarter (3 months)
+        nextDate.setMonth(nextDate.getMonth() + 3);
+        // Ensure we're in the correct quarter
+        while (nextDate < now) {
+          nextDate.setMonth(nextDate.getMonth() + 3);
+        }
+        break;
+      case 'yearly':
+        // Move to next year
+        nextDate.setFullYear(nextDate.getFullYear() + 1);
+        // Ensure we're in the correct year
+        while (nextDate < now) {
+          nextDate.setFullYear(nextDate.getFullYear() + 1);
+        }
+        break;
+      case 'monthly':
+      default:
+        // Move to next month
+        nextDate.setMonth(nextDate.getMonth() + 1);
+        break;
+    }
   }
 
   return nextDate;

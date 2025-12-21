@@ -59,6 +59,17 @@ router.get('/:id', async (req, res) => {
 // Create expense
 router.post('/', async (req, res) => {
   try {
+    // Input validation for financial amount
+    const amount = parseFloat(req.body.amount);
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ message: 'Gider tutarı pozitif bir sayı olmalıdır' });
+    }
+    if (amount > 1000000) {
+      return res.status(400).json({ message: 'Gider tutarı çok yüksek. Lütfen tutarı kontrol edin.' });
+    }
+    // Ensure amount is a clean number with max 2 decimal places
+    req.body.amount = Math.round(amount * 100) / 100;
+
     // Validate foreign keys
     if (req.body.cashRegister) {
       const cashRegisterExists = await CashRegister.exists({ _id: req.body.cashRegister });
@@ -120,6 +131,18 @@ router.post('/', async (req, res) => {
 // Update expense
 router.put('/:id', async (req, res) => {
   try {
+    // Input validation for financial amount if provided
+    if (req.body.amount !== undefined) {
+      const amount = parseFloat(req.body.amount);
+      if (isNaN(amount) || amount <= 0) {
+        return res.status(400).json({ message: 'Gider tutarı pozitif bir sayı olmalıdır' });
+      }
+      if (amount > 1000000) {
+        return res.status(400).json({ message: 'Gider tutarı çok yüksek. Lütfen tutarı kontrol edin.' });
+      }
+      req.body.amount = Math.round(amount * 100) / 100;
+    }
+
     const oldExpense = await Expense.findById(req.params.id);
     if (!oldExpense) {
       return res.status(404).json({ message: 'Gider bulunamadı' });
@@ -165,13 +188,29 @@ router.put('/:id', async (req, res) => {
       });
     }
 
-    // Log activity
+    // Log activity with old and new values for audit trail
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'Expense',
       entityId: expense._id,
-      description: `Gider güncellendi: ${expense.amount} TL - ${expense.description}`,
+      description: `Gider güncellendi: ${oldExpense.amount} TL → ${expense.amount} TL - ${expense.description}`,
+      metadata: {
+        oldValues: {
+          amount: oldExpense.amount,
+          category: oldExpense.category,
+          description: oldExpense.description,
+          cashRegister: oldExpense.cashRegister,
+          instructor: oldExpense.instructor
+        },
+        newValues: {
+          amount: expense.amount,
+          category: expense.category,
+          description: expense.description,
+          cashRegister: expense.cashRegister?._id,
+          instructor: expense.instructor?._id
+        }
+      },
       institution: expense.institution._id,
       season: expense.season._id
     });
