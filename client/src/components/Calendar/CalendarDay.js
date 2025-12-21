@@ -1,5 +1,5 @@
-import React from 'react';
-import { Box, Typography, Paper } from '@mui/material';
+import React, { useState } from 'react';
+import { Box, Typography, Paper, Menu, MenuItem, ListItemText } from '@mui/material';
 import { Payment as PaymentIcon } from '@mui/icons-material';
 
 const CalendarDay = ({
@@ -15,6 +15,8 @@ const CalendarDay = ({
   onDayClick,
   onDayDoubleClick
 }) => {
+  const [expenseMenuAnchor, setExpenseMenuAnchor] = useState(null);
+
   const handleDayClick = (e) => {
     // Only allow clicking on current month days
     if (isCurrentMonth && onDayClick) {
@@ -27,6 +29,24 @@ const CalendarDay = ({
       e.preventDefault();
       onDayDoubleClick(date);
     }
+  };
+
+  const handleExpenseIndicatorClick = (e) => {
+    e.stopPropagation();
+    if (expenses && expenses.length === 1) {
+      if (onExpenseClick) onExpenseClick(expenses[0]);
+    } else if (expenses && expenses.length > 1) {
+      setExpenseMenuAnchor(e.currentTarget);
+    }
+  };
+
+  const handleExpenseMenuClose = () => {
+    setExpenseMenuAnchor(null);
+  };
+
+  const handleExpenseSelect = (expense) => {
+    setExpenseMenuAnchor(null);
+    if (onExpenseClick) onExpenseClick(expense);
   };
 
   // Combine and sort all events by time
@@ -145,12 +165,7 @@ const CalendarDay = ({
               '&:hover': { opacity: 0.8 },
             }}
             title={expenses.map(e => `${e.description}: ${e.amount?.toLocaleString('tr-TR')}₺`).join('\n') + '\n(Tıkla: Öde)'}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onExpenseClick && expenses.length === 1) {
-                onExpenseClick(expenses[0]);
-              }
-            }}
+            onClick={handleExpenseIndicatorClick}
           >
             <PaymentIcon sx={{ fontSize: 10 }} />
             {expenses.length > 1 ? expenses.length : (expenses[0].amount?.toLocaleString('tr-TR') + '₺')}
@@ -265,7 +280,9 @@ const CalendarDay = ({
                 {event.startTime}-{event.endTime}
               </Box>
               <Box sx={{ fontSize: '0.65rem', mt: 0.3 }}>
-                {event.notes ? `${event.course?.name || 'Ders'} - ${event.notes}` : (event.course?.name || 'Ders')}
+                {event.student
+                  ? `${event.course?.name || 'Ders'} - ${event.student.firstName} ${event.student.lastName?.charAt(0) || ''}.`
+                  : (event.notes ? `${event.course?.name || 'Ders'} - ${event.notes}` : (event.course?.name || 'Ders'))}
               </Box>
             </Box>
           )
@@ -276,6 +293,26 @@ const CalendarDay = ({
           </Typography>
         )}
       </Box>
+
+      {/* Expense selection menu for multiple expenses on same day */}
+      <Menu
+        anchorEl={expenseMenuAnchor}
+        open={Boolean(expenseMenuAnchor)}
+        onClose={handleExpenseMenuClose}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {expenses && expenses.map((expense, index) => (
+          <MenuItem
+            key={expense._id || index}
+            onClick={() => handleExpenseSelect(expense)}
+          >
+            <ListItemText
+              primary={expense.description || expense.category}
+              secondary={`${expense.amount?.toLocaleString('tr-TR')}₺ - ${new Date(expense.dueDate).toLocaleDateString('tr-TR')}`}
+            />
+          </MenuItem>
+        ))}
+      </Menu>
     </Paper>
   );
 };

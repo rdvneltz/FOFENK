@@ -22,6 +22,7 @@ import {
   PersonAdd,
   ChevronLeft,
   ChevronRight,
+  Payment as PaymentIcon,
 } from '@mui/icons-material';
 import DayScheduleView from './DayScheduleView';
 import CreateTrialLessonDialog from './CreateTrialLessonDialog';
@@ -33,8 +34,10 @@ const DayDetailDialog = ({
   date,
   lessons = [],
   trialLessons = [],
+  expenses = [],
   onDateChange,
   onUpdated,
+  onExpenseClick,
 }) => {
   const [createTrialLessonOpen, setCreateTrialLessonOpen] = useState(false);
   const [selectedTrialLesson, setSelectedTrialLesson] = useState(null);
@@ -114,6 +117,8 @@ const DayDetailDialog = ({
   const lessonCount = lessons.length;
   const trialLessonCount = trialLessons.length;
   const pendingTrials = trialLessons.filter(t => t.status === 'pending').length;
+  const expenseCount = expenses.length;
+  const totalExpenseAmount = expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
   return (
     <>
@@ -182,10 +187,66 @@ const DayDetailDialog = ({
                 sx={{ bgcolor: 'warning.light', color: 'white' }}
               />
             )}
+            {expenseCount > 0 && (
+              <Chip
+                icon={<PaymentIcon sx={{ fontSize: 16 }} />}
+                label={`${expenseCount} Gider (${totalExpenseAmount.toLocaleString('tr-TR')}₺)`}
+                size="small"
+                color="error"
+                variant="outlined"
+              />
+            )}
           </Box>
         </DialogTitle>
 
         <DialogContent dividers sx={{ p: 0, overflow: 'auto' }}>
+          {/* Expenses Section */}
+          {expenses.length > 0 && (
+            <Box sx={{ p: 2, bgcolor: 'error.50', borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <PaymentIcon fontSize="small" color="error" />
+                Bugünkü Giderler
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {expenses.map((expense, index) => (
+                  <Paper
+                    key={expense._id || index}
+                    elevation={1}
+                    sx={{
+                      p: 1.5,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      '&:hover': { bgcolor: 'grey.100' },
+                    }}
+                    onClick={() => onExpenseClick && onExpenseClick(expense)}
+                  >
+                    <Box>
+                      <Typography variant="body2" fontWeight="medium">
+                        {expense.description || expense.category}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {expense.recurringExpense?.name || 'Düzenli Gider'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="body1" fontWeight="bold" color="error.main">
+                        {expense.amount?.toLocaleString('tr-TR')}₺
+                      </Typography>
+                      <Chip
+                        label={expense.status === 'overdue' ? 'Gecikmiş' : 'Bekliyor'}
+                        size="small"
+                        color={expense.status === 'overdue' ? 'error' : 'warning'}
+                        sx={{ height: 20, fontSize: 10 }}
+                      />
+                    </Box>
+                  </Paper>
+                ))}
+              </Box>
+            </Box>
+          )}
+
           <DayScheduleView
             date={date}
             lessons={lessons}
