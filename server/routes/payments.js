@@ -64,6 +64,17 @@ router.get('/:id', async (req, res) => {
 // Create payment
 router.post('/', async (req, res) => {
   try {
+    // Input validation for financial amount
+    const amount = parseFloat(req.body.amount);
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ message: 'Ödeme tutarı pozitif bir sayı olmalıdır' });
+    }
+    if (amount > 1000000) {
+      return res.status(400).json({ message: 'Ödeme tutarı çok yüksek. Lütfen tutarı kontrol edin.' });
+    }
+    // Ensure amount is a clean number with max 2 decimal places
+    req.body.amount = Math.round(amount * 100) / 100;
+
     // Validate foreign keys
     if (req.body.student) {
       const studentExists = await Student.exists({ _id: req.body.student });
@@ -123,6 +134,18 @@ router.post('/', async (req, res) => {
 // Update payment
 router.put('/:id', async (req, res) => {
   try {
+    // Input validation for financial amount if provided
+    if (req.body.amount !== undefined) {
+      const amount = parseFloat(req.body.amount);
+      if (isNaN(amount) || amount <= 0) {
+        return res.status(400).json({ message: 'Ödeme tutarı pozitif bir sayı olmalıdır' });
+      }
+      if (amount > 1000000) {
+        return res.status(400).json({ message: 'Ödeme tutarı çok yüksek. Lütfen tutarı kontrol edin.' });
+      }
+      req.body.amount = Math.round(amount * 100) / 100;
+    }
+
     const oldPayment = await Payment.findById(req.params.id);
     if (!oldPayment) {
       return res.status(404).json({ message: 'Ödeme bulunamadı' });
@@ -174,13 +197,27 @@ router.put('/:id', async (req, res) => {
       });
     }
 
-    // Log activity
+    // Log activity with old and new values for audit trail
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'Payment',
       entityId: payment._id,
-      description: `Ödeme güncellendi: ${payment.amount} TL`,
+      description: `Ödeme güncellendi: ${oldPayment.amount} TL → ${payment.amount} TL`,
+      metadata: {
+        oldValues: {
+          amount: oldPayment.amount,
+          paymentType: oldPayment.paymentType,
+          cashRegister: oldPayment.cashRegister,
+          student: oldPayment.student
+        },
+        newValues: {
+          amount: payment.amount,
+          paymentType: payment.paymentType,
+          cashRegister: payment.cashRegister?._id,
+          student: payment.student?._id
+        }
+      },
       institution: payment.institution._id,
       season: payment.season._id
     });
@@ -862,6 +899,138 @@ router.get('/diagnostic/cash-register/:cashRegisterId', async (req, res) => {
     });
   } catch (error) {
     console.error('Error running diagnostic:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Balance consistency check - Verify all balances are correct
+router.get('/diagnostic/balance-consistency', async (req, res) => {
+  try {
+    const institutionId = req.query.institution || req.query.institutionId;
+
+    if (!institutionId) {
+      return res.status(400).json({ message: 'institution veya institutionId gerekli' });
+    }
+
+    const PaymentPlan = require('../models/PaymentPlan');
+    const results = {
+      cashRegisters: [],
+      students: [],
+      hasDiscrepancies: false,
+      summary: {
+        totalCashRegisterDiscrepancy: 0,
+        totalStudentDiscrepancy: 0,
+        cashRegistersWithIssues: 0,
+        studentsWithIssues: 0
+      }
+    };
+
+    // Check all cash registers
+    const cashRegisters = await CashRegister.find({ institution: institutionId });
+    for (const cr of cashRegisters) {
+      // Calculate expected balance
+      const payments = await Payment.find({
+        cashRegister: cr._id,
+        isRefunded: { $ne: true }
+      });
+
+      let totalIncome = 0;
+      for (const p of payments) {
+        totalIncome += p.amount || 0;
+      }
+
+      const expenses = await Expense.find({ cashRegister: cr._id });
+      let totalExpenses = 0;
+      let manualIncome = 0;
+
+      for (const e of expenses) {
+        if (e.isManualIncome === true || e.category === 'Kasa Giriş (Manuel)') {
+          manualIncome += e.amount || 0;
+        } else {
+          totalExpenses += e.amount || 0;
+        }
+      }
+
+      totalIncome += manualIncome;
+      const expectedBalance = (cr.initialBalance || 0) + totalIncome - totalExpenses;
+      const discrepancy = Math.round((cr.balance - expectedBalance) * 100) / 100;
+
+      if (Math.abs(discrepancy) > 0.01) {
+        results.hasDiscrepancies = true;
+        results.summary.cashRegistersWithIssues++;
+        results.summary.totalCashRegisterDiscrepancy += discrepancy;
+      }
+
+      results.cashRegisters.push({
+        id: cr._id,
+        name: cr.name,
+        storedBalance: cr.balance,
+        calculatedBalance: expectedBalance,
+        discrepancy: discrepancy,
+        hasIssue: Math.abs(discrepancy) > 0.01
+      });
+    }
+
+    // Check all student balances
+    const students = await Student.find({ institution: institutionId });
+    for (const student of students) {
+      // Calculate expected balance from payment plans
+      const paymentPlans = await PaymentPlan.find({ student: student._id });
+
+      let totalDebt = 0;
+      let totalPaid = 0;
+
+      for (const plan of paymentPlans) {
+        totalDebt += plan.totalAmount || 0;
+
+        if (plan.installments && plan.installments.length > 0) {
+          for (const inst of plan.installments) {
+            if (inst.status === 'paid') {
+              totalPaid += inst.paidAmount || inst.amount || 0;
+            }
+          }
+        }
+      }
+
+      // Also check for standalone payments not linked to payment plans
+      const standalonePayments = await Payment.find({
+        student: student._id,
+        paymentPlan: { $exists: false },
+        isRefunded: { $ne: true }
+      });
+
+      for (const p of standalonePayments) {
+        totalPaid += p.amount || 0;
+      }
+
+      const expectedBalance = Math.round((totalDebt - totalPaid) * 100) / 100;
+      const discrepancy = Math.round((student.balance - expectedBalance) * 100) / 100;
+
+      if (Math.abs(discrepancy) > 0.01) {
+        results.hasDiscrepancies = true;
+        results.summary.studentsWithIssues++;
+        results.summary.totalStudentDiscrepancy += discrepancy;
+      }
+
+      results.students.push({
+        id: student._id,
+        name: `${student.firstName} ${student.lastName}`,
+        storedBalance: student.balance,
+        calculatedBalance: expectedBalance,
+        totalDebt: totalDebt,
+        totalPaid: totalPaid,
+        discrepancy: discrepancy,
+        hasIssue: Math.abs(discrepancy) > 0.01
+      });
+    }
+
+    res.json({
+      timestamp: new Date().toISOString(),
+      institution: institutionId,
+      results: results
+    });
+  } catch (error) {
+    console.error('Error checking balance consistency:', error);
     res.status(500).json({ message: error.message });
   }
 });
