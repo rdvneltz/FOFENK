@@ -10,7 +10,8 @@ const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 const Settings = require('../models/Settings');
 const ScheduledLesson = require('../models/ScheduledLesson');
 const Season = require('../models/Season');
-const { generatePaymentPlanPDF, generateStudentStatusReportPDF } = require('../utils/pdfGenerator');
+const { generatePaymentPlanPDF, generateStudentStatusReportPDF, generateAttendanceHistoryPDF } = require('../utils/pdfGenerator');
+const Attendance = require('../models/Attendance');
 
 // Ödeme planı PDF'i oluştur
 router.get('/payment-plan/:paymentPlanId', async (req, res) => {
@@ -341,6 +342,100 @@ router.get('/student-status-report/:studentId', async (req, res) => {
     });
   } catch (error) {
     console.error('Son Durum Raporu oluşturma hatası:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Yoklama Geçmişi Raporu PDF'i oluştur
+router.get('/attendance-history/:studentId', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { institutionId } = req.query;
+
+    // Get student
+    const student = await Student.findById(studentId);
+    if (!student) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    // Get institution
+    const institution = await Institution.findById(institutionId || student.institution);
+    if (!institution) {
+      return res.status(404).json({ message: 'Kurum bulunamadı' });
+    }
+
+    // Get settings for letterhead
+    const settings = await Settings.findOne({ institution: institution._id });
+    const letterhead = settings?.letterhead || null;
+
+    // Get all attendance records for this student
+    const attendanceRecords = await Attendance.find({ student: studentId })
+      .populate('student', 'firstName lastName')
+      .populate({
+        path: 'scheduledLesson',
+        populate: [
+          { path: 'course', select: 'name' },
+          { path: 'institution', select: 'name' },
+          { path: 'season', select: 'name startDate endDate' },
+          { path: 'instructor', select: 'firstName lastName' }
+        ]
+      })
+      .sort({ 'scheduledLesson.date': -1 });
+
+    // Sort by date descending (in case the populate messes with order)
+    attendanceRecords.sort((a, b) => {
+      const dateA = new Date(a.scheduledLesson?.date || 0);
+      const dateB = new Date(b.scheduledLesson?.date || 0);
+      return dateB - dateA;
+    });
+
+    // Calculate summary
+    const attended = attendanceRecords.filter(a => a.attended).length;
+    const total = attendanceRecords.length;
+    const absent = total - attended;
+    const rate = total > 0 ? Math.round((attended / total) * 100) : 0;
+
+    const summary = {
+      attended,
+      absent,
+      total,
+      rate
+    };
+
+    // PDF dosyası için path
+    const pdfDir = path.join(__dirname, '../uploads/pdfs');
+    if (!fs.existsSync(pdfDir)) {
+      fs.mkdirSync(pdfDir, { recursive: true });
+    }
+
+    const filename = `yoklama-gecmisi-${studentId}-${Date.now()}.pdf`;
+    const filepath = path.join(pdfDir, filename);
+
+    // Generate PDF
+    await generateAttendanceHistoryPDF({
+      student: student.toObject(),
+      institution: institution.toObject(),
+      attendanceRecords: attendanceRecords.map(r => r.toObject()),
+      summary,
+      letterhead
+    }, filepath);
+
+    // Send PDF
+    res.download(filepath, `Yoklama_Gecmisi_${student.firstName}_${student.lastName}.pdf`, (err) => {
+      if (err) {
+        console.error('PDF gönderim hatası:', err);
+      }
+      // Cleanup after send
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(filepath);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }, 5000);
+    });
+  } catch (error) {
+    console.error('Yoklama Geçmişi Raporu oluşturma hatası:', error);
     res.status(500).json({ message: error.message });
   }
 });

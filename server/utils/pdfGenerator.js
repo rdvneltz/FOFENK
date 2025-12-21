@@ -514,7 +514,244 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
   });
 };
 
+/**
+ * Yoklama Geçmişi Raporu PDF'i oluşturur
+ * @param {Object} data - Rapor verileri
+ * @param {Object} data.student - Öğrenci bilgileri
+ * @param {Object} data.institution - Kurum bilgileri
+ * @param {Array} data.attendanceRecords - Yoklama kayıtları
+ * @param {Object} data.summary - Özet istatistikler
+ * @param {Object} data.letterhead - Antetli kağıt ayarları
+ * @param {String} outputPath - PDF dosyasının kaydedileceği yol
+ */
+const generateAttendanceHistoryPDF = (data, outputPath) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const { student, institution, attendanceRecords, summary, letterhead } = data;
+
+      // Margin settings from letterhead or defaults
+      const topMargin = letterhead?.topMargin || 120;
+      const bottomMargin = letterhead?.bottomMargin || 60;
+      const sideMargin = letterhead?.sideMargin || 40;
+
+      const doc = new PDFDocument({
+        margin: sideMargin,
+        size: 'A4'
+      });
+
+      const writeStream = fs.createWriteStream(outputPath);
+      const fonts = registerFonts(doc);
+      doc.pipe(writeStream);
+
+      // If letterhead image exists, draw it as background
+      if (letterhead?.imageUrl && letterhead.imageUrl.startsWith('data:image')) {
+        const base64Data = letterhead.imageUrl.split(',')[1];
+        const imageBuffer = Buffer.from(base64Data, 'base64');
+        doc.image(imageBuffer, 0, 0, {
+          width: doc.page.width,
+          height: doc.page.height
+        });
+      }
+
+      // Move to start position after letterhead area
+      doc.y = topMargin;
+
+      // Report title
+      doc.fontSize(16).font(fonts.bold)
+        .text('YOKLAMA GEÇMİŞİ RAPORU', sideMargin, doc.y, { align: 'center' });
+      doc.moveDown(0.5);
+
+      // Generation date
+      doc.fontSize(9).font(fonts.regular)
+        .text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, { align: 'center' });
+      doc.moveDown(1.5);
+
+      // Student info box
+      doc.fontSize(11).font(fonts.bold)
+        .text('ÖĞRENCİ BİLGİLERİ', sideMargin);
+      doc.moveTo(sideMargin, doc.y + 2).lineTo(doc.page.width - sideMargin, doc.y + 2).stroke();
+      doc.moveDown(0.5);
+
+      doc.fontSize(10).font(fonts.regular);
+      doc.text(`Ad Soyad: ${student.firstName} ${student.lastName}`);
+      if (student.phone) doc.text(`Telefon: ${student.phone}`);
+      if (student.email) doc.text(`E-posta: ${student.email}`);
+      doc.moveDown(1);
+
+      // Summary section
+      doc.fontSize(11).font(fonts.bold)
+        .text('ÖZET İSTATİSTİKLER', sideMargin);
+      doc.moveTo(sideMargin, doc.y + 2).lineTo(doc.page.width - sideMargin, doc.y + 2).stroke();
+      doc.moveDown(0.5);
+
+      const summaryY = doc.y;
+      const colWidth = (doc.page.width - (sideMargin * 2)) / 3;
+
+      // Draw summary boxes
+      doc.fontSize(10).font(fonts.regular);
+
+      // Attended
+      doc.fillColor('green').text('Katıldı', sideMargin, summaryY);
+      doc.fontSize(20).font(fonts.bold).text(summary.attended.toString(), sideMargin, summaryY + 15);
+
+      // Absent
+      doc.fillColor('red').fontSize(10).font(fonts.regular)
+        .text('Katılmadı', sideMargin + colWidth, summaryY);
+      doc.fontSize(20).font(fonts.bold).text(summary.absent.toString(), sideMargin + colWidth, summaryY + 15);
+
+      // Rate
+      doc.fillColor('blue').fontSize(10).font(fonts.regular)
+        .text('Katılım Oranı', sideMargin + (colWidth * 2), summaryY);
+      doc.fontSize(20).font(fonts.bold).text(`%${summary.rate}`, sideMargin + (colWidth * 2), summaryY + 15);
+
+      doc.fillColor('black');
+      doc.y = summaryY + 50;
+      doc.moveDown(1);
+
+      // Attendance records table
+      doc.fontSize(11).font(fonts.bold)
+        .text('YOKLAMA KAYITLARI', sideMargin);
+      doc.moveTo(sideMargin, doc.y + 2).lineTo(doc.page.width - sideMargin, doc.y + 2).stroke();
+      doc.moveDown(0.5);
+
+      // Table header
+      const tableLeft = sideMargin;
+      const col1Width = 120; // Date
+      const col2Width = 150; // Course
+      const col3Width = 80;  // Time
+      const col4Width = 80;  // Status
+      const tableWidth = doc.page.width - (sideMargin * 2);
+
+      let tableY = doc.y;
+      doc.fontSize(9).font(fonts.bold);
+      doc.text('Tarih', tableLeft, tableY);
+      doc.text('Ders', tableLeft + col1Width, tableY);
+      doc.text('Saat', tableLeft + col1Width + col2Width, tableY);
+      doc.text('Durum', tableLeft + col1Width + col2Width + col3Width, tableY);
+
+      doc.moveTo(tableLeft, tableY + 12).lineTo(tableLeft + tableWidth, tableY + 12).stroke();
+
+      doc.font(fonts.regular);
+      tableY += 18;
+
+      // Group records by course
+      const recordsByCourse = {};
+      attendanceRecords.forEach((record) => {
+        const courseName = record.scheduledLesson?.course?.name || 'Bilinmiyor';
+        if (!recordsByCourse[courseName]) {
+          recordsByCourse[courseName] = [];
+        }
+        recordsByCourse[courseName].push(record);
+      });
+
+      // Draw records
+      Object.keys(recordsByCourse).forEach((courseName) => {
+        const courseRecords = recordsByCourse[courseName];
+
+        // Course header
+        if (tableY > doc.page.height - bottomMargin - 50) {
+          doc.addPage();
+          tableY = topMargin;
+          // Re-draw letterhead on new page
+          if (letterhead?.imageUrl && letterhead.imageUrl.startsWith('data:image')) {
+            const base64Data = letterhead.imageUrl.split(',')[1];
+            const imageBuffer = Buffer.from(base64Data, 'base64');
+            doc.image(imageBuffer, 0, 0, {
+              width: doc.page.width,
+              height: doc.page.height
+            });
+          }
+        }
+
+        doc.fontSize(9).font(fonts.bold).fillColor('blue')
+          .text(`${courseName} (${courseRecords.length} ders)`, tableLeft, tableY);
+        doc.fillColor('black');
+        tableY += 15;
+
+        courseRecords.forEach((record) => {
+          if (tableY > doc.page.height - bottomMargin - 30) {
+            doc.addPage();
+            tableY = topMargin;
+            // Re-draw letterhead on new page
+            if (letterhead?.imageUrl && letterhead.imageUrl.startsWith('data:image')) {
+              const base64Data = letterhead.imageUrl.split(',')[1];
+              const imageBuffer = Buffer.from(base64Data, 'base64');
+              doc.image(imageBuffer, 0, 0, {
+                width: doc.page.width,
+                height: doc.page.height
+              });
+            }
+          }
+
+          doc.font(fonts.regular);
+
+          // Date
+          const date = record.scheduledLesson?.date
+            ? new Date(record.scheduledLesson.date).toLocaleDateString('tr-TR', {
+                weekday: 'short',
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+              })
+            : '-';
+          doc.text(date, tableLeft, tableY);
+
+          // Course (abbreviated if needed)
+          const shortCourse = courseName.length > 20 ? courseName.substring(0, 18) + '...' : courseName;
+          doc.text(shortCourse, tableLeft + col1Width, tableY);
+
+          // Time
+          const time = record.scheduledLesson?.startTime && record.scheduledLesson?.endTime
+            ? `${record.scheduledLesson.startTime}-${record.scheduledLesson.endTime}`
+            : '-';
+          doc.text(time, tableLeft + col1Width + col2Width, tableY);
+
+          // Status
+          if (record.attended) {
+            doc.fillColor('green').text('Katıldı', tableLeft + col1Width + col2Width + col3Width, tableY);
+          } else {
+            doc.fillColor('red').text('Katılmadı', tableLeft + col1Width + col2Width + col3Width, tableY);
+          }
+          doc.fillColor('black');
+
+          tableY += 14;
+        });
+
+        tableY += 5; // Space between courses
+      });
+
+      doc.moveTo(tableLeft, tableY).lineTo(tableLeft + tableWidth, tableY).stroke();
+
+      // Footer - add page numbers
+      const range = doc.bufferedPageRange();
+      for (let i = 0; i < range.count; i++) {
+        doc.switchToPage(range.start + i);
+        doc.fontSize(8).font(fonts.regular)
+          .text(
+            `${institution.name} - Sayfa ${i + 1}/${range.count}`,
+            sideMargin,
+            doc.page.height - bottomMargin + 10,
+            { align: 'center', width: doc.page.width - (sideMargin * 2) }
+          );
+      }
+
+      doc.end();
+
+      writeStream.on('finish', () => {
+        resolve(outputPath);
+      });
+
+      writeStream.on('error', (error) => {
+        reject(error);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
 module.exports = {
   generatePaymentPlanPDF,
-  generateStudentStatusReportPDF
+  generateStudentStatusReportPDF,
+  generateAttendanceHistoryPDF
 };

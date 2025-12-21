@@ -57,6 +57,7 @@ import {
   Cancel,
   CalendarToday,
   AccessTime,
+  PictureAsPdf,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -169,6 +170,16 @@ const StudentDetail = () => {
     error: '',
     loading: false,
     result: null
+  });
+  const [editAttendanceDialog, setEditAttendanceDialog] = useState({
+    open: false,
+    attendance: null,
+    attended: false,
+    notes: ''
+  });
+  const [deleteAttendanceDialog, setDeleteAttendanceDialog] = useState({
+    open: false,
+    attendance: null
   });
 
   // Expanded sections for additional info
@@ -412,6 +423,63 @@ const StudentDetail = () => {
         loading: false,
         error: errorMessage
       }));
+    }
+  };
+
+  const handleOpenEditAttendance = (attendance) => {
+    setEditAttendanceDialog({
+      open: true,
+      attendance: attendance,
+      attended: attendance.attended,
+      notes: attendance.notes || ''
+    });
+  };
+
+  const handleUpdateAttendance = async () => {
+    try {
+      await api.put(`/attendance/${editAttendanceDialog.attendance._id}`, {
+        attended: editAttendanceDialog.attended,
+        notes: editAttendanceDialog.notes,
+        updatedBy: user?.username
+      });
+      alert('Yoklama kaydı başarıyla güncellendi');
+      setEditAttendanceDialog({ open: false, attendance: null, attended: false, notes: '' });
+      loadAttendanceHistory();
+    } catch (error) {
+      alert('Yoklama güncelleme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDeleteAttendance = async () => {
+    try {
+      await api.delete(`/attendance/${deleteAttendanceDialog.attendance._id}`, {
+        data: { deletedBy: user?.username }
+      });
+      alert('Yoklama kaydı başarıyla silindi');
+      setDeleteAttendanceDialog({ open: false, attendance: null });
+      loadAttendanceHistory();
+    } catch (error) {
+      alert('Yoklama silme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleDownloadAttendanceReport = async () => {
+    try {
+      const response = await api.get(`/pdf/attendance-history/${id}`, {
+        params: { institutionId: institution._id },
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Yoklama_Gecmisi_${student.firstName}_${student.lastName}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert('PDF oluşturma hatası: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -883,6 +951,18 @@ const StudentDetail = () => {
               {/* Attendance Tab */}
               {tabValue === 2 && (
                 <Box>
+                  {/* Header with PDF button */}
+                  <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<PictureAsPdf />}
+                      onClick={handleDownloadAttendanceReport}
+                      disabled={attendanceRecords.length === 0}
+                    >
+                      Yoklama Raporu (PDF)
+                    </Button>
+                  </Box>
+
                   {attendanceLoading ? (
                     <LoadingSpinner message="Yoklama geçmişi yükleniyor..." />
                   ) : attendanceRecords.length === 0 ? (
@@ -916,6 +996,7 @@ const StudentDetail = () => {
                               <TableCell>Ders</TableCell>
                               <TableCell>Saat</TableCell>
                               <TableCell align="center">Durum</TableCell>
+                              <TableCell align="center">İşlemler</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
@@ -956,6 +1037,24 @@ const StudentDetail = () => {
                                       variant="outlined"
                                     />
                                   )}
+                                </TableCell>
+                                <TableCell align="center">
+                                  <IconButton
+                                    size="small"
+                                    color="primary"
+                                    onClick={() => handleOpenEditAttendance(record)}
+                                    title="Düzenle"
+                                  >
+                                    <Edit fontSize="small" />
+                                  </IconButton>
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => setDeleteAttendanceDialog({ open: true, attendance: record })}
+                                    title="Sil"
+                                  >
+                                    <Delete fontSize="small" />
+                                  </IconButton>
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1342,6 +1441,131 @@ const StudentDetail = () => {
               {recalculateDialog.loading ? 'Hesaplanıyor...' : 'Yeniden Hesapla'}
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Attendance Dialog */}
+      <Dialog
+        open={editAttendanceDialog.open}
+        onClose={() => setEditAttendanceDialog({ open: false, attendance: null, attended: false, notes: '' })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Yoklama Kaydını Düzenle</DialogTitle>
+        <DialogContent>
+          {editAttendanceDialog.attendance && (
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                <strong>Ders:</strong> {editAttendanceDialog.attendance.scheduledLesson?.course?.name || '-'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                <strong>Tarih:</strong> {editAttendanceDialog.attendance.scheduledLesson?.date
+                  ? new Date(editAttendanceDialog.attendance.scheduledLesson.date).toLocaleDateString('tr-TR', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    })
+                  : '-'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                <strong>Saat:</strong> {editAttendanceDialog.attendance.scheduledLesson?.startTime} - {editAttendanceDialog.attendance.scheduledLesson?.endTime}
+              </Typography>
+
+              <Divider sx={{ mb: 2 }} />
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>Katılım Durumu</Typography>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant={editAttendanceDialog.attended ? 'contained' : 'outlined'}
+                    color="success"
+                    startIcon={<CheckCircle />}
+                    onClick={() => setEditAttendanceDialog(prev => ({ ...prev, attended: true }))}
+                  >
+                    Katıldı
+                  </Button>
+                  <Button
+                    variant={!editAttendanceDialog.attended ? 'contained' : 'outlined'}
+                    color="error"
+                    startIcon={<Cancel />}
+                    onClick={() => setEditAttendanceDialog(prev => ({ ...prev, attended: false }))}
+                  >
+                    Katılmadı
+                  </Button>
+                </Box>
+              </Box>
+
+              <TextField
+                fullWidth
+                label="Not (Opsiyonel)"
+                multiline
+                rows={2}
+                value={editAttendanceDialog.notes}
+                onChange={(e) => setEditAttendanceDialog(prev => ({ ...prev, notes: e.target.value }))}
+                placeholder="Örn: Hasta olduğu için katılamadı"
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditAttendanceDialog({ open: false, attendance: null, attended: false, notes: '' })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleUpdateAttendance}
+            variant="contained"
+            color="primary"
+          >
+            Kaydet
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Attendance Confirmation Dialog */}
+      <Dialog
+        open={deleteAttendanceDialog.open}
+        onClose={() => setDeleteAttendanceDialog({ open: false, attendance: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Yoklama Kaydını Sil</DialogTitle>
+        <DialogContent>
+          {deleteAttendanceDialog.attendance && (
+            <Box sx={{ mt: 1 }}>
+              <Typography>
+                Aşağıdaki yoklama kaydını silmek istediğinize emin misiniz?
+              </Typography>
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                <Typography variant="body2">
+                  <strong>Ders:</strong> {deleteAttendanceDialog.attendance.scheduledLesson?.course?.name || '-'}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Tarih:</strong> {deleteAttendanceDialog.attendance.scheduledLesson?.date
+                    ? new Date(deleteAttendanceDialog.attendance.scheduledLesson.date).toLocaleDateString('tr-TR')
+                    : '-'}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>Durum:</strong> {deleteAttendanceDialog.attendance.attended ? 'Katıldı' : 'Katılmadı'}
+                </Typography>
+              </Box>
+              <Typography color="warning.main" sx={{ mt: 2 }}>
+                Bu işlem geri alınamaz!
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteAttendanceDialog({ open: false, attendance: null })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleDeleteAttendance}
+            variant="contained"
+            color="error"
+          >
+            Sil
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
