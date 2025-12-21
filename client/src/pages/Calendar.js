@@ -570,8 +570,10 @@ const Calendar = () => {
           currentDate={currentDate}
           lessons={lessonsArray}
           trialLessons={trialLessonsArray}
+          expenses={pendingExpensesArray}
           onWeekChange={setCurrentDate}
           onUpdated={loadAllData}
+          onExpenseClick={handleExpenseClick}
         />
       ) : (
         <Paper sx={{ p: 2 }}>
@@ -670,8 +672,11 @@ const Calendar = () => {
         date={selectedDate}
         lessons={selectedDate ? lessons[selectedDate.toDateString()] || [] : []}
         trialLessons={selectedDate ? trialLessons[selectedDate.toDateString()] || [] : []}
+        expenses={selectedDate ? pendingExpenses[selectedDate.toDateString()] || [] : []}
         onDateChange={(newDate) => setSelectedDate(newDate)}
         onUpdated={loadAllData}
+        onExpenseClick={handleExpenseClick}
+        cashRegisters={cashRegisters}
       />
 
       {/* Lesson Detail Dialog */}

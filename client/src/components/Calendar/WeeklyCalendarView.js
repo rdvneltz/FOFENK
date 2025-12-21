@@ -5,6 +5,7 @@ import {
   Typography,
   Chip,
 } from '@mui/material';
+import { Payment as PaymentIcon } from '@mui/icons-material';
 import DayScheduleView from './DayScheduleView';
 import DayDetailDialog from './DayDetailDialog';
 import CreateTrialLessonDialog from './CreateTrialLessonDialog';
@@ -23,8 +24,10 @@ const WeeklyCalendarView = ({
   currentDate,
   lessons = [],
   trialLessons = [],
+  expenses = [],
   onWeekChange,
   onUpdated,
+  onExpenseClick,
 }) => {
   const [selectedDay, setSelectedDay] = useState(null);
   const [dayDetailOpen, setDayDetailOpen] = useState(false);
@@ -49,7 +52,7 @@ const WeeklyCalendarView = ({
     });
   }, [currentDate]);
 
-  // Group lessons and trial lessons by day
+  // Group lessons, trial lessons, and expenses by day
   const eventsByDay = useMemo(() => {
     const result = {};
 
@@ -58,6 +61,7 @@ const WeeklyCalendarView = ({
       result[dateStr] = {
         lessons: [],
         trialLessons: [],
+        expenses: [],
       };
     });
 
@@ -75,8 +79,17 @@ const WeeklyCalendarView = ({
       }
     });
 
+    expenses.forEach(expense => {
+      if (expense.dueDate) {
+        const dateStr = getLocalDateStr(expense.dueDate);
+        if (result[dateStr]) {
+          result[dateStr].expenses.push(expense);
+        }
+      }
+    });
+
     return result;
-  }, [weekDates, lessons, trialLessons]);
+  }, [weekDates, lessons, trialLessons, expenses]);
 
   const handleDayClick = (date) => {
     setSelectedDay(date);
@@ -146,8 +159,10 @@ const WeeklyCalendarView = ({
           <Box sx={{ flex: 1, display: 'flex', overflow: 'auto' }}>
             {weekDates.map((date, index) => {
               const dateStr = getLocalDateStr(date);
-              const dayEvents = eventsByDay[dateStr] || { lessons: [], trialLessons: [] };
+              const dayEvents = eventsByDay[dateStr] || { lessons: [], trialLessons: [], expenses: [] };
               const eventCount = dayEvents.lessons.length + dayEvents.trialLessons.length;
+              const expenseCount = dayEvents.expenses.length;
+              const totalExpenseAmount = dayEvents.expenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
               return (
                 <Box
@@ -192,19 +207,36 @@ const WeeklyCalendarView = ({
                       {getDayNameShort(date)}. {date.getDate()}
                     </Typography>
                     {/* Event count below */}
-                    {eventCount > 0 && (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontSize: '0.7rem',
-                          opacity: 0.85,
-                          color: isToday(date) ? 'white' : 'primary.main',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {eventCount} ders
-                      </Typography>
-                    )}
+                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                      {eventCount > 0 && (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            fontSize: '0.7rem',
+                            opacity: 0.85,
+                            color: isToday(date) ? 'white' : 'primary.main',
+                            fontWeight: 500,
+                          }}
+                        >
+                          {eventCount} ders
+                        </Typography>
+                      )}
+                      {expenseCount > 0 && (
+                        <Chip
+                          icon={<PaymentIcon sx={{ fontSize: 10, color: 'inherit' }} />}
+                          label={`${totalExpenseAmount.toLocaleString('tr-TR')}₺`}
+                          size="small"
+                          sx={{
+                            height: 16,
+                            fontSize: '0.6rem',
+                            bgcolor: isToday(date) ? 'error.light' : 'error.main',
+                            color: 'white',
+                            '& .MuiChip-label': { px: 0.5 },
+                            '& .MuiChip-icon': { ml: 0.3 },
+                          }}
+                        />
+                      )}
+                    </Box>
                   </Box>
 
                   {/* Day schedule */}
@@ -232,8 +264,10 @@ const WeeklyCalendarView = ({
           date={selectedDay}
           lessons={eventsByDay[getLocalDateStr(selectedDay)]?.lessons || []}
           trialLessons={eventsByDay[getLocalDateStr(selectedDay)]?.trialLessons || []}
+          expenses={eventsByDay[getLocalDateStr(selectedDay)]?.expenses || []}
           onDateChange={(newDate) => setSelectedDay(newDate)}
           onUpdated={handleUpdated}
+          onExpenseClick={onExpenseClick}
         />
       )}
 
