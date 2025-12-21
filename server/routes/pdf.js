@@ -168,6 +168,15 @@ router.get('/student-status-report/:studentId', async (req, res) => {
       const monthlyFee = course.pricePerMonth || 0;
       const perLessonFee = course.pricePerLesson || (monthlyFee / expectedLessonsPerMonth);
 
+      // Check if this is a birebir (one-on-one) course for this student
+      // Birebir: lessons are specifically assigned to this student
+      const studentSpecificLessons = await ScheduledLesson.find({
+        course: course._id,
+        student: studentId,
+        status: { $ne: 'cancelled' }
+      }).select('_id');
+      const isBirebir = studentSpecificLessons.length > 0;
+
       // Calculate for each month (same logic as courses.js calculate-monthly-lessons)
       for (let i = 0; i < durationMonths; i++) {
         const monthStart = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1, 0, 0, 0, 0);
@@ -176,17 +185,26 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         // Get lessons for this month
         // For birebir (one-on-one) courses: only count lessons assigned to this student
         // For group courses: count lessons with no student assigned (shared by all)
-        const lessons = await ScheduledLesson.find({
+        let lessonQuery = {
           course: course._id,
           institution: institution._id,
           date: { $gte: monthStart, $lte: monthEnd },
-          status: { $ne: 'cancelled' },
-          $or: [
+          status: { $ne: 'cancelled' }
+        };
+
+        if (isBirebir) {
+          // Birebir: only count lessons assigned to this specific student
+          lessonQuery.student = studentId;
+        } else {
+          // Group course: count lessons with no student assigned
+          lessonQuery.$or = [
             { student: studentId },           // Lessons specifically for this student (birebir)
             { student: null },                // Group lessons (no student assigned)
             { student: { $exists: false } }   // Legacy lessons without student field
-          ]
-        });
+          ];
+        }
+
+        const lessons = await ScheduledLesson.find(lessonQuery);
 
         const lessonCount = lessons.length;
 
@@ -248,7 +266,12 @@ router.get('/student-status-report/:studentId', async (req, res) => {
 
       // Update monthlyBreakdown with correct amounts based on pricing choice
       monthlyBreakdown.forEach((month, index) => {
-        if (index === 0 && firstMonthPartial && usedPartialPricing) {
+        if (isBirebir) {
+          // Birebir courses: always use per-lesson pricing
+          month.amount = month.lessonCount * perLessonFee;
+          month.isPartial = false;
+          month.isBirebir = true;
+        } else if (index === 0 && firstMonthPartial && usedPartialPricing) {
           // Partial first month: use per-lesson pricing
           month.lessonCount = month.lessonsAfterEnrollment;
           month.amount = month.lessonsAfterEnrollment * perLessonFee;
@@ -307,7 +330,9 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         hasDiscount: hasDiscount,
         // After discount: floor to avoid overcharging
         discountedMonthlyFee: discountedMonthlyFee,
-        discountedPerLessonFee: discountedPerLessonFee
+        discountedPerLessonFee: discountedPerLessonFee,
+        // Birebir course flag
+        isBirebir: isBirebir
       };
 
       return {

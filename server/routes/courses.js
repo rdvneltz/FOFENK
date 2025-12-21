@@ -183,6 +183,39 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
     let hasSchedule = false;
     let firstMonthPartial = null;
 
+    // First, determine if this is a birebir (one-on-one) course for this student
+    // A birebir course has lessons assigned specifically to this student
+    let isBirebir = false;
+    let birebirLessonsInfo = null;
+
+    if (studentId) {
+      // Check if there are any lessons specifically assigned to this student
+      const studentSpecificLessons = await ScheduledLesson.find({
+        course: courseId,
+        student: studentId,
+        status: { $ne: 'cancelled' }
+      }).select('date').sort({ date: 1 });
+
+      if (studentSpecificLessons.length > 0) {
+        isBirebir = true;
+        // Get the actual date range from the student's lessons
+        const firstLessonDate = new Date(studentSpecificLessons[0].date);
+        const lastLessonDate = new Date(studentSpecificLessons[studentSpecificLessons.length - 1].date);
+
+        // Calculate actual months spanned by the lessons
+        const actualMonthsSpan = (lastLessonDate.getFullYear() - firstLessonDate.getFullYear()) * 12
+          + (lastLessonDate.getMonth() - firstLessonDate.getMonth()) + 1;
+
+        birebirLessonsInfo = {
+          totalLessons: studentSpecificLessons.length,
+          firstLessonDate: firstLessonDate,
+          lastLessonDate: lastLessonDate,
+          actualMonthsSpan: actualMonthsSpan,
+          lessonDates: studentSpecificLessons.map(l => l.date)
+        };
+      }
+    }
+
     // Calculate lesson counts for each month
     for (let i = 0; i < durationMonths; i++) {
       const monthStart = new Date(start.getFullYear(), start.getMonth() + i, 1, 0, 0, 0, 0);
@@ -202,11 +235,16 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
 
       // If studentId is provided, filter for this student's lessons OR group lessons
       if (studentId) {
-        lessonQuery.$or = [
-          { student: studentId },           // Lessons specifically for this student (birebir)
-          { student: null },                // Group lessons (no student assigned)
-          { student: { $exists: false } }   // Legacy lessons without student field
-        ];
+        if (isBirebir) {
+          // For birebir courses, only count lessons assigned to this student
+          lessonQuery.student = studentId;
+        } else {
+          lessonQuery.$or = [
+            { student: studentId },           // Lessons specifically for this student (birebir)
+            { student: null },                // Group lessons (no student assigned)
+            { student: { $exists: false } }   // Legacy lessons without student field
+          ];
+        }
       }
 
       const allLessons = await ScheduledLesson.find(lessonQuery).select('date');
@@ -257,8 +295,11 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
         lessonsBeforeEnrollment: i === 0 ? lessonsBeforeEnrollment : 0,
         monthStart: monthStart,
         monthEnd: monthEnd
+        // Note: fee will be calculated after pricePerLesson is determined
       });
     }
+
+    // Calculate fee for each month (will be updated after pricing is calculated)
 
     // Calculate pricing details
     const expectedLessonsPerMonth = course.weeklyFrequency * 4;
@@ -270,9 +311,15 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
     let totalByPerLesson = 0; // Per-lesson pricing based on actual lessons
     let totalByPartialFirst = 0; // Monthly for full months, partial for first month
 
+    // Add per-lesson fee to each month's details
     monthlyDetails.forEach((month, index) => {
+      // Calculate per-lesson fee for this month
+      const perLessonFee = month.lessonCount * pricePerLesson;
+      month.perLessonFee = perLessonFee;
+      month.monthlyFee = monthlyFee;
+
       totalByMonthly += monthlyFee;
-      totalByPerLesson += (month.lessonCount * pricePerLesson);
+      totalByPerLesson += perLessonFee;
 
       if (index === 0 && firstMonthPartial) {
         // First month: charge only for lessons after enrollment
@@ -301,6 +348,9 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
       hasSchedule,
       monthlyDetails,
       firstMonthPartial, // Info about partial first month
+      // Birebir (one-on-one) course information
+      isBirebir,
+      birebirLessonsInfo,
       pricing: {
         totalByMonthly,
         totalByPerLesson,
@@ -308,7 +358,9 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
         partialFirstMonthFee, // How much for first month if partial
         difference: totalByMonthly - totalByPerLesson,
         recommendMonthly: totalByMonthly <= totalByPerLesson,
-        hasPartialOption: firstMonthPartial !== null
+        hasPartialOption: firstMonthPartial !== null,
+        // For birebir, the recommended total is totalByPerLesson
+        recommendedTotal: isBirebir ? totalByPerLesson : totalByMonthly
       }
     });
   } catch (error) {
