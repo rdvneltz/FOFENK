@@ -45,9 +45,11 @@ const BulkDeleteLessonsDialog = ({ open, onClose, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [courses, setCourses] = useState([]);
   const [instructors, setInstructors] = useState([]);
+  const [students, setStudents] = useState([]);
   const [formData, setFormData] = useState({
     courseId: '',
     instructorId: '',
+    studentId: '',
     startDate: new Date(),
     endDate: null,
     daysOfWeek: [],
@@ -62,6 +64,7 @@ const BulkDeleteLessonsDialog = ({ open, onClose, onSuccess }) => {
     if (open && institution && season) {
       fetchCourses();
       fetchInstructors();
+      fetchStudents();
     }
   }, [open, institution, season]);
 
@@ -90,6 +93,20 @@ const BulkDeleteLessonsDialog = ({ open, onClose, onSuccess }) => {
       setInstructors(response.data);
     } catch (error) {
       console.error('Error fetching instructors:', error);
+    }
+  };
+
+  const fetchStudents = async () => {
+    try {
+      const response = await api.get('/students', {
+        params: {
+          institution: institution._id,
+          season: season._id
+        }
+      });
+      setStudents(response.data);
+    } catch (error) {
+      console.error('Error fetching students:', error);
     }
   };
 
@@ -139,6 +156,10 @@ const BulkDeleteLessonsDialog = ({ open, onClose, onSuccess }) => {
 
       if (formData.instructorId) {
         params.instructorId = formData.instructorId;
+      }
+
+      if (formData.studentId) {
+        params.studentId = formData.studentId;
       }
 
       // Get lessons
@@ -214,6 +235,7 @@ const BulkDeleteLessonsDialog = ({ open, onClose, onSuccess }) => {
     setFormData({
       courseId: '',
       instructorId: '',
+      studentId: '',
       startDate: new Date(),
       endDate: null,
       daysOfWeek: [],
@@ -282,6 +304,25 @@ const BulkDeleteLessonsDialog = ({ open, onClose, onSuccess }) => {
                 {instructors.map((instructor) => (
                   <MenuItem key={instructor._id} value={instructor._id}>
                     {instructor.firstName} {instructor.lastName}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* Student Filter - for birebir (one-on-one) lessons */}
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth>
+              <InputLabel>Öğrenci (Birebir Dersler İçin)</InputLabel>
+              <Select
+                value={formData.studentId}
+                onChange={(e) => handleChange('studentId', e.target.value)}
+                label="Öğrenci (Birebir Dersler İçin)"
+              >
+                <MenuItem value="">Tümü</MenuItem>
+                {students.map((student) => (
+                  <MenuItem key={student._id} value={student._id}>
+                    {student.firstName} {student.lastName}
                   </MenuItem>
                 ))}
               </Select>
@@ -373,7 +414,7 @@ const BulkDeleteLessonsDialog = ({ open, onClose, onSuccess }) => {
                     {matchingLessons.slice(0, 50).map((lesson, index) => (
                       <ListItem key={lesson._id} divider>
                         <ListItemText
-                          primary={`${lesson.course?.name || 'Ders'} - ${lesson.instructor ? `${lesson.instructor.firstName} ${lesson.instructor.lastName}` : 'Eğitmen yok'}`}
+                          primary={`${lesson.course?.name || 'Ders'}${lesson.student ? ` (${lesson.student.firstName} ${lesson.student.lastName})` : ''} - ${lesson.instructor ? `${lesson.instructor.firstName} ${lesson.instructor.lastName}` : 'Eğitmen yok'}`}
                           secondary={`${new Date(lesson.date).toLocaleDateString('tr-TR')} - ${lesson.startTime}-${lesson.endTime} - ${lesson.status}`}
                         />
                       </ListItem>
