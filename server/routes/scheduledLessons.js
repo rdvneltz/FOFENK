@@ -60,6 +60,47 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get the last lesson date for a course
+// IMPORTANT: This must be before /:id to avoid being caught by it
+router.get('/last-lesson', async (req, res) => {
+  try {
+    const { courseId, seasonId, institutionId, studentId } = req.query;
+
+    if (!courseId) {
+      return res.status(400).json({ message: 'courseId is required' });
+    }
+
+    const filter = {
+      course: courseId,
+      status: { $ne: 'cancelled' }
+    };
+
+    if (seasonId) filter.season = seasonId;
+    if (institutionId) filter.institution = institutionId;
+
+    // For birebir lessons, also filter by student
+    if (studentId) {
+      filter.$or = [
+        { student: studentId },
+        { student: null },
+        { student: { $exists: false } }
+      ];
+    }
+
+    const lastLesson = await ScheduledLesson.findOne(filter)
+      .sort({ date: -1 })
+      .select('date startTime endTime');
+
+    if (!lastLesson) {
+      return res.json({ date: null, message: 'No lessons found' });
+    }
+
+    res.json(lastLesson);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get scheduled lesson by ID
 router.get('/:id', async (req, res) => {
   try {

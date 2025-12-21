@@ -126,6 +126,15 @@ const paymentPlanSchema = new mongoose.Schema({
     ref: 'Institution',
     required: true
   },
+  // Ödeme planının kapsadığı dönem
+  periodStartDate: {
+    type: Date,
+    required: true
+  },
+  periodEndDate: {
+    type: Date,
+    required: true
+  },
   notes: String,
   createdAt: {
     type: Date,
