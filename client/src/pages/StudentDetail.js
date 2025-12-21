@@ -483,6 +483,26 @@ const StudentDetail = () => {
     }
   };
 
+  const handleDownloadStatusReport = async () => {
+    try {
+      const response = await api.get(`/pdf/student-status-report/${id}`, {
+        params: { institutionId: institution._id },
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Son_Durum_${student.firstName}_${student.lastName}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert('PDF oluşturma hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Öğrenci bilgileri yükleniyor..." />;
   }
@@ -537,6 +557,14 @@ const StudentDetail = () => {
           onClick={() => navigate(`/payment-plan/${id}`)}
         >
           Ödeme Planı Oluştur
+        </Button>
+        <Button
+          variant="outlined"
+          color="secondary"
+          startIcon={<PictureAsPdf />}
+          onClick={handleDownloadStatusReport}
+        >
+          Son Durum Raporu
         </Button>
       </Box>
 
