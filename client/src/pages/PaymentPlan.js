@@ -243,7 +243,39 @@ const PaymentPlan = () => {
 
       setMonthlyLessonDetails(response.data);
 
-      if (response.data.firstMonthPartial && response.data.pricing.hasPartialOption) {
+      // For birebir courses, auto-adjust duration and total based on actual lessons
+      if (response.data.isBirebir && response.data.birebirLessonsInfo) {
+        const { totalLessons, actualMonthsSpan } = response.data.birebirLessonsInfo;
+        const pricePerLesson = response.data.course?.pricePerLesson || 0;
+        const recommendedTotal = response.data.pricing?.totalByPerLesson || (totalLessons * pricePerLesson);
+
+        // Auto-update form with birebir-specific values
+        if (actualMonthsSpan !== parseInt(durationMonths)) {
+          setFormData(prev => ({
+            ...prev,
+            durationMonths: actualMonthsSpan,
+            totalAmount: recommendedTotal
+          }));
+
+          // Recalculate with correct duration
+          const recalculateResponse = await api.post('/courses/calculate-monthly-lessons', {
+            courseId: enrollment.course._id,
+            studentId: studentId,
+            startDate: enrollmentDateToUse,
+            durationMonths: actualMonthsSpan,
+            enrollmentDate: enrollmentDateToUse
+          });
+          setMonthlyLessonDetails(recalculateResponse.data);
+        } else {
+          // Just update the total amount
+          setFormData(prev => ({
+            ...prev,
+            totalAmount: recommendedTotal
+          }));
+        }
+      }
+
+      if (response.data.firstMonthPartial && response.data.pricing.hasPartialOption && !response.data.isBirebir) {
         setShowPartialPricingDialog(true);
       }
     } catch (error) {
@@ -874,18 +906,30 @@ const PaymentPlan = () => {
                       </LocalizationProvider>
                     </Grid>
                     <Grid item xs={6}>
-                      <TextField
-                        fullWidth size="small"
-                        label="Aylık Ücret (₺)"
-                        name="monthlyFee"
-                        type="number"
-                        value={formData.monthlyFee}
-                        onChange={(e) => {
-                          const newMonthlyFee = parseFloat(e.target.value) || 0;
-                          const newTotal = formData.durationMonths ? newMonthlyFee * parseFloat(formData.durationMonths) : newMonthlyFee;
-                          setFormData(prev => ({ ...prev, monthlyFee: e.target.value, totalAmount: newTotal }));
-                        }}
-                      />
+                      {monthlyLessonDetails?.isBirebir ? (
+                        <TextField
+                          fullWidth size="small"
+                          label="Ders Başı Ücret (₺)"
+                          type="number"
+                          value={monthlyLessonDetails.course?.pricePerLesson || 0}
+                          InputProps={{ readOnly: true }}
+                          helperText={`${monthlyLessonDetails.birebirLessonsInfo?.totalLessons || 0} ders`}
+                          sx={{ '& .MuiInputBase-input': { fontWeight: 600, color: 'secondary.main' } }}
+                        />
+                      ) : (
+                        <TextField
+                          fullWidth size="small"
+                          label="Aylık Ücret (₺)"
+                          name="monthlyFee"
+                          type="number"
+                          value={formData.monthlyFee}
+                          onChange={(e) => {
+                            const newMonthlyFee = parseFloat(e.target.value) || 0;
+                            const newTotal = formData.durationMonths ? newMonthlyFee * parseFloat(formData.durationMonths) : newMonthlyFee;
+                            setFormData(prev => ({ ...prev, monthlyFee: e.target.value, totalAmount: newTotal }));
+                          }}
+                        />
+                      )}
                     </Grid>
                     <Grid item xs={6}>
                       <TextField
@@ -896,6 +940,8 @@ const PaymentPlan = () => {
                         value={formData.durationMonths}
                         onChange={handleChange}
                         inputProps={{ min: 1 }}
+                        InputProps={monthlyLessonDetails?.isBirebir ? { readOnly: true } : {}}
+                        helperText={monthlyLessonDetails?.isBirebir ? 'Birebir derslerde süre otomatik hesaplanır' : ''}
                       />
                     </Grid>
                     <Grid item xs={6}>
@@ -1726,6 +1772,9 @@ const PaymentPlan = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                   <Typography variant={isMobile ? 'subtitle1' : 'h6'} fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     📚 Ders Detayları
+                    {monthlyLessonDetails.isBirebir && (
+                      <Chip label="Birebir" size="small" color="secondary" sx={{ height: 20, fontSize: 10 }} />
+                    )}
                   </Typography>
                   <IconButton size="small" onClick={() => setShowLessonDetails(!showLessonDetails)}>
                     {showLessonDetails ? <ExpandLess /> : <ExpandMore />}
@@ -1739,10 +1788,25 @@ const PaymentPlan = () => {
                     </Alert>
                   )}
 
+                  {monthlyLessonDetails.isBirebir && (
+                    <Alert severity="info" sx={{ mb: 2, py: 0.5 }}>
+                      <Typography variant="caption">
+                        Birebir ders - Ders başı fiyatlandırma uygulanıyor
+                        ({monthlyLessonDetails.birebirLessonsInfo?.totalLessons} ders × ₺{(monthlyLessonDetails.course?.pricePerLesson || 0).toLocaleString('tr-TR')})
+                      </Typography>
+                    </Alert>
+                  )}
+
                   <Box sx={{ mb: 2 }}>
                     <Typography variant="body2" color="text.secondary">
-                      Aylık: ₺{currentMonthlyFee.toLocaleString('tr-TR')} |
-                      Ders Başı: ₺{calculatedPricePerLesson.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                      {monthlyLessonDetails.isBirebir ? (
+                        <>Ders Başı: ₺{(monthlyLessonDetails.course?.pricePerLesson || 0).toLocaleString('tr-TR')}</>
+                      ) : (
+                        <>
+                          Aylık: ₺{currentMonthlyFee.toLocaleString('tr-TR')} |
+                          Ders Başı: ₺{calculatedPricePerLesson.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                        </>
+                      )}
                     </Typography>
                   </Box>
 
@@ -1758,9 +1822,20 @@ const PaymentPlan = () => {
                       {monthlyLessonDetails.monthlyDetails.map((month, index) => {
                         const isPartialFirst = index === 0 && monthlyLessonDetails.firstMonthPartial && formData.partialPricingChoice === 'partial';
                         const lessonCount = isPartialFirst ? month.lessonsAfterEnrollment : month.lessonCount;
-                        const monthFee = isPartialFirst
-                          ? lessonCount * calculatedPricePerLesson
-                          : currentMonthlyFee;
+
+                        // For birebir courses, always use per-lesson pricing
+                        // For group courses, use monthly fee (unless partial first month)
+                        let monthFee;
+                        if (monthlyLessonDetails.isBirebir) {
+                          // Birebir: always per-lesson pricing
+                          monthFee = lessonCount * (monthlyLessonDetails.course?.pricePerLesson || 0);
+                        } else if (isPartialFirst) {
+                          // Group course with partial first month
+                          monthFee = lessonCount * calculatedPricePerLesson;
+                        } else {
+                          // Group course with full monthly fee
+                          monthFee = currentMonthlyFee;
+                        }
 
                         return (
                           <TableRow key={month.monthIndex}>
@@ -1772,7 +1847,7 @@ const PaymentPlan = () => {
                               {lessonCount > 0 ? `${lessonCount} ders` : '-'}
                             </TableCell>
                             <TableCell align="right" sx={{ py: 0.5, fontWeight: 500 }}>
-                              ₺{monthFee.toLocaleString('tr-TR', { maximumFractionDigits: 2 })}
+                              ₺{monthFee.toLocaleString('tr-TR', { maximumFractionDigits: 0 })}
                             </TableCell>
                           </TableRow>
                         );

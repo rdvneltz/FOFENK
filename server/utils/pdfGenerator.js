@@ -287,8 +287,15 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           if (lessonDetails) {
             doc.fontSize(10).font(fonts.bold)
               .text('Ders Detaylari', sideMargin, doc.y, { continued: true })
-              .font(fonts.regular)
-              .text(` - Aylik: ${formatCurrency(lessonDetails.monthlyFee)} | Ders Basi: ${formatCurrency(lessonDetails.perLessonFee)}`);
+              .font(fonts.regular);
+
+            if (lessonDetails.isBirebir) {
+              // Birebir: show only per-lesson fee
+              doc.text(` (Birebir) - Ders Basi: ${formatCurrency(lessonDetails.perLessonFee)} | ${lessonDetails.totalLessons} ders`);
+            } else {
+              // Group: show monthly and per-lesson fee
+              doc.text(` - Aylik: ${formatCurrency(lessonDetails.monthlyFee)} | Ders Basi: ${formatCurrency(lessonDetails.perLessonFee)}`);
+            }
             doc.moveDown(0.5);
           }
 
