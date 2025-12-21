@@ -105,13 +105,23 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         course: course._id
       });
 
-      // Get enrollment start date
-      const enrollmentDate = enrollment?.enrollmentDate || plan.createdAt;
+      // Get period dates from payment plan first, then fall back to enrollment/season dates
+      // Priority: plan.periodStartDate > enrollment.enrollmentDate > plan.createdAt
+      let enrollmentDate;
+      if (plan.periodStartDate) {
+        enrollmentDate = plan.periodStartDate;
+      } else if (enrollment?.enrollmentDate) {
+        enrollmentDate = enrollment.enrollmentDate;
+      } else {
+        enrollmentDate = plan.createdAt;
+      }
 
-      // Calculate durationMonths from enrollment/season dates (NOT from installments count!)
-      // End date priority: enrollment.endDate > season.endDate > fallback 8 months
+      // Calculate durationMonths from period dates (NOT from installments count!)
+      // End date priority: plan.periodEndDate > enrollment.endDate > season.endDate > fallback
       let endDate = null;
-      if (enrollment?.endDate) {
+      if (plan.periodEndDate) {
+        endDate = new Date(plan.periodEndDate);
+      } else if (enrollment?.endDate) {
         endDate = new Date(enrollment.endDate);
       } else if (plan.season?.endDate) {
         endDate = new Date(plan.season.endDate);

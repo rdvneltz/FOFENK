@@ -64,6 +64,8 @@ const PaymentPlan = () => {
     enrollmentId: '',
     courseType: '',
     enrollmentDate: new Date().toISOString().split('T')[0],
+    periodStartDate: new Date().toISOString().split('T')[0],
+    periodEndDate: '',
     totalAmount: '',
     monthlyFee: '',
     durationMonths: '',
@@ -78,6 +80,7 @@ const PaymentPlan = () => {
     description: '',
     partialPricingChoice: 'full',
   });
+  const [courseLastLessonDate, setCourseLastLessonDate] = useState(null);
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
   const [selectedCashRegister, setSelectedCashRegister] = useState('');
@@ -285,11 +288,32 @@ const PaymentPlan = () => {
       ? new Date(selectedEnrollment.enrollmentDate).toISOString().split('T')[0]
       : new Date().toISOString().split('T')[0];
 
+    // Fetch course's last lesson date for default period end date
+    let lastLessonDate = season?.endDate ? new Date(season.endDate).toISOString().split('T')[0] : '';
+    try {
+      const lastLessonRes = await api.get('/scheduled-lessons/last-lesson', {
+        params: {
+          courseId: course._id,
+          seasonId: season._id,
+          institutionId: institution._id
+        }
+      });
+      if (lastLessonRes.data && lastLessonRes.data.date) {
+        lastLessonDate = new Date(lastLessonRes.data.date).toISOString().split('T')[0];
+        setCourseLastLessonDate(lastLessonDate);
+      }
+    } catch (error) {
+      console.log('Could not fetch last lesson date, using season end date');
+      setCourseLastLessonDate(null);
+    }
+
     setFormData((prev) => ({
       ...prev,
       enrollmentId,
       courseType: isMonthly ? 'monthly' : 'perLesson',
       enrollmentDate: newEnrollmentDate,
+      periodStartDate: newEnrollmentDate,
+      periodEndDate: lastLessonDate,
       monthlyFee: isMonthly ? priceValue : '',
       totalAmount: calculatedTotal,
       durationMonths: suggestedMonths
@@ -595,7 +619,10 @@ const PaymentPlan = () => {
         createdBy: user?.username || 'System',
         cashRegister: hasCreditCard ? selectedCashRegister : undefined,
         // IMPORTANT: Send enrollmentDate to update the enrollment record
-        enrollmentDate: formData.enrollmentDate
+        enrollmentDate: formData.enrollmentDate,
+        // Period dates for proper report calculation
+        periodStartDate: formData.periodStartDate,
+        periodEndDate: formData.periodEndDate
       };
 
       const response = await api.post('/payment-plans', paymentPlanData);
@@ -880,6 +907,53 @@ const PaymentPlan = () => {
                         sx={{ '& .MuiInputBase-input': { fontWeight: 600, color: 'primary.main' } }}
                       />
                     </Grid>
+
+                    {/* Dönem Aralığı */}
+                    <Grid item xs={12}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, mt: 1 }}>
+                        Ödeme Planı Dönemi (Bu plan hangi tarih aralığını kapsar?)
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                        <DatePicker
+                          label="Dönem Başlangıç"
+                          value={formData.periodStartDate ? new Date(formData.periodStartDate) : null}
+                          onChange={(date) => {
+                            if (date && !isNaN(date.getTime())) {
+                              setFormData(prev => ({ ...prev, periodStartDate: date.toISOString().split('T')[0] }));
+                            }
+                          }}
+                          slotProps={{
+                            textField: {
+                              size: 'small',
+                              fullWidth: true,
+                              helperText: 'Genellikle kayıt tarihi'
+                            }
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                        <DatePicker
+                          label="Dönem Bitiş"
+                          value={formData.periodEndDate ? new Date(formData.periodEndDate) : null}
+                          onChange={(date) => {
+                            if (date && !isNaN(date.getTime())) {
+                              setFormData(prev => ({ ...prev, periodEndDate: date.toISOString().split('T')[0] }));
+                            }
+                          }}
+                          slotProps={{
+                            textField: {
+                              size: 'small',
+                              fullWidth: true,
+                              helperText: courseLastLessonDate ? `Son ders: ${new Date(courseLastLessonDate).toLocaleDateString('tr-TR')}` : 'Sezon sonu'
+                            }
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
                   </>
                 )}
 
@@ -905,6 +979,53 @@ const PaymentPlan = () => {
                         value={formData.durationMonths}
                         onChange={handleChange}
                       />
+                    </Grid>
+
+                    {/* Dönem Aralığı */}
+                    <Grid item xs={12}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, mt: 1 }}>
+                        Ödeme Planı Dönemi (Bu plan hangi tarih aralığını kapsar?)
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                        <DatePicker
+                          label="Dönem Başlangıç"
+                          value={formData.periodStartDate ? new Date(formData.periodStartDate) : null}
+                          onChange={(date) => {
+                            if (date && !isNaN(date.getTime())) {
+                              setFormData(prev => ({ ...prev, periodStartDate: date.toISOString().split('T')[0] }));
+                            }
+                          }}
+                          slotProps={{
+                            textField: {
+                              size: 'small',
+                              fullWidth: true,
+                              helperText: 'Genellikle kayıt tarihi'
+                            }
+                          }}
+                        />
+                      </LocalizationProvider>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                        <DatePicker
+                          label="Dönem Bitiş"
+                          value={formData.periodEndDate ? new Date(formData.periodEndDate) : null}
+                          onChange={(date) => {
+                            if (date && !isNaN(date.getTime())) {
+                              setFormData(prev => ({ ...prev, periodEndDate: date.toISOString().split('T')[0] }));
+                            }
+                          }}
+                          slotProps={{
+                            textField: {
+                              size: 'small',
+                              fullWidth: true,
+                              helperText: courseLastLessonDate ? `Son ders: ${new Date(courseLastLessonDate).toLocaleDateString('tr-TR')}` : 'Sezon sonu'
+                            }
+                          }}
+                        />
+                      </LocalizationProvider>
                     </Grid>
                   </>
                 )}

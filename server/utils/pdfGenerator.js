@@ -265,13 +265,17 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           doc.moveDown(0.5);
 
           doc.fontSize(10).font(fonts.regular);
-          if (enrollment) {
-            const enrollDate = enrollment.enrollmentDate ? new Date(enrollment.enrollmentDate) : null;
-            if (enrollDate && !isNaN(enrollDate.getTime())) {
-              doc.text(`Kayıt Tarihi: ${enrollDate.toLocaleDateString('tr-TR')}`);
-              const startMonth = enrollDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
-              const endMonth = enrollment.endDate
-                ? new Date(enrollment.endDate).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
+          // Use payment plan's period dates first, then fall back to enrollment dates
+          const periodStart = paymentPlan.periodStartDate || enrollment?.enrollmentDate;
+          const periodEnd = paymentPlan.periodEndDate || enrollment?.endDate;
+
+          if (periodStart) {
+            const startDate = new Date(periodStart);
+            if (!isNaN(startDate.getTime())) {
+              doc.text(`Kayıt Tarihi: ${startDate.toLocaleDateString('tr-TR')}`);
+              const startMonth = startDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
+              const endMonth = periodEnd
+                ? new Date(periodEnd).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
                 : 'Devam Ediyor';
               doc.text(`Kayıt Dönemi: ${startMonth} - ${endMonth}`);
             }

@@ -86,6 +86,11 @@ const PaymentPlanDetail = () => {
     paidInstallment: null
   });
   const [paymentEmailDialogOpen, setPaymentEmailDialogOpen] = useState(false);
+  const [editPeriodDialog, setEditPeriodDialog] = useState({
+    open: false,
+    periodStartDate: null,
+    periodEndDate: null
+  });
 
   useEffect(() => {
     loadPaymentPlan();
@@ -132,6 +137,29 @@ const PaymentPlanDetail = () => {
       setError('Ödeme planı yüklenirken hata oluştu');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenEditPeriod = () => {
+    setEditPeriodDialog({
+      open: true,
+      periodStartDate: paymentPlan.periodStartDate ? new Date(paymentPlan.periodStartDate) : null,
+      periodEndDate: paymentPlan.periodEndDate ? new Date(paymentPlan.periodEndDate) : null
+    });
+  };
+
+  const handleSavePeriod = async () => {
+    try {
+      await api.put(`/payment-plans/${id}`, {
+        periodStartDate: editPeriodDialog.periodStartDate,
+        periodEndDate: editPeriodDialog.periodEndDate,
+        updatedBy: user?.username
+      });
+      setSuccess('Dönem tarihleri güncellendi');
+      setEditPeriodDialog({ open: false, periodStartDate: null, periodEndDate: null });
+      loadPaymentPlan();
+    } catch (error) {
+      setError('Dönem tarihleri güncellenirken hata oluştu');
     }
   };
 
@@ -754,6 +782,27 @@ Fofora Tiyatro`;
           <Grid item xs={12} md={6}>
             <Typography variant="subtitle2" color="text.secondary">Ders</Typography>
             <Typography variant="h6">{paymentPlan.course.name}</Typography>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box>
+                <Typography variant="subtitle2" color="text.secondary">Dönem</Typography>
+                <Typography variant="body1">
+                  {paymentPlan.periodStartDate
+                    ? new Date(paymentPlan.periodStartDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+                    : 'Belirtilmemiş'
+                  }
+                  {' - '}
+                  {paymentPlan.periodEndDate
+                    ? new Date(paymentPlan.periodEndDate).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+                    : 'Belirtilmemiş'
+                  }
+                </Typography>
+              </Box>
+              <IconButton size="small" onClick={handleOpenEditPeriod} color="primary">
+                <Edit fontSize="small" />
+              </IconButton>
+            </Box>
           </Grid>
           <Grid item xs={12} md={3}>
             <Typography variant="subtitle2" color="text.secondary">Toplam Tutar</Typography>
@@ -1420,6 +1469,61 @@ Fofora Tiyatro`;
           setPaymentEmailDialogOpen(false);
         }}
       />
+
+      {/* Edit Period Dialog */}
+      <Dialog
+        open={editPeriodDialog.open}
+        onClose={() => setEditPeriodDialog({ open: false, periodStartDate: null, periodEndDate: null })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Dönem Tarihlerini Düzenle</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+            Bu ödeme planının kapsadığı dönem tarihlerini belirleyin. PDF raporlarında bu tarihler kullanılacaktır.
+          </Alert>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12} sm={6}>
+              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                <DatePicker
+                  label="Dönem Başlangıç"
+                  value={editPeriodDialog.periodStartDate}
+                  onChange={(date) => setEditPeriodDialog(prev => ({ ...prev, periodStartDate: date }))}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      helperText: 'Genellikle kayıt tarihi'
+                    }
+                  }}
+                />
+              </LocalizationProvider>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                <DatePicker
+                  label="Dönem Bitiş"
+                  value={editPeriodDialog.periodEndDate}
+                  onChange={(date) => setEditPeriodDialog(prev => ({ ...prev, periodEndDate: date }))}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      helperText: 'Kursun son ders tarihi'
+                    }
+                  }}
+                />
+              </LocalizationProvider>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditPeriodDialog({ open: false, periodStartDate: null, periodEndDate: null })}>
+            İptal
+          </Button>
+          <Button onClick={handleSavePeriod} variant="contained" color="primary">
+            Kaydet
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };
