@@ -15,6 +15,32 @@ const formatCurrency = (amount) => {
 };
 
 /**
+ * Format date in Turkish format using UTC to avoid timezone issues
+ * This prevents dates like "1 November" from showing as "31 October"
+ */
+const formatDateTR = (date) => {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '-';
+  const day = d.getUTCDate().toString().padStart(2, '0');
+  const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+  const year = d.getUTCFullYear();
+  return `${day}.${month}.${year}`;
+};
+
+/**
+ * Format month and year in Turkish using UTC
+ */
+const formatMonthYearTR = (date) => {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '-';
+  const months = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran',
+                  'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
+  return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+};
+
+/**
  * Register fonts and return font names
  */
 const registerFonts = (doc) => {
@@ -120,7 +146,7 @@ const generatePaymentPlanPDF = (paymentPlan, student, course, institution, outpu
           const isPartiallyPaid = paidAmount > 0 && paidAmount < totalAmount;
 
           doc.text(installment.installmentNumber.toString(), col1, currentY);
-          doc.text(new Date(installment.dueDate).toLocaleDateString('tr-TR'), col2, currentY);
+          doc.text(formatDateTR(installment.dueDate), col2, currentY);
 
           // Show amount with partial payment info
           if (isPartiallyPaid) {
@@ -141,7 +167,7 @@ const generatePaymentPlanPDF = (paymentPlan, student, course, institution, outpu
       doc.moveDown(2);
 
       // Alt bilgi
-      doc.fontSize(10).text(`Oluşturma Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, { align: 'center' });
+      doc.fontSize(10).text(`Olusturma Tarihi: ${formatDateTR(new Date())}`, { align: 'center' });
 
       doc.end();
 
@@ -219,7 +245,7 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
       // Generation date
       doc.fontSize(9).font(fonts.regular)
-        .text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, { align: 'center' });
+        .text(`Rapor Tarihi: ${formatDateTR(new Date())}`, { align: 'center' });
       doc.moveDown(1.5);
 
       // Student info box
@@ -272,12 +298,11 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
           if (periodStart) {
             const startDate = new Date(periodStart);
             if (!isNaN(startDate.getTime())) {
-              doc.text(`Kayıt Tarihi: ${startDate.toLocaleDateString('tr-TR')}`);
-              const startMonth = startDate.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
-              const endMonth = periodEnd
-                ? new Date(periodEnd).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })
-                : 'Devam Ediyor';
-              doc.text(`Kayıt Dönemi: ${startMonth} - ${endMonth}`);
+              // Use UTC-based formatting to avoid timezone issues (1 Nov -> 31 Oct bug)
+              doc.text(`Kayit Tarihi: ${formatDateTR(periodStart)}`);
+              const startMonth = formatMonthYearTR(periodStart);
+              const endMonth = periodEnd ? formatMonthYearTR(periodEnd) : 'Devam Ediyor';
+              doc.text(`Kayit Donemi: ${startMonth} - ${endMonth}`);
             }
           }
           doc.moveDown(0.5);
@@ -437,15 +462,15 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
               const isPartiallyPaid = paidAmount > 0 && paidAmount < totalAmount;
 
               doc.text(`${idx + 1}. Taksit`, instTableLeft, instY);
-              doc.text(new Date(inst.dueDate).toLocaleDateString('tr-TR'), instTableLeft + 60, instY);
+              doc.text(formatDateTR(inst.dueDate), instTableLeft + 60, instY);
 
               if (isPaid) {
                 // Fully paid - show strikethrough and green "ÖDENDİ"
                 doc.fillColor('gray').text(`₺${totalAmount.toLocaleString('tr-TR')}`, instTableLeft + 160, instY, { strike: true });
-                doc.fillColor('green').text('ÖDENDİ', instTableLeft + 260, instY);
+                doc.fillColor('green').text('ODENDI', instTableLeft + 260, instY);
                 doc.fillColor('black');
                 if (inst.paidDate) {
-                  doc.text(new Date(inst.paidDate).toLocaleDateString('tr-TR'), instTableLeft + 340, instY);
+                  doc.text(formatDateTR(inst.paidDate), instTableLeft + 340, instY);
                 }
               } else if (isPartiallyPaid) {
                 // Partially paid - show paid/total and "KISMİ" in blue
@@ -574,7 +599,7 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
 
       // Generation date
       doc.fontSize(9).font(fonts.regular)
-        .text(`Rapor Tarihi: ${new Date().toLocaleDateString('tr-TR')}`, { align: 'center' });
+        .text(`Rapor Tarihi: ${formatDateTR(new Date())}`, { align: 'center' });
       doc.moveDown(1.5);
 
       // Student info box
@@ -696,14 +721,10 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
 
           doc.font(fonts.regular);
 
-          // Date
-          const date = record.scheduledLesson?.date
-            ? new Date(record.scheduledLesson.date).toLocaleDateString('tr-TR', {
-                weekday: 'short',
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric'
-              })
+          // Date - use UTC to avoid timezone issues
+          const lessonDate = record.scheduledLesson?.date ? new Date(record.scheduledLesson.date) : null;
+          const date = lessonDate
+            ? `${lessonDate.getUTCDate()} ${['Oca', 'Sub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Agu', 'Eyl', 'Eki', 'Kas', 'Ara'][lessonDate.getUTCMonth()]} ${lessonDate.getUTCFullYear().toString().slice(-2)}`
             : '-';
           doc.text(date, tableLeft, tableY);
 
