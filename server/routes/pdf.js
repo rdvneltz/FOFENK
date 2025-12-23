@@ -146,15 +146,38 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         }
       }
 
-      // Parse date properly - just year-month-day
+      // Parse date properly - use UTC to avoid timezone issues
+      // When dates are stored in MongoDB as UTC, we need to use UTC methods
+      // to get the correct day (otherwise 1 Nov can become 31 Oct due to timezone offset)
       const parseDate = (dateStr) => {
         if (!dateStr) return new Date();
         if (typeof dateStr === 'string') {
           const parts = dateStr.split('T')[0].split('-');
-          return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0);
+          // Create date at noon to avoid any edge cases
+          return new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0, 0));
         }
         const d = new Date(dateStr);
-        return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+        // Use UTC methods to extract the correct date components
+        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0, 0));
+      };
+
+      // Helper to format date in Turkish format using UTC
+      const formatDateTR = (date) => {
+        if (!date) return 'N/A';
+        const d = new Date(date);
+        const day = d.getUTCDate().toString().padStart(2, '0');
+        const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
+        const year = d.getUTCFullYear();
+        return `${day}.${month}.${year}`;
+      };
+
+      // Helper to format month name in Turkish using UTC
+      const formatMonthTR = (date) => {
+        if (!date) return 'N/A';
+        const d = new Date(date);
+        const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                        'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+        return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
       };
 
       const startDate = parseDate(enrollmentDate);
@@ -177,10 +200,14 @@ router.get('/student-status-report/:studentId', async (req, res) => {
       }).select('_id');
       const isBirebir = studentSpecificLessons.length > 0;
 
+      // Parse period end date for last month filtering
+      const periodEndParsed = endDate ? parseDate(endDate) : null;
+      let lastMonthPartial = null;
+
       // Calculate for each month (same logic as courses.js calculate-monthly-lessons)
       for (let i = 0; i < durationMonths; i++) {
-        const monthStart = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1, 0, 0, 0, 0);
-        const monthEnd = new Date(startDate.getFullYear(), startDate.getMonth() + i + 1, 0, 23, 59, 59);
+        const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + i, 1, 0, 0, 0, 0));
+        const monthEnd = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + i + 1, 0, 23, 59, 59));
 
         // Get lessons for this month
         // For birebir (one-on-one) courses: only count lessons assigned to this student
@@ -206,7 +233,7 @@ router.get('/student-status-report/:studentId', async (req, res) => {
 
         const lessons = await ScheduledLesson.find(lessonQuery);
 
-        const lessonCount = lessons.length;
+        let lessonCount = lessons.length;
 
         // For first month, calculate lessons AFTER enrollment date
         let lessonsAfterEnrollment = lessonCount;
@@ -235,13 +262,60 @@ router.get('/student-status-report/:studentId', async (req, res) => {
           }
         }
 
-        totalLessons += (i === 0 ? lessonsAfterEnrollment : lessonCount);
+        // For last month, calculate lessons BEFORE or ON periodEndDate
+        let lessonsInPeriod = (i === 0) ? lessonsAfterEnrollment : lessonCount;
+        let lessonsAfterPeriod = 0;
+
+        if (i === durationMonths - 1 && periodEndParsed) {
+          lessonsInPeriod = 0;
+          lessonsAfterPeriod = 0;
+
+          for (const lesson of lessons) {
+            const lessonDate = parseDate(lesson.date);
+            // First month already filtered by enrollment, use that count
+            if (i === 0 && lessonDate < startDate) {
+              continue; // Skip lessons before enrollment
+            }
+            if (lessonDate <= periodEndParsed) {
+              lessonsInPeriod++;
+            } else {
+              lessonsAfterPeriod++;
+            }
+          }
+
+          // Store partial info if last month has some lessons after period end
+          if (lessonsAfterPeriod > 0) {
+            lastMonthPartial = {
+              totalLessons: lessonCount,
+              lessonsInPeriod,
+              lessonsAfterPeriod,
+              periodEndDate: formatDateTR(periodEndParsed)
+            };
+          }
+        }
+
+        // Effective lesson count for this month (respecting period boundaries)
+        const effectiveLessonCount = (i === durationMonths - 1 && lastMonthPartial)
+          ? lessonsInPeriod
+          : ((i === 0) ? lessonsAfterEnrollment : lessonCount);
+
+        totalLessons += effectiveLessonCount;
+
+        // Month name using UTC
+        const monthNames = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran',
+                            'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
+        const monthName = `${monthNames[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`;
 
         monthlyBreakdown.push({
-          monthName: monthStart.toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' }),
-          lessonCount: lessonCount,
+          monthName: monthName,
+          lessonCount: effectiveLessonCount, // Use effective count (respecting period boundaries)
+          totalMonthLessons: lessonCount, // Total lessons in the calendar month
           lessonsAfterEnrollment: i === 0 ? lessonsAfterEnrollment : lessonCount,
           lessonsBeforeEnrollment: i === 0 ? lessonsBeforeEnrollment : 0,
+          lessonsInPeriod: (i === durationMonths - 1 && lastMonthPartial) ? lessonsInPeriod : effectiveLessonCount,
+          lessonsAfterPeriod: (i === durationMonths - 1) ? lessonsAfterPeriod : 0,
+          isFirstMonthPartial: i === 0 && firstMonthPartial !== null,
+          isLastMonthPartial: i === durationMonths - 1 && lastMonthPartial !== null,
           monthlyFee: monthlyFee,
           perLessonFee: perLessonFee
         });
@@ -271,10 +345,13 @@ router.get('/student-status-report/:studentId', async (req, res) => {
           month.amount = month.lessonCount * perLessonFee;
           month.isPartial = false;
           month.isBirebir = true;
-        } else if (index === 0 && firstMonthPartial && usedPartialPricing) {
+        } else if (month.isFirstMonthPartial && usedPartialPricing) {
           // Partial first month: use per-lesson pricing
-          month.lessonCount = month.lessonsAfterEnrollment;
-          month.amount = month.lessonsAfterEnrollment * perLessonFee;
+          month.amount = month.lessonCount * perLessonFee;
+          month.isPartial = true;
+        } else if (month.isLastMonthPartial) {
+          // Partial last month: use per-lesson pricing for lessons within period
+          month.amount = month.lessonCount * perLessonFee;
           month.isPartial = true;
         } else {
           // Full monthly pricing
@@ -326,6 +403,7 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         durationMonths: durationMonths,
         usedPartialPricing: usedPartialPricing,
         firstMonthPartial: firstMonthPartial,
+        lastMonthPartial: lastMonthPartial, // Lessons after periodEndDate are excluded
         discountRatio: discountRatio,
         hasDiscount: hasDiscount,
         // After discount: floor to avoid overcharging
