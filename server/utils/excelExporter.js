@@ -1,12 +1,19 @@
 const ExcelJS = require('exceljs');
 
-// Helper function to format date as dd.mm.yyyy
+// Turkey timezone offset (UTC+3) in milliseconds
+// Needed because dates stored in MongoDB as UTC need to be adjusted
+// Example: "Nov 1 midnight Turkey" = "Oct 31 21:00 UTC"
+const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+// Helper function to format date as dd.mm.yyyy with Turkey timezone
 const formatDate = (date) => {
   if (!date) return '';
   const d = new Date(date);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
+  // Add Turkey timezone offset to get the original local date
+  const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+  const day = String(adjusted.getUTCDate()).padStart(2, '0');
+  const month = String(adjusted.getUTCMonth() + 1).padStart(2, '0');
+  const year = adjusted.getUTCFullYear();
   return `${day}.${month}.${year}`;
 };
 

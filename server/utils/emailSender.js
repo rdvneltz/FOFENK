@@ -1,6 +1,21 @@
 const nodemailer = require('nodemailer');
 const path = require('path');
 
+// Turkey timezone offset (UTC+3) in milliseconds
+// Needed because dates stored in MongoDB as UTC need to be adjusted
+const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+// Helper function to format date as dd.mm.yyyy with Turkey timezone
+const formatDateTR = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+  const day = String(adjusted.getUTCDate()).padStart(2, '0');
+  const month = String(adjusted.getUTCMonth() + 1).padStart(2, '0');
+  const year = adjusted.getUTCFullYear();
+  return `${day}.${month}.${year}`;
+};
+
 // SMTP transporter oluştur
 const createTransporter = () => {
   return nodemailer.createTransport({
@@ -77,7 +92,7 @@ const sendPaymentPlanEmail = async ({ student, paymentPlan, pdfPath }) => {
             </div>
             <div class="plan-item">
               <span>Plan Başlangıç:</span>
-              <span>${new Date(paymentPlan.startDate).toLocaleDateString('tr-TR')}</span>
+              <span>${formatDateTR(paymentPlan.startDate)}</span>
             </div>
           </div>
 
@@ -116,7 +131,7 @@ const sendPaymentReminderEmail = async ({ student, duePayments }) => {
 
   const paymentsListHTML = duePayments.map(payment => `
     <div class="plan-item">
-      <span>${new Date(payment.dueDate).toLocaleDateString('tr-TR')}</span>
+      <span>${formatDateTR(payment.dueDate)}</span>
       <span class="highlight">₺${payment.amount.toLocaleString('tr-TR')}</span>
     </div>
   `).join('');
@@ -268,7 +283,7 @@ const sendTrialLessonReminderEmail = async ({ trialStudent, lesson }) => {
             <h3>Ders Detayları</h3>
             ${lesson.date ? `
             <div class="info-item">
-              <strong>Tarih:</strong> ${new Date(lesson.date).toLocaleDateString('tr-TR')}
+              <strong>Tarih:</strong> ${formatDateTR(lesson.date)}
             </div>
             ` : ''}
             ${lesson.time ? `

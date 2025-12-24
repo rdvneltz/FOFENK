@@ -164,7 +164,10 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
       return res.status(404).json({ message: 'Ders bulunamadı' });
     }
 
-    // Tarihleri doğru şekilde parse et - sadece yıl-ay-gün kullan
+    // Turkey timezone offset (UTC+3) in milliseconds
+    const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+    // Tarihleri doğru şekilde parse et - Turkey timezone ile
     const parseDate = (dateStr) => {
       if (!dateStr) return new Date();
       // String ise (YYYY-MM-DD formatı)
@@ -172,9 +175,31 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
         const parts = dateStr.split('T')[0].split('-');
         return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 0, 0, 0, 0);
       }
-      // Date object ise
+      // Date object ise - MongoDB'den UTC olarak gelir, Turkey offset ile düzelt
       const d = new Date(dateStr);
-      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      return new Date(adjusted.getUTCFullYear(), adjusted.getUTCMonth(), adjusted.getUTCDate(), 0, 0, 0, 0);
+    };
+
+    // Turkey timezone ile tarih formatlama
+    const formatDateTR = (date) => {
+      if (!date) return '';
+      const d = new Date(date);
+      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      const day = String(adjusted.getUTCDate()).padStart(2, '0');
+      const month = String(adjusted.getUTCMonth() + 1).padStart(2, '0');
+      const year = adjusted.getUTCFullYear();
+      return `${day}.${month}.${year}`;
+    };
+
+    // Turkey timezone ile ay-yıl formatlama
+    const formatMonthYearTR = (date) => {
+      if (!date) return '';
+      const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                          'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+      const d = new Date(date);
+      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      return `${monthNames[adjusted.getUTCMonth()]} ${adjusted.getUTCFullYear()}`;
     };
 
     const start = parseDate(startDate);
@@ -278,7 +303,7 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
             totalLessons: lessonCount,
             lessonsBeforeEnrollment: lessonsBeforeEnrollment,
             lessonsAfterEnrollment: lessonsAfterEnrollment,
-            enrollmentDate: enrollment.toLocaleDateString('tr-TR')
+            enrollmentDate: formatDateTR(enrollment)
           };
         }
       }
@@ -288,7 +313,7 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
       }
 
       monthlyDetails.push({
-        month: monthStart.toLocaleDateString('tr-TR', { year: 'numeric', month: 'long' }),
+        month: formatMonthYearTR(monthStart),
         monthIndex: i,
         lessonCount: lessonCount,
         lessonsAfterEnrollment: i === 0 ? lessonsAfterEnrollment : lessonCount,
