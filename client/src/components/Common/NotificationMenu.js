@@ -142,11 +142,38 @@ const NotificationMenu = ({
     return `${baseUrl}/pdf/student-status-report/${studentId}?institutionId=${institution?._id}`;
   };
 
-  // Handle PDF download
-  const handlePdfDownload = () => {
-    window.open(getPdfUrl(), '_blank');
-    setPdfMenuAnchor(null);
-    onClose();
+  // Handle PDF download - fetch as blob instead of opening new tab
+  const handlePdfDownload = async () => {
+    const student = studentData;
+    if (!student) {
+      alert('Öğrenci bilgisi bulunamadı');
+      return;
+    }
+
+    setPdfGenerating(true);
+    const fileName = `Durum_Raporu_${student.firstName}_${student.lastName}.pdf`;
+
+    try {
+      const response = await fetch(getPdfUrl());
+      if (!response.ok) throw new Error('PDF oluşturulamadı');
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('PDF download error:', error);
+      alert('PDF oluşturulurken bir hata oluştu');
+    } finally {
+      setPdfGenerating(false);
+      setPdfMenuAnchor(null);
+      onClose();
+    }
   };
 
   // Handle PDF share to WhatsApp
@@ -615,28 +642,39 @@ const NotificationMenu = ({
         transformOrigin={{ vertical: 'top', horizontal: 'left' }}
         PaperProps={{ sx: { minWidth: 220 } }}
       >
-        <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: 'text.secondary' }}>
-          PDF İşlemleri
-        </Typography>
-        <Divider />
-        <MenuItem onClick={handlePdfDownload}>
-          <ListItemIcon>
-            <Download color="primary" />
-          </ListItemIcon>
-          <ListItemText primary="İndir" />
-        </MenuItem>
-        <MenuItem onClick={() => handlePdfWhatsApp()}>
-          <ListItemIcon>
-            <WhatsApp sx={{ color: '#25D366' }} />
-          </ListItemIcon>
-          <ListItemText primary="WhatsApp'a Gönder" />
-        </MenuItem>
-        <MenuItem onClick={handlePdfEmail}>
-          <ListItemIcon>
-            <Email color="info" />
-          </ListItemIcon>
-          <ListItemText primary="Email'e Gönder" />
-        </MenuItem>
+        {pdfGenerating ? (
+          <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+            <CircularProgress size={24} />
+            <Typography variant="body2" color="text.secondary">
+              Rapor hazırlanıyor...
+            </Typography>
+          </Box>
+        ) : (
+          <>
+            <Typography variant="subtitle2" sx={{ px: 2, py: 1, color: 'text.secondary' }}>
+              PDF İşlemleri
+            </Typography>
+            <Divider />
+            <MenuItem onClick={handlePdfDownload}>
+              <ListItemIcon>
+                <Download color="primary" />
+              </ListItemIcon>
+              <ListItemText primary="İndir" />
+            </MenuItem>
+            <MenuItem onClick={() => handlePdfWhatsApp()}>
+              <ListItemIcon>
+                <WhatsApp sx={{ color: '#25D366' }} />
+              </ListItemIcon>
+              <ListItemText primary="WhatsApp'a Gönder" />
+            </MenuItem>
+            <MenuItem onClick={handlePdfEmail}>
+              <ListItemIcon>
+                <Email color="info" />
+              </ListItemIcon>
+              <ListItemText primary="Email'e Gönder" />
+            </MenuItem>
+          </>
+        )}
       </Menu>
 
       {/* Phone Selection Dialog */}

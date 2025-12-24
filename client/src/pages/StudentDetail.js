@@ -32,6 +32,7 @@ import {
   TableRow,
   Collapse,
   IconButton,
+  CircularProgress,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -181,6 +182,7 @@ const StudentDetail = () => {
     open: false,
     attendance: null
   });
+  const [pdfLoading, setPdfLoading] = useState(false);
 
   // Expanded sections for additional info
   const [parentInfoExpanded, setParentInfoExpanded] = useState(false);
@@ -485,6 +487,7 @@ const StudentDetail = () => {
 
   const handleDownloadStatusReport = async () => {
     try {
+      setPdfLoading(true);
       const response = await api.get(`/pdf/student-status-report/${id}`, {
         params: { institutionId: institution._id },
         responseType: 'blob'
@@ -500,6 +503,8 @@ const StudentDetail = () => {
       window.URL.revokeObjectURL(url);
     } catch (error) {
       alert('PDF oluşturma hatası: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setPdfLoading(false);
     }
   };
 
@@ -561,10 +566,11 @@ const StudentDetail = () => {
         <Button
           variant="outlined"
           color="secondary"
-          startIcon={<PictureAsPdf />}
+          startIcon={pdfLoading ? <CircularProgress size={20} color="inherit" /> : <PictureAsPdf />}
           onClick={handleDownloadStatusReport}
+          disabled={pdfLoading}
         >
-          Son Durum Raporu
+          {pdfLoading ? 'Rapor Hazırlanıyor...' : 'Son Durum Raporu'}
         </Button>
       </Box>
 
