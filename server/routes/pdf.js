@@ -116,23 +116,65 @@ router.get('/student-status-report/:studentId', async (req, res) => {
         enrollmentDate = plan.createdAt;
       }
 
+      // Turkey timezone offset (UTC+3) - needed because dates stored in MongoDB
+      // as UTC need to be adjusted. "Nov 1 midnight Turkey" = "Oct 31 21:00 UTC"
+      const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+      // Parse date with Turkey timezone adjustment
+      const parseDate = (dateStr) => {
+        if (!dateStr) return new Date();
+        const d = new Date(dateStr);
+        // Add Turkey timezone offset to get the original local date
+        const adjustedDate = new Date(d.getTime() + TURKEY_OFFSET_MS);
+        // Return date at noon UTC to avoid edge cases
+        return new Date(Date.UTC(
+          adjustedDate.getUTCFullYear(),
+          adjustedDate.getUTCMonth(),
+          adjustedDate.getUTCDate(),
+          12, 0, 0, 0
+        ));
+      };
+
+      // Helper to format date in Turkish format
+      const formatDateTR = (date) => {
+        if (!date) return 'N/A';
+        const d = new Date(date);
+        // Add Turkey offset for display
+        const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+        const day = adjusted.getUTCDate().toString().padStart(2, '0');
+        const month = (adjusted.getUTCMonth() + 1).toString().padStart(2, '0');
+        const year = adjusted.getUTCFullYear();
+        return `${day}.${month}.${year}`;
+      };
+
+      // Helper to format month name in Turkish
+      const formatMonthTR = (date) => {
+        if (!date) return 'N/A';
+        const d = new Date(date);
+        // Add Turkey offset for display
+        const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+        const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+                        'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+        return `${months[adjusted.getUTCMonth()]} ${adjusted.getUTCFullYear()}`;
+      };
+
       // Calculate durationMonths from period dates (NOT from installments count!)
       // End date priority: plan.periodEndDate > enrollment.endDate > season.endDate > fallback
       let endDate = null;
       if (plan.periodEndDate) {
-        endDate = new Date(plan.periodEndDate);
+        endDate = parseDate(plan.periodEndDate);
       } else if (enrollment?.endDate) {
-        endDate = new Date(enrollment.endDate);
+        endDate = parseDate(enrollment.endDate);
       } else if (plan.season?.endDate) {
-        endDate = new Date(plan.season.endDate);
+        endDate = parseDate(plan.season.endDate);
       }
 
       let durationMonths;
       if (endDate) {
-        const startDate = new Date(enrollmentDate);
-        // Calculate month difference
-        durationMonths = (endDate.getFullYear() - startDate.getFullYear()) * 12 +
-          (endDate.getMonth() - startDate.getMonth()) + 1; // +1 to include both start and end months
+        const startDateParsed = parseDate(enrollmentDate);
+        // Calculate month difference using UTC methods (dates are already adjusted)
+        durationMonths = (endDate.getUTCFullYear() - startDateParsed.getUTCFullYear()) * 12 +
+          (endDate.getUTCMonth() - startDateParsed.getUTCMonth()) + 1; // +1 to include both start and end months
         // Ensure minimum 1 month
         if (durationMonths < 1) durationMonths = 1;
       } else {
@@ -145,40 +187,6 @@ router.get('/student-status-report/:studentId', async (req, res) => {
           durationMonths = 8; // Last resort fallback
         }
       }
-
-      // Parse date properly - use UTC to avoid timezone issues
-      // When dates are stored in MongoDB as UTC, we need to use UTC methods
-      // to get the correct day (otherwise 1 Nov can become 31 Oct due to timezone offset)
-      const parseDate = (dateStr) => {
-        if (!dateStr) return new Date();
-        if (typeof dateStr === 'string') {
-          const parts = dateStr.split('T')[0].split('-');
-          // Create date at noon to avoid any edge cases
-          return new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0, 0));
-        }
-        const d = new Date(dateStr);
-        // Use UTC methods to extract the correct date components
-        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0, 0));
-      };
-
-      // Helper to format date in Turkish format using UTC
-      const formatDateTR = (date) => {
-        if (!date) return 'N/A';
-        const d = new Date(date);
-        const day = d.getUTCDate().toString().padStart(2, '0');
-        const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
-        const year = d.getUTCFullYear();
-        return `${day}.${month}.${year}`;
-      };
-
-      // Helper to format month name in Turkish using UTC
-      const formatMonthTR = (date) => {
-        if (!date) return 'N/A';
-        const d = new Date(date);
-        const months = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-                        'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
-        return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
-      };
 
       const startDate = parseDate(enrollmentDate);
 

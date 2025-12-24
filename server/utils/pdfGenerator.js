@@ -15,29 +15,40 @@ const formatCurrency = (amount) => {
 };
 
 /**
- * Format date in Turkish format using UTC to avoid timezone issues
+ * Turkey timezone offset (UTC+3) in milliseconds
+ * Needed because dates stored in MongoDB as UTC need adjustment
+ * "Nov 1 midnight Turkey" is stored as "Oct 31 21:00 UTC"
+ */
+const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+/**
+ * Format date in Turkish format with timezone adjustment
  * This prevents dates like "1 November" from showing as "31 October"
  */
 const formatDateTR = (date) => {
   if (!date) return '-';
   const d = new Date(date);
   if (isNaN(d.getTime())) return '-';
-  const day = d.getUTCDate().toString().padStart(2, '0');
-  const month = (d.getUTCMonth() + 1).toString().padStart(2, '0');
-  const year = d.getUTCFullYear();
+  // Add Turkey timezone offset to get original local date
+  const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+  const day = adjusted.getUTCDate().toString().padStart(2, '0');
+  const month = (adjusted.getUTCMonth() + 1).toString().padStart(2, '0');
+  const year = adjusted.getUTCFullYear();
   return `${day}.${month}.${year}`;
 };
 
 /**
- * Format month and year in Turkish using UTC
+ * Format month and year in Turkish with timezone adjustment
  */
 const formatMonthYearTR = (date) => {
   if (!date) return '-';
   const d = new Date(date);
   if (isNaN(d.getTime())) return '-';
+  // Add Turkey timezone offset to get original local date
+  const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
   const months = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran',
                   'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
-  return `${months[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+  return `${months[adjusted.getUTCMonth()]} ${adjusted.getUTCFullYear()}`;
 };
 
 /**
@@ -721,11 +732,13 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
 
           doc.font(fonts.regular);
 
-          // Date - use UTC to avoid timezone issues
-          const lessonDate = record.scheduledLesson?.date ? new Date(record.scheduledLesson.date) : null;
-          const date = lessonDate
-            ? `${lessonDate.getUTCDate()} ${['Oca', 'Sub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Agu', 'Eyl', 'Eki', 'Kas', 'Ara'][lessonDate.getUTCMonth()]} ${lessonDate.getUTCFullYear().toString().slice(-2)}`
-            : '-';
+          // Date - adjust for Turkey timezone
+          let date = '-';
+          if (record.scheduledLesson?.date) {
+            const lessonDate = new Date(record.scheduledLesson.date);
+            const adjusted = new Date(lessonDate.getTime() + TURKEY_OFFSET_MS);
+            date = `${adjusted.getUTCDate()} ${['Oca', 'Sub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Agu', 'Eyl', 'Eki', 'Kas', 'Ara'][adjusted.getUTCMonth()]} ${adjusted.getUTCFullYear().toString().slice(-2)}`;
+          }
           doc.text(date, tableLeft, tableY);
 
           // Course (abbreviated if needed)
