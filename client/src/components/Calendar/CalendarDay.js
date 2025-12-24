@@ -33,9 +33,8 @@ const CalendarDay = ({
 
   const handleExpenseIndicatorClick = (e) => {
     e.stopPropagation();
-    if (expenses && expenses.length === 1) {
-      if (onExpenseClick) onExpenseClick(expenses[0]);
-    } else if (expenses && expenses.length > 1) {
+    // Always show menu so user can select which expense to pay
+    if (expenses && expenses.length > 0) {
       setExpenseMenuAnchor(e.currentTarget);
     }
   };
@@ -112,8 +111,12 @@ const CalendarDay = ({
     }
   };
 
-  // Calculate how many slots we have for events
-  const maxVisibleEvents = expenses && expenses.length > 0 ? 3 : 4;
+  // Calculate total expense amount
+  const totalExpenseAmount = expenses ? expenses.reduce((sum, e) => sum + (e.amount || e.estimatedAmount || 0), 0) : 0;
+  const hasOverdueExpense = expenses?.some(e => e.status === 'overdue');
+
+  // Calculate how many slots we have for events (no longer showing expense items separately)
+  const maxVisibleEvents = 4;
   const visibleEvents = allEvents.slice(0, maxVisibleEvents);
   const remainingEvents = allEvents.length - maxVisibleEvents;
 
@@ -148,7 +151,7 @@ const CalendarDay = ({
         >
           {date.getDate()}
         </Typography>
-        {/* Expense indicator */}
+        {/* Expense indicator - shows count and total */}
         {expenses && expenses.length > 0 && (
           <Box
             sx={{
@@ -158,58 +161,21 @@ const CalendarDay = ({
               px: 0.5,
               py: 0.2,
               borderRadius: 1,
-              bgcolor: expenses.some(e => e.status === 'overdue') ? 'error.light' : 'warning.light',
+              bgcolor: hasOverdueExpense ? 'error.light' : 'warning.light',
               color: 'white',
-              fontSize: '0.6rem',
+              fontSize: '0.55rem',
               cursor: 'pointer',
               '&:hover': { opacity: 0.8 },
             }}
-            title={expenses.map(e => `${e.description}: ${e.amount?.toLocaleString('tr-TR')}₺`).join('\n') + '\n(Tıkla: Öde)'}
+            title={expenses.map(e => `${e.description || e.category}: ${e.amount?.toLocaleString('tr-TR')}₺`).join('\n') + '\n(Tıkla: Detay & Öde)'}
             onClick={handleExpenseIndicatorClick}
           >
             <PaymentIcon sx={{ fontSize: 10 }} />
-            {expenses.length > 1 ? expenses.length : (expenses[0].amount?.toLocaleString('tr-TR') + '₺')}
+            {expenses.length} - {totalExpenseAmount.toLocaleString('tr-TR')}₺
           </Box>
         )}
       </Box>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, overflow: 'hidden' }}>
-        {/* Expense items first if overdue */}
-        {expenses && expenses.filter(e => e.status === 'overdue').map((expense, index) => (
-          <Box
-            key={`expense-${expense._id || index}`}
-            sx={{
-              fontSize: '0.7rem',
-              p: 0.5,
-              borderRadius: 1,
-              backgroundColor: getExpenseColor(expense.status),
-              color: 'white',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              fontWeight: 500,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-              cursor: 'pointer',
-              '&:hover': {
-                opacity: 0.8,
-                transform: 'scale(1.02)',
-              },
-              transition: 'all 0.2s',
-            }}
-            title={`GİDER: ${expense.description} - ${expense.amount?.toLocaleString('tr-TR')}₺ (Tıkla: Öde)`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onExpenseClick) onExpenseClick(expense);
-            }}
-          >
-            <PaymentIcon sx={{ fontSize: 12 }} />
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {expense.category}: {expense.amount?.toLocaleString('tr-TR')}₺
-            </span>
-          </Box>
-        ))}
-
         {visibleEvents.map((event, index) => (
           event.type === 'trial' ? (
             // Trial Lesson
