@@ -528,7 +528,10 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
             doc.fillColor('black');
           }
 
-          doc.moveDown(1);
+          // Only add space between payment plans, not after the last one
+          if (planIndex < paymentPlans.length - 1) {
+            doc.moveDown(1);
+          }
         });
       } else {
         doc.text('Bu öğrenci için aktif ödeme planı bulunmamaktadır.');
