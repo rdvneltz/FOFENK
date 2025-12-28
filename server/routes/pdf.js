@@ -561,8 +561,13 @@ router.get('/attendance-history/:studentId', async (req, res) => {
   }
 });
 
-// Toplu Öğrenci Raporu PDF'i oluştur (Memory-optimized for free tier)
+// Toplu Öğrenci Raporu PDF'i oluştur (Memory-optimized with batching)
+// Generates PDFs in batches of 20 students, zips them together
 router.get('/bulk-student-report', async (req, res) => {
+  const archiver = require('archiver');
+  const PDFDocument = require('pdfkit');
+  const { PassThrough } = require('stream');
+
   try {
     const { institutionId, seasonId } = req.query;
 
@@ -570,7 +575,7 @@ router.get('/bulk-student-report', async (req, res) => {
       return res.status(400).json({ message: 'Kurum ID gerekli' });
     }
 
-    // Get institution (lean for memory efficiency)
+    // Get institution
     const institution = await Institution.findById(institutionId).lean();
     if (!institution) {
       return res.status(404).json({ message: 'Kurum bulunamadı' });
@@ -580,7 +585,7 @@ router.get('/bulk-student-report', async (req, res) => {
     const settings = await Settings.findOne({ institution: institutionId }).lean();
     const letterhead = settings?.letterhead || null;
 
-    // Get all active students for this institution and season
+    // Get ALL active students for this institution and season
     const studentQuery = {
       institution: institutionId,
       status: { $in: ['active', 'trial'] }
@@ -589,87 +594,43 @@ router.get('/bulk-student-report', async (req, res) => {
       studentQuery.season = seasonId;
     }
 
-    // MEMORY OPTIMIZATION: Limit to 20 students for free tier (512MB)
-    // 20 students is safer than 30 to avoid memory spikes
-    const MAX_STUDENTS = 20;
-    const totalStudents = await Student.countDocuments(studentQuery);
-
-    const students = await Student.find(studentQuery)
-      .select('firstName lastName phone email parentContacts') // Only select needed fields
+    const allStudents = await Student.find(studentQuery)
+      .select('firstName lastName phone email parentContacts')
       .sort({ firstName: 1, lastName: 1 })
-      .limit(MAX_STUDENTS)
       .lean();
 
-    if (students.length === 0) {
+    if (allStudents.length === 0) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
 
-    // Build data for each student (memory optimized)
-    const studentsData = [];
-    for (const student of students) {
-      // Get payment plans for this student
-      const paymentPlansQuery = {
-        student: student._id,
-        status: { $ne: 'cancelled' }
-      };
-      if (seasonId) paymentPlansQuery.season = seasonId;
-
-      const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
-        .populate('course', 'name') // Only select name
-        .populate('enrollment', 'enrollmentDate')
-        .sort({ createdAt: -1 })
-        .lean();
-
-      // Build payment plan data (minimal)
-      const paymentPlansData = paymentPlans.map(plan => ({
-        paymentPlan: {
-          totalAmount: plan.totalAmount,
-          discountedAmount: plan.discountedAmount,
-          paidAmount: plan.paidAmount,
-          remainingAmount: plan.remainingAmount,
-          installments: plan.installments
-        },
-        course: plan.course || null,
-        enrollment: plan.enrollment || null
-      }));
-
-      studentsData.push({
-        student,
-        paymentPlans: paymentPlansData
-      });
+    // Split students into batches of 20
+    const BATCH_SIZE = 20;
+    const batches = [];
+    for (let i = 0; i < allStudents.length; i += BATCH_SIZE) {
+      batches.push(allStudents.slice(i, i + BATCH_SIZE));
     }
 
-    // Stream PDF directly to response (no file I/O, no page buffering for memory efficiency)
-    const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: false });
-
-    // Set response headers for PDF download
-    const filename = `Toplu_Ogrenci_Raporu_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.pdf`;
-    res.setHeader('Content-Type', 'application/pdf');
+    // Set response headers for ZIP download
+    const dateStr = new Date().toLocaleDateString('tr-TR').replace(/\./g, '_');
+    const filename = `Toplu_Ogrenci_Raporlari_${dateStr}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    // Pipe directly to response
-    doc.pipe(res);
+    // Create ZIP archive
+    const archive = archiver('zip', { zlib: { level: 5 } });
+    archive.pipe(res);
 
-    // Font setup
+    // Font paths
     const FONT_REGULAR = path.join(__dirname, '../assets/fonts/NotoSans-Regular.ttf');
     const FONT_BOLD = path.join(__dirname, '../assets/fonts/NotoSans-Bold.ttf');
-    let fonts = { regular: 'Helvetica', bold: 'Helvetica-Bold' };
-    if (fs.existsSync(FONT_REGULAR) && fs.existsSync(FONT_BOLD)) {
-      doc.registerFont('Regular', FONT_REGULAR);
-      doc.registerFont('Bold', FONT_BOLD);
-      fonts = { regular: 'Regular', bold: 'Bold' };
-    }
 
-    // Decode letterhead once if exists
+    // Decode letterhead once
     let letterheadBuffer = null;
     if (letterhead?.imageUrl && letterhead.imageUrl.startsWith('data:image')) {
       try {
         const base64Data = letterhead.imageUrl.split(',')[1];
         letterheadBuffer = Buffer.from(base64Data, 'base64');
-      } catch (e) {
-        // Ignore letterhead errors
-      }
+      } catch (e) { /* ignore */ }
     }
 
     const topMargin = letterhead?.topMargin || 80;
@@ -694,158 +655,176 @@ router.get('/bulk-student-report', async (req, res) => {
       return `${day}.${month}.${year}`;
     };
 
-    const drawLetterhead = () => {
-      if (letterheadBuffer) {
-        try {
-          doc.image(letterheadBuffer, 0, 0, {
-            width: doc.page.width,
-            height: doc.page.height
-          });
-        } catch (e) {
-          // Ignore image errors
+    // Process each batch sequentially (memory efficient)
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batchStudents = batches[batchIndex];
+      const batchStart = batchIndex * BATCH_SIZE + 1;
+      const batchEnd = batchStart + batchStudents.length - 1;
+
+      // Create PDF for this batch
+      const pdfStream = new PassThrough();
+      const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: false });
+      doc.pipe(pdfStream);
+
+      // Register fonts
+      let fonts = { regular: 'Helvetica', bold: 'Helvetica-Bold' };
+      if (fs.existsSync(FONT_REGULAR) && fs.existsSync(FONT_BOLD)) {
+        doc.registerFont('Regular', FONT_REGULAR);
+        doc.registerFont('Bold', FONT_BOLD);
+        fonts = { regular: 'Regular', bold: 'Bold' };
+      }
+
+      const drawLetterhead = () => {
+        if (letterheadBuffer) {
+          try {
+            doc.image(letterheadBuffer, 0, 0, {
+              width: doc.page.width,
+              height: doc.page.height
+            });
+          } catch (e) { /* ignore */ }
         }
-      }
-    };
+      };
 
-    // Process each student
-    studentsData.forEach((studentData, studentIndex) => {
-      const { student, paymentPlans } = studentData;
+      // Fetch payment plans for this batch
+      for (let studentIndex = 0; studentIndex < batchStudents.length; studentIndex++) {
+        const student = batchStudents[studentIndex];
 
-      // Add new page for each student (except first)
-      if (studentIndex > 0) {
-        doc.addPage();
-      }
+        // Get payment plans for this student
+        const paymentPlansQuery = { student: student._id, status: { $ne: 'cancelled' } };
+        if (seasonId) paymentPlansQuery.season = seasonId;
 
-      // Draw letterhead
-      drawLetterhead();
-      doc.y = topMargin;
+        const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
+          .populate('course', 'name')
+          .populate('enrollment', 'enrollmentDate')
+          .sort({ createdAt: -1 })
+          .lean();
 
-      // Student header
-      doc.fontSize(14).font(fonts.bold)
-        .text(`${student.firstName} ${student.lastName}`, sideMargin, doc.y, { align: 'center' });
-      doc.moveDown(0.3);
-
-      doc.fontSize(9).font(fonts.regular)
-        .text(`Rapor Tarihi: ${formatDateTR(new Date())}`, { align: 'center' });
-      doc.moveDown(1);
-
-      // Student contact info (compact)
-      doc.fontSize(9).font(fonts.regular);
-      const contactParts = [];
-      if (student.phone) contactParts.push(`Tel: ${student.phone}`);
-      if (student.email) contactParts.push(`E-posta: ${student.email}`);
-      if (contactParts.length > 0) {
-        doc.text(contactParts.join(' | '), { align: 'center' });
-        doc.moveDown(0.5);
-      }
-
-      // Parent info (compact)
-      if (student.parentContacts && student.parentContacts.length > 0) {
-        const parent = student.parentContacts[0];
-        doc.text(`Veli: ${parent.name} (${parent.relationship}) - ${parent.phone}`, { align: 'center' });
-      }
-      doc.moveDown(1);
-
-      // Check if student has any payment plans
-      if (!paymentPlans || paymentPlans.length === 0) {
-        doc.fontSize(10).font(fonts.bold).fillColor('orange')
-          .text('Henüz ödeme planı oluşturulmamış', sideMargin, doc.y, { align: 'center' });
-        doc.fillColor('black');
-        return;
-      }
-
-      // Process each payment plan
-      paymentPlans.forEach((planData) => {
-        const { paymentPlan, course, enrollment } = planData;
-        if (!course) return;
-
-        // Check if we need a new page
-        if (doc.y > doc.page.height - bottomMargin - 150) {
+        // Add new page for each student (except first in batch)
+        if (studentIndex > 0) {
           doc.addPage();
-          drawLetterhead();
-          doc.y = topMargin;
         }
 
-        // Course header
-        const courseHeaderY = doc.y;
-        doc.rect(sideMargin, courseHeaderY, doc.page.width - (sideMargin * 2), 18)
-          .fill('#1976d2');
-        doc.fontSize(10).font(fonts.bold).fillColor('white')
-          .text((course.name || 'Ders').toUpperCase(), sideMargin + 5, courseHeaderY + 4);
-        doc.fillColor('black');
-        doc.y = courseHeaderY + 22;
+        drawLetterhead();
+        doc.y = topMargin;
 
-        // Enrollment info
-        doc.fontSize(9).font(fonts.regular);
-        if (enrollment?.enrollmentDate) {
-          doc.text(`Kayıt: ${formatDateTR(enrollment.enrollmentDate)}`, sideMargin);
+        // Student header
+        doc.fontSize(14).font(fonts.bold)
+          .text(`${student.firstName} ${student.lastName}`, sideMargin, doc.y, { align: 'center' });
+        doc.moveDown(0.3);
+
+        doc.fontSize(9).font(fonts.regular)
+          .text(`Rapor Tarihi: ${formatDateTR(new Date())}`, { align: 'center' });
+        doc.moveDown(1);
+
+        // Student contact info
+        const contactParts = [];
+        if (student.phone) contactParts.push(`Tel: ${student.phone}`);
+        if (student.email) contactParts.push(`E-posta: ${student.email}`);
+        if (contactParts.length > 0) {
+          doc.text(contactParts.join(' | '), { align: 'center' });
+          doc.moveDown(0.5);
         }
 
-        // Payment summary - compact single line
-        const total = paymentPlan.totalAmount || 0;
-        const paid = paymentPlan.paidAmount || 0;
-        const remaining = paymentPlan.remainingAmount || (total - paid);
+        // Parent info
+        if (student.parentContacts && student.parentContacts.length > 0) {
+          const parent = student.parentContacts[0];
+          doc.text(`Veli: ${parent.name} (${parent.relationship}) - ${parent.phone}`, { align: 'center' });
+        }
+        doc.moveDown(1);
 
-        doc.font(fonts.bold).fontSize(9)
-          .text(`Toplam: ${formatCurrency(total)}  |  Ödenen: `, sideMargin, doc.y + 5, { continued: true })
-          .fillColor('green').text(formatCurrency(paid), { continued: true })
-          .fillColor('black').text('  |  Kalan: ', { continued: true })
-          .fillColor(remaining > 0 ? 'red' : 'green').text(formatCurrency(remaining));
-        doc.fillColor('black');
-        doc.moveDown(0.8);
-
-        // Installments - super compact (2 per line)
-        if (paymentPlan.installments && paymentPlan.installments.length > 0) {
-          doc.fontSize(7).font(fonts.regular);
-          let instX = sideMargin;
-          const instWidth = (doc.page.width - sideMargin * 2) / 2;
-
-          paymentPlan.installments.forEach((inst, idx) => {
-            const isPaid = inst.isPaid || inst.status === 'paid';
-            const color = isPaid ? 'green' : 'gray';
-
-            doc.fillColor(color)
-              .text(`${idx + 1}. ${formatDateTR(inst.dueDate)}: ${formatCurrency(inst.amount)}${isPaid ? ' ✓' : ''}`,
-                instX, doc.y, { width: instWidth - 5, continued: false });
-
-            if (idx % 2 === 0) {
-              instX = sideMargin + instWidth;
-              doc.y -= 10; // Stay on same line
-            } else {
-              instX = sideMargin;
-            }
-          });
+        // Check if student has payment plans
+        if (!paymentPlans || paymentPlans.length === 0) {
+          doc.fontSize(10).font(fonts.bold).fillColor('orange')
+            .text('Henüz ödeme planı oluşturulmamış', sideMargin, doc.y, { align: 'center' });
           doc.fillColor('black');
-          doc.moveDown(1);
+          continue;
         }
-      });
-    });
 
-    // Show warning if there are more students (on the FIRST page, not a new page)
-    if (totalStudents > MAX_STUDENTS) {
-      doc.addPage();
-      drawLetterhead();
-      doc.y = topMargin;
-      doc.fontSize(14).font(fonts.bold).fillColor('orange')
-        .text('⚠ LİMİT UYARISI', sideMargin, doc.y, { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(11).font(fonts.regular).fillColor('black')
-        .text(`Bu raporda toplam ${totalStudents} öğrenciden sadece ilk ${MAX_STUDENTS} tanesi yer almaktadır.`, { align: 'center' });
-      doc.moveDown(0.3);
-      doc.fontSize(10)
-        .text('Tüm öğrencilerin raporlarını görmek için bireysel "PDF Rapor" özelliğini kullanabilirsiniz.', { align: 'center' });
-      doc.moveDown(1);
-      doc.fontSize(9).fillColor('gray')
-        .text('(Bellek optimizasyonu nedeniyle toplu rapor öğrenci sayısı sınırlıdır)', { align: 'center' });
+        // Process each payment plan
+        for (const plan of paymentPlans) {
+          const course = plan.course;
+          if (!course) continue;
+
+          // Check if we need a new page
+          if (doc.y > doc.page.height - bottomMargin - 150) {
+            doc.addPage();
+            drawLetterhead();
+            doc.y = topMargin;
+          }
+
+          // Course header
+          const courseHeaderY = doc.y;
+          doc.rect(sideMargin, courseHeaderY, doc.page.width - (sideMargin * 2), 18).fill('#1976d2');
+          doc.fontSize(10).font(fonts.bold).fillColor('white')
+            .text((course.name || 'Ders').toUpperCase(), sideMargin + 5, courseHeaderY + 4);
+          doc.fillColor('black');
+          doc.y = courseHeaderY + 22;
+
+          // Enrollment info
+          doc.fontSize(9).font(fonts.regular);
+          if (plan.enrollment?.enrollmentDate) {
+            doc.text(`Kayıt: ${formatDateTR(plan.enrollment.enrollmentDate)}`, sideMargin);
+          }
+
+          // Payment summary
+          const total = plan.totalAmount || 0;
+          const paid = plan.paidAmount || 0;
+          const remaining = plan.remainingAmount || (total - paid);
+
+          doc.font(fonts.bold).fontSize(9)
+            .text(`Toplam: ${formatCurrency(total)}  |  Ödenen: `, sideMargin, doc.y + 5, { continued: true })
+            .fillColor('green').text(formatCurrency(paid), { continued: true })
+            .fillColor('black').text('  |  Kalan: ', { continued: true })
+            .fillColor(remaining > 0 ? 'red' : 'green').text(formatCurrency(remaining));
+          doc.fillColor('black');
+          doc.moveDown(0.8);
+
+          // Installments
+          if (plan.installments && plan.installments.length > 0) {
+            doc.fontSize(7).font(fonts.regular);
+            let instX = sideMargin;
+            const instWidth = (doc.page.width - sideMargin * 2) / 2;
+
+            plan.installments.forEach((inst, idx) => {
+              const isPaid = inst.isPaid || inst.status === 'paid';
+              const color = isPaid ? 'green' : 'gray';
+
+              doc.fillColor(color)
+                .text(`${idx + 1}. ${formatDateTR(inst.dueDate)}: ${formatCurrency(inst.amount)}${isPaid ? ' ✓' : ''}`,
+                  instX, doc.y, { width: instWidth - 5, continued: false });
+
+              if (idx % 2 === 0) {
+                instX = sideMargin + instWidth;
+                doc.y -= 10;
+              } else {
+                instX = sideMargin;
+              }
+            });
+            doc.fillColor('black');
+            doc.moveDown(1);
+          }
+        }
+      }
+
+      // Footer
+      doc.fontSize(8).font(fonts.regular).fillColor('gray')
+        .text(`${institution.name} - Grup ${batchIndex + 1}/${batches.length} (Öğrenci ${batchStart}-${batchEnd}) - ${formatDateTR(new Date())}`,
+          sideMargin, doc.page.height - 30, { align: 'center', width: doc.page.width - (sideMargin * 2) });
+
+      doc.end();
+
+      // Add PDF to ZIP with batch name
+      const pdfName = batches.length === 1
+        ? `Toplu_Rapor_${dateStr}.pdf`
+        : `Toplu_Rapor_Grup_${batchIndex + 1}_Ogrenci_${batchStart}-${batchEnd}.pdf`;
+      archive.append(pdfStream, { name: pdfName });
+
+      // Wait for this PDF to be fully processed before moving to next batch
+      await new Promise(resolve => pdfStream.on('end', resolve));
     }
 
-    // No page numbers to avoid memory buffering (bufferPages: false)
-    // Footer with institution name only on last content
-    doc.fontSize(8).font(fonts.regular).fillColor('gray')
-      .text(`${institution.name} - Toplu Öğrenci Raporu - ${formatDateTR(new Date())}`,
-        sideMargin, doc.page.height - 30, { align: 'center', width: doc.page.width - (sideMargin * 2) });
-
-    doc.end();
+    // Finalize ZIP
+    await archive.finalize();
 
   } catch (error) {
     console.error('Toplu Rapor oluşturma hatası:', error);
