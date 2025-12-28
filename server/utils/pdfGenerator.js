@@ -229,7 +229,8 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
 
       const doc = new PDFDocument({
         margin: sideMargin,
-        size: 'A4'
+        size: 'A4',
+        bufferPages: true // Required for page numbers
       });
 
       const writeStream = fs.createWriteStream(outputPath);
@@ -527,22 +528,23 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
             doc.fillColor('black');
           }
 
-          doc.moveDown(2);
+          doc.moveDown(1);
         });
       } else {
         doc.text('Bu öğrenci için aktif ödeme planı bulunmamaktadır.');
       }
 
-      // Footer - add page numbers
+      // Footer - add page numbers at the bottom of each page
       const range = doc.bufferedPageRange();
       for (let i = 0; i < range.count; i++) {
         doc.switchToPage(range.start + i);
+        // Position 25 points from the absolute bottom of the page
         doc.fontSize(8).font(fonts.regular)
           .text(
             `${institution.name} - Sayfa ${i + 1}/${range.count}`,
             sideMargin,
-            doc.page.height - bottomMargin + 10,
-            { align: 'center', width: doc.page.width - (sideMargin * 2) }
+            doc.page.height - 25,
+            { align: 'center', width: doc.page.width - (sideMargin * 2), lineBreak: false }
           );
       }
 
@@ -583,7 +585,8 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
 
       const doc = new PDFDocument({
         margin: sideMargin,
-        size: 'A4'
+        size: 'A4',
+        bufferPages: true // Required for page numbers
       });
 
       const writeStream = fs.createWriteStream(outputPath);
@@ -767,7 +770,7 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
 
       doc.moveTo(tableLeft, tableY).lineTo(tableLeft + tableWidth, tableY).stroke();
 
-      // Footer - add page numbers
+      // Footer - add page numbers at the bottom of each page
       const range = doc.bufferedPageRange();
       for (let i = 0; i < range.count; i++) {
         doc.switchToPage(range.start + i);
@@ -775,8 +778,8 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
           .text(
             `${institution.name} - Sayfa ${i + 1}/${range.count}`,
             sideMargin,
-            doc.page.height - bottomMargin + 10,
-            { align: 'center', width: doc.page.width - (sideMargin * 2) }
+            doc.page.height - 25,
+            { align: 'center', width: doc.page.width - (sideMargin * 2), lineBreak: false }
           );
       }
 
