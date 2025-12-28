@@ -561,7 +561,156 @@ router.get('/attendance-history/:studentId', async (req, res) => {
   }
 });
 
-// Bulk endpoint removed - using individual student reports instead
-// Frontend downloads each student's report one by one using /student-status-report/:studentId
+// Toplu Öğrenci Raporu - Basitleştirilmiş (Memory-safe)
+// Her öğrenci tek tek işlenir, letterhead KULLANILMAZ (bellek tasarrufu)
+router.get('/bulk-student-report', async (req, res) => {
+  const archiver = require('archiver');
+  const PDFDocument = require('pdfkit');
+
+  try {
+    const { institutionId, seasonId } = req.query;
+
+    if (!institutionId) {
+      return res.status(400).json({ message: 'Kurum ID gerekli' });
+    }
+
+    const institution = await Institution.findById(institutionId).lean();
+    if (!institution) {
+      return res.status(404).json({ message: 'Kurum bulunamadı' });
+    }
+
+    // Get student IDs only first (minimal memory)
+    const studentQuery = {
+      institution: institutionId,
+      status: { $in: ['active', 'trial'] }
+    };
+    if (seasonId) studentQuery.season = seasonId;
+
+    const studentIds = await Student.find(studentQuery).select('_id').lean();
+
+    if (studentIds.length === 0) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    // Set response headers for ZIP
+    const dateStr = new Date().toLocaleDateString('tr-TR').replace(/\./g, '_');
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="Toplu_Raporlar_${dateStr}.zip"`);
+
+    // Create ZIP with minimal compression (faster, less memory)
+    const archive = archiver('zip', { zlib: { level: 1 } });
+    archive.pipe(res);
+
+    // Turkey timezone offset
+    const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+    const formatDateTR = (date) => {
+      if (!date) return '-';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '-';
+      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      return `${adjusted.getUTCDate().toString().padStart(2, '0')}.${(adjusted.getUTCMonth() + 1).toString().padStart(2, '0')}.${adjusted.getUTCFullYear()}`;
+    };
+
+    const formatCurrency = (amount) => {
+      if (!amount && amount !== 0) return '-';
+      return `₺${Math.round(amount).toLocaleString('tr-TR')}`;
+    };
+
+    // Process each student ONE AT A TIME
+    for (let i = 0; i < studentIds.length; i++) {
+      const studentId = studentIds[i]._id;
+
+      // Fetch this student's data
+      const student = await Student.findById(studentId)
+        .select('firstName lastName phone email parentContacts')
+        .lean();
+
+      if (!student) continue;
+
+      // Fetch payment plans
+      const plansQuery = { student: studentId, status: { $ne: 'cancelled' } };
+      if (seasonId) plansQuery.season = seasonId;
+
+      const plans = await PaymentPlan.find(plansQuery)
+        .populate('course', 'name')
+        .lean();
+
+      // Create a simple PDF (NO letterhead, NO custom fonts)
+      const chunks = [];
+      const doc = new PDFDocument({ margin: 50, size: 'A4', bufferPages: false });
+
+      doc.on('data', chunk => chunks.push(chunk));
+
+      // Simple header
+      doc.fontSize(16).text(institution.name, { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(12).text('ÖĞRENCİ DURUM RAPORU', { align: 'center' });
+      doc.moveDown(0.3);
+      doc.fontSize(9).text(`Tarih: ${formatDateTR(new Date())}`, { align: 'center' });
+      doc.moveDown(1);
+
+      // Student info
+      doc.fontSize(11).text(`Öğrenci: ${student.firstName} ${student.lastName}`);
+      if (student.phone) doc.text(`Tel: ${student.phone}`);
+      if (student.parentContacts?.[0]) {
+        const p = student.parentContacts[0];
+        doc.text(`Veli: ${p.name} - ${p.phone}`);
+      }
+      doc.moveDown(1);
+
+      // Payment plans
+      if (plans.length === 0) {
+        doc.fillColor('orange').text('Ödeme planı bulunmuyor');
+        doc.fillColor('black');
+      } else {
+        for (const plan of plans) {
+          const courseName = plan.course?.name || 'Kurs';
+          const total = plan.totalAmount || 0;
+          const paid = plan.paidAmount || 0;
+          const remaining = total - paid;
+
+          doc.fontSize(10).fillColor('blue').text(courseName);
+          doc.fillColor('black').fontSize(9);
+          doc.text(`  Toplam: ${formatCurrency(total)} | Ödenen: ${formatCurrency(paid)} | Kalan: ${formatCurrency(remaining)}`);
+
+          // Installments (compact)
+          if (plan.installments?.length > 0) {
+            const instLine = plan.installments.map((inst, idx) => {
+              const status = inst.isPaid ? '✓' : '';
+              return `${idx + 1}.${formatDateTR(inst.dueDate)}:${formatCurrency(inst.amount)}${status}`;
+            }).join(' | ');
+            doc.fontSize(7).text(`  Taksitler: ${instLine}`);
+          }
+          doc.moveDown(0.5);
+        }
+      }
+
+      doc.end();
+
+      // Wait for PDF to complete
+      await new Promise((resolve, reject) => {
+        doc.on('end', resolve);
+        doc.on('error', reject);
+      });
+
+      // Add to ZIP
+      const pdfBuffer = Buffer.concat(chunks);
+      const fileName = `${student.firstName}_${student.lastName}.pdf`.replace(/\s+/g, '_');
+      archive.append(pdfBuffer, { name: fileName });
+
+      // Force garbage collection hint (clear references)
+      chunks.length = 0;
+    }
+
+    // Finalize ZIP
+    await archive.finalize();
+
+  } catch (error) {
+    console.error('Toplu Rapor hatası:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    }
+  }
+});
 
 module.exports = router;
