@@ -423,7 +423,7 @@ const Students = () => {
                 Email ({selectedStudents.length})
               </Button>
             )}
-            <Tooltip title={students.length > 30 ? `İlk 30 öğrenci dahil edilecek (Toplam: ${students.length})` : 'Tüm öğrencilerin raporunu indir'}>
+            <Tooltip title={students.length > 20 ? `Bellek sınırı: İlk 20 öğrenci dahil edilecek (Toplam: ${students.length})` : 'Tüm öğrencilerin raporunu indir'}>
               <span>
                 <Button
                   size="small"
@@ -433,7 +433,7 @@ const Students = () => {
                   onClick={handleBulkPdfDownload}
                   disabled={bulkPdfLoading || students.length === 0}
                 >
-                  {bulkPdfLoading ? 'Hazırlanıyor...' : students.length > 30 ? `Toplu Rapor (30/${students.length})` : 'Toplu Rapor'}
+                  {bulkPdfLoading ? 'Hazırlanıyor...' : students.length > 20 ? `Toplu Rapor (20/${students.length})` : 'Toplu Rapor'}
                 </Button>
               </span>
             </Tooltip>

@@ -589,8 +589,9 @@ router.get('/bulk-student-report', async (req, res) => {
       studentQuery.season = seasonId;
     }
 
-    // MEMORY OPTIMIZATION: Limit to 30 students for free tier (512MB)
-    const MAX_STUDENTS = 30;
+    // MEMORY OPTIMIZATION: Limit to 20 students for free tier (512MB)
+    // 20 students is safer than 30 to avoid memory spikes
+    const MAX_STUDENTS = 20;
     const totalStudents = await Student.countDocuments(studentQuery);
 
     const students = await Student.find(studentQuery)
@@ -638,9 +639,9 @@ router.get('/bulk-student-report', async (req, res) => {
       });
     }
 
-    // Stream PDF directly to response (no file I/O)
+    // Stream PDF directly to response (no file I/O, no page buffering for memory efficiency)
     const PDFDocument = require('pdfkit');
-    const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true });
+    const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: false });
 
     // Set response headers for PDF download
     const filename = `Toplu_Ogrenci_Raporu_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.pdf`;
@@ -820,30 +821,29 @@ router.get('/bulk-student-report', async (req, res) => {
       });
     });
 
-    // Show warning if there are more students
+    // Show warning if there are more students (on the FIRST page, not a new page)
     if (totalStudents > MAX_STUDENTS) {
       doc.addPage();
       drawLetterhead();
       doc.y = topMargin;
-      doc.fontSize(12).font(fonts.bold).fillColor('orange')
-        .text(`UYARI: Toplam ${totalStudents} öğrenciden sadece ilk ${MAX_STUDENTS} tanesi gösterilmektedir.`, sideMargin, doc.y, { align: 'center' });
+      doc.fontSize(14).font(fonts.bold).fillColor('orange')
+        .text('⚠ LİMİT UYARISI', sideMargin, doc.y, { align: 'center' });
       doc.moveDown(0.5);
-      doc.fontSize(10).font(fonts.regular).fillColor('black')
-        .text('Tüm öğrencileri görmek için bireysel raporları kullanın.', { align: 'center' });
+      doc.fontSize(11).font(fonts.regular).fillColor('black')
+        .text(`Bu raporda toplam ${totalStudents} öğrenciden sadece ilk ${MAX_STUDENTS} tanesi yer almaktadır.`, { align: 'center' });
+      doc.moveDown(0.3);
+      doc.fontSize(10)
+        .text('Tüm öğrencilerin raporlarını görmek için bireysel "PDF Rapor" özelliğini kullanabilirsiniz.', { align: 'center' });
+      doc.moveDown(1);
+      doc.fontSize(9).fillColor('gray')
+        .text('(Bellek optimizasyonu nedeniyle toplu rapor öğrenci sayısı sınırlıdır)', { align: 'center' });
     }
 
-    // Footer - page numbers
-    const range = doc.bufferedPageRange();
-    for (let i = 0; i < range.count; i++) {
-      doc.switchToPage(range.start + i);
-      doc.fontSize(8).font(fonts.regular)
-        .text(
-          `${institution.name} - Toplu Rapor - Sayfa ${i + 1}/${range.count}`,
-          sideMargin,
-          doc.page.height - bottomMargin + 10,
-          { align: 'center', width: doc.page.width - (sideMargin * 2) }
-        );
-    }
+    // No page numbers to avoid memory buffering (bufferPages: false)
+    // Footer with institution name only on last content
+    doc.fontSize(8).font(fonts.regular).fillColor('gray')
+      .text(`${institution.name} - Toplu Öğrenci Raporu - ${formatDateTR(new Date())}`,
+        sideMargin, doc.page.height - 30, { align: 'center', width: doc.page.width - (sideMargin * 2) });
 
     doc.end();
 
