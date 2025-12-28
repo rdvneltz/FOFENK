@@ -537,18 +537,33 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
         doc.text('Bu öğrenci için aktif ödeme planı bulunmamaktadır.');
       }
 
-      // Footer - add page numbers at the bottom of each page
+      // Add footer to each page at the bottom
       const range = doc.bufferedPageRange();
-      for (let i = 0; i < range.count; i++) {
+      const totalPages = range.count;
+
+      // Footer position: A4 height is 841.89, place footer 25pt from absolute bottom
+      const absoluteFooterY = 841.89 - 25;
+
+      for (let i = 0; i < totalPages; i++) {
         doc.switchToPage(range.start + i);
-        // Position 25 points from the absolute bottom of the page
-        doc.fontSize(8).font(fonts.regular)
-          .text(
-            `${institution.name} - Sayfa ${i + 1}/${range.count}`,
-            sideMargin,
-            doc.page.height - 25,
-            { align: 'center', width: doc.page.width - (sideMargin * 2), lineBreak: false }
-          );
+
+        // CRITICAL: Reset Y position to top of page to prevent page break triggering
+        doc.y = 0;
+        doc.x = 0;
+
+        const footerText = `${institution.name} - Sayfa ${i + 1}/${totalPages}`;
+
+        doc.fontSize(8).font(fonts.regular);
+        doc.text(
+          footerText,
+          0,
+          absoluteFooterY,
+          {
+            align: 'center',
+            width: doc.page.width,
+            lineBreak: false
+          }
+        );
       }
 
       doc.end();
