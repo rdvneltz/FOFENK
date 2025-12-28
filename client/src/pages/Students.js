@@ -339,6 +339,9 @@ const Students = () => {
     return matchesSearch;
   });
 
+  // Count only active + trial students (for bulk PDF - passive students excluded)
+  const activeStudentsCount = students.filter(s => s.status === 'active' || s.status === 'trial').length;
+
   // Notification menu handlers
   const handleNotificationClick = (event, student) => {
     setNotificationMenu({ anchorEl: event.currentTarget, student });
@@ -440,7 +443,7 @@ const Students = () => {
                 Email ({selectedStudents.length})
               </Button>
             )}
-            <Tooltip title={`Tüm öğrencilerin raporunu ZIP olarak indir (${students.length} öğrenci)`}>
+            <Tooltip title={`Aktif ve deneme öğrencilerin raporunu ZIP olarak indir (${activeStudentsCount} öğrenci)`}>
               <span>
                 <Button
                   size="small"
@@ -448,9 +451,9 @@ const Students = () => {
                   color="secondary"
                   startIcon={bulkPdfLoading ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />}
                   onClick={handleBulkPdfDownload}
-                  disabled={bulkPdfLoading || students.length === 0}
+                  disabled={bulkPdfLoading || activeStudentsCount === 0}
                 >
-                  {bulkPdfLoading ? 'Hazırlanıyor...' : `Toplu Rapor (${students.length})`}
+                  {bulkPdfLoading ? 'Hazırlanıyor...' : `Toplu Rapor (${activeStudentsCount})`}
                 </Button>
               </span>
             </Tooltip>
