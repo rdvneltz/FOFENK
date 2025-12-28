@@ -798,5 +798,214 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
 module.exports = {
   generatePaymentPlanPDF,
   generateStudentStatusReportPDF,
-  generateAttendanceHistoryPDF
+  generateAttendanceHistoryPDF,
+  generateBulkStudentReportPDF
+};
+
+/**
+ * Generates bulk PDF report for multiple students
+ * Each student starts on a new page
+ */
+const generateBulkStudentReportPDF = (data, outputPath) => {
+  return new Promise((resolve, reject) => {
+    try {
+      const { students, institution, letterhead } = data;
+
+      // Margin settings from letterhead or defaults
+      const topMargin = letterhead?.topMargin || 120;
+      const bottomMargin = letterhead?.bottomMargin || 60;
+      const sideMargin = letterhead?.sideMargin || 40;
+
+      const doc = new PDFDocument({
+        margin: sideMargin,
+        size: 'A4'
+      });
+
+      const writeStream = fs.createWriteStream(outputPath);
+      const fonts = registerFonts(doc);
+      doc.pipe(writeStream);
+
+      // Helper to draw letterhead background
+      const drawLetterhead = () => {
+        if (letterhead?.imageUrl && letterhead.imageUrl.startsWith('data:image')) {
+          const base64Data = letterhead.imageUrl.split(',')[1];
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          doc.image(imageBuffer, 0, 0, {
+            width: doc.page.width,
+            height: doc.page.height
+          });
+        }
+      };
+
+      // Process each student
+      students.forEach((studentData, studentIndex) => {
+        const { student, paymentPlans } = studentData;
+
+        // Add new page for each student (except first)
+        if (studentIndex > 0) {
+          doc.addPage();
+        }
+
+        // Draw letterhead
+        drawLetterhead();
+        doc.y = topMargin;
+
+        // Student header
+        doc.fontSize(14).font(fonts.bold)
+          .text(`${student.firstName} ${student.lastName}`, sideMargin, doc.y, { align: 'center' });
+        doc.moveDown(0.3);
+
+        doc.fontSize(9).font(fonts.regular)
+          .text(`Rapor Tarihi: ${formatDateTR(new Date())}`, { align: 'center' });
+        doc.moveDown(1);
+
+        // Student contact info (compact)
+        doc.fontSize(9).font(fonts.regular);
+        const contactParts = [];
+        if (student.phone) contactParts.push(`Tel: ${student.phone}`);
+        if (student.email) contactParts.push(`E-posta: ${student.email}`);
+        if (contactParts.length > 0) {
+          doc.text(contactParts.join(' | '), { align: 'center' });
+          doc.moveDown(0.5);
+        }
+
+        // Parent info (compact)
+        if (student.parentContacts && student.parentContacts.length > 0) {
+          const parent = student.parentContacts[0];
+          doc.text(`Veli: ${parent.name} (${parent.relationship}) - ${parent.phone}`, { align: 'center' });
+        }
+        doc.moveDown(1);
+
+        // Check if student has any payment plans
+        if (!paymentPlans || paymentPlans.length === 0) {
+          doc.fontSize(10).font(fonts.bold).fillColor('orange')
+            .text('Henüz ödeme planı oluşturulmamış', sideMargin, doc.y, { align: 'center' });
+          doc.fillColor('black');
+          return; // Continue to next student
+        }
+
+        // Process each payment plan
+        paymentPlans.forEach((planData, planIndex) => {
+          const { paymentPlan, course, monthlyBreakdown, enrollment } = planData;
+
+          if (!course) return;
+
+          // Check if we need a new page
+          if (doc.y > doc.page.height - bottomMargin - 200) {
+            doc.addPage();
+            drawLetterhead();
+            doc.y = topMargin;
+          }
+
+          // Course header with colored background
+          const courseHeaderY = doc.y;
+          doc.rect(sideMargin, courseHeaderY, doc.page.width - (sideMargin * 2), 20)
+            .fill('#1976d2');
+          doc.fontSize(10).font(fonts.bold).fillColor('white')
+            .text(course.name.toUpperCase(), sideMargin + 5, courseHeaderY + 5);
+          doc.fillColor('black');
+          doc.y = courseHeaderY + 25;
+
+          // Enrollment and pricing info
+          doc.fontSize(9).font(fonts.regular);
+          if (enrollment?.enrollmentDate) {
+            doc.text(`Kayıt Tarihi: ${formatDateTR(enrollment.enrollmentDate)}`, sideMargin);
+          }
+
+          // Payment summary table
+          const summaryY = doc.y + 5;
+          doc.fontSize(9).font(fonts.bold)
+            .text('Toplam:', sideMargin, summaryY)
+            .text(formatCurrency(paymentPlan.totalAmount), sideMargin + 80, summaryY);
+
+          // Discount info
+          if (paymentPlan.discountedAmount && paymentPlan.discountedAmount !== paymentPlan.totalAmount) {
+            const discountAmount = paymentPlan.totalAmount - paymentPlan.discountedAmount;
+            const discountPercent = Math.round((discountAmount / paymentPlan.totalAmount) * 100);
+            doc.text(`İndirim (%${discountPercent}):`, sideMargin + 150, summaryY)
+              .text(`-${formatCurrency(discountAmount)}`, sideMargin + 230, summaryY);
+            doc.text('Ödenecek:', sideMargin, summaryY + 12)
+              .text(formatCurrency(paymentPlan.discountedAmount), sideMargin + 80, summaryY + 12);
+          }
+
+          doc.font(fonts.regular)
+            .text('Ödenen:', sideMargin + 300, summaryY)
+            .fillColor('green')
+            .text(formatCurrency(paymentPlan.paidAmount || 0), sideMargin + 350, summaryY)
+            .fillColor('black');
+
+          doc.text('Kalan:', sideMargin + 420, summaryY)
+            .fillColor(paymentPlan.remainingAmount > 0 ? 'red' : 'green')
+            .text(formatCurrency(paymentPlan.remainingAmount || 0), sideMargin + 460, summaryY)
+            .fillColor('black');
+
+          doc.y = summaryY + 25;
+
+          // Installments compact table
+          if (paymentPlan.installments && paymentPlan.installments.length > 0) {
+            doc.fontSize(8).font(fonts.bold)
+              .text('Taksitler:', sideMargin, doc.y);
+            doc.moveDown(0.3);
+
+            const instStartY = doc.y;
+            let instX = sideMargin;
+            const instWidth = 100;
+
+            paymentPlan.installments.forEach((inst, idx) => {
+              // Check if we need to wrap to next row
+              if (instX + instWidth > doc.page.width - sideMargin) {
+                instX = sideMargin;
+                doc.y += 12;
+              }
+
+              const isPaid = inst.status === 'paid';
+              doc.fontSize(7).font(fonts.regular);
+
+              if (isPaid) {
+                doc.fillColor('green');
+              } else if (inst.status === 'partial') {
+                doc.fillColor('orange');
+              } else {
+                doc.fillColor('gray');
+              }
+
+              doc.text(`${idx + 1}. ${formatDateTR(inst.dueDate)}: ${formatCurrency(inst.amount)}${isPaid ? ' ✓' : ''}`, instX, doc.y, { width: instWidth - 5 });
+              doc.fillColor('black');
+
+              instX += instWidth;
+            });
+
+            doc.y += 15;
+          }
+
+          doc.moveDown(0.5);
+        });
+      });
+
+      // Footer - add page numbers
+      const range = doc.bufferedPageRange();
+      for (let i = 0; i < range.count; i++) {
+        doc.switchToPage(range.start + i);
+        doc.fontSize(8).font(fonts.regular)
+          .text(
+            `${institution.name} - Toplu Rapor - Sayfa ${i + 1}/${range.count}`,
+            sideMargin,
+            doc.page.height - bottomMargin + 10,
+            { align: 'center', width: doc.page.width - (sideMargin * 2) }
+          );
+      }
+
+      doc.end();
+
+      writeStream.on('finish', () => {
+        resolve(outputPath);
+      });
+
+      writeStream.on('error', (error) => {
+        reject(error);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
 };
