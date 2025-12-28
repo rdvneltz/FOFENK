@@ -795,13 +795,6 @@ const generateAttendanceHistoryPDF = (data, outputPath) => {
   });
 };
 
-module.exports = {
-  generatePaymentPlanPDF,
-  generateStudentStatusReportPDF,
-  generateAttendanceHistoryPDF,
-  generateBulkStudentReportPDF
-};
-
 /**
  * Generates bulk PDF report for multiple students
  * Each student starts on a new page
@@ -1008,4 +1001,11 @@ const generateBulkStudentReportPDF = (data, outputPath) => {
       reject(error);
     }
   });
+};
+
+module.exports = {
+  generatePaymentPlanPDF,
+  generateStudentStatusReportPDF,
+  generateAttendanceHistoryPDF,
+  generateBulkStudentReportPDF
 };
