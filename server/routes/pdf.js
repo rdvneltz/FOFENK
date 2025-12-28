@@ -563,9 +563,8 @@ router.get('/attendance-history/:studentId', async (req, res) => {
 
 // Toplu Öğrenci Raporu - Tekli raporla AYNI içerik, letterhead yok
 router.get('/bulk-student-report', async (req, res) => {
-  const archiver = require('archiver');
-  const { generateStudentStatusReportPDF } = require('../utils/pdfGenerator');
-  const os = require('os');
+  const PDFDocument = require('pdfkit');
+  const path = require('path');
 
   try {
     const { institutionId, seasonId } = req.query;
@@ -579,31 +578,40 @@ router.get('/bulk-student-report', async (req, res) => {
       return res.status(404).json({ message: 'Kurum bulunamadı' });
     }
 
-    // Get student IDs only first (all statuses - passive students may still have balances)
-    const studentQuery = {
-      institution: institutionId
-    };
+    // Get all students
+    const studentQuery = { institution: institutionId };
     if (seasonId) studentQuery.season = seasonId;
 
-    const studentIds = await Student.find(studentQuery).select('_id').lean();
+    const students = await Student.find(studentQuery).sort({ firstName: 1, lastName: 1 }).lean();
 
-    if (studentIds.length === 0) {
+    if (students.length === 0) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
 
-    // Set response headers for ZIP
+    // Set response headers for PDF
     const dateStr = new Date().toLocaleDateString('tr-TR').replace(/\./g, '_');
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="Toplu_Raporlar_${dateStr}.zip"`);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Toplu_Ogrenci_Raporu_${dateStr}.pdf"`);
 
-    // Create ZIP
-    const archive = archiver('zip', { zlib: { level: 1 } });
-    archive.pipe(res);
+    // Font paths
+    const FONT_REGULAR = path.join(__dirname, '../assets/fonts/NotoSans-Regular.ttf');
+    const FONT_BOLD = path.join(__dirname, '../assets/fonts/NotoSans-Bold.ttf');
 
-    // Temp directory for PDFs
-    const tempDir = os.tmpdir();
+    // Create single PDF document - stream directly to response
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 40,
+      autoFirstPage: false // We'll add pages manually
+    });
 
-    // Turkey timezone helpers (same as individual report)
+    // Pipe directly to response (memory efficient - no storing in memory)
+    doc.pipe(res);
+
+    // Register fonts
+    doc.registerFont('Regular', FONT_REGULAR);
+    doc.registerFont('Bold', FONT_BOLD);
+
+    // Turkey timezone helpers
     const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
     const parseDate = (dateStr) => {
       if (!dateStr) return new Date();
@@ -612,206 +620,307 @@ router.get('/bulk-student-report', async (req, res) => {
       return new Date(Date.UTC(adjustedDate.getUTCFullYear(), adjustedDate.getUTCMonth(), adjustedDate.getUTCDate(), 12, 0, 0, 0));
     };
 
-    // Process each student ONE AT A TIME (memory efficient)
-    for (let i = 0; i < studentIds.length; i++) {
-      const studentId = studentIds[i]._id;
+    const formatDateTR = (date) => {
+      if (!date) return '-';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '-';
+      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      const day = adjusted.getUTCDate().toString().padStart(2, '0');
+      const month = (adjusted.getUTCMonth() + 1).toString().padStart(2, '0');
+      const year = adjusted.getUTCFullYear();
+      return `${day}.${month}.${year}`;
+    };
 
-      try {
-        // Get student
-        const student = await Student.findById(studentId);
-        if (!student) continue;
+    const formatMonthYearTR = (date) => {
+      if (!date) return '-';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '-';
+      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      const months = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
+      return `${months[adjusted.getUTCMonth()]} ${adjusted.getUTCFullYear()}`;
+    };
 
-        // Get payment plans with full data (same as individual report)
-        const paymentPlansQuery = {
-          student: studentId,
-          status: { $ne: 'cancelled' }
-        };
-        if (seasonId) paymentPlansQuery.season = seasonId;
+    const formatCurrency = (amount) => {
+      if (amount === null || amount === undefined) return '-';
+      return `₺${Math.round(amount).toLocaleString('tr-TR')}`;
+    };
 
-        const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
-          .populate('course')
-          .populate('enrollment')
-          .populate('season')
-          .sort({ createdAt: -1 });
+    const sideMargin = 40;
+    const topMargin = 50;
+    const bottomMargin = 60;
+    let globalPageNum = 0;
 
-        // Build payment plan data with FULL monthly breakdown (same as individual report)
-        const paymentPlansData = await Promise.all(paymentPlans.map(async (plan) => {
-          const course = plan.course;
-          if (!course) {
-            return {
-              paymentPlan: plan.toObject(),
-              course: null,
-              enrollment: null,
-              monthlyBreakdown: [],
-              lessonDetails: null
-            };
-          }
+    // Helper: Add footer to current page
+    const addFooter = () => {
+      const footerY = doc.page.height - 30;
+      doc.fontSize(8).font('Regular')
+        .text(
+          `${institution.name} - Sayfa ${globalPageNum}`,
+          sideMargin,
+          footerY,
+          { align: 'center', width: doc.page.width - (sideMargin * 2) }
+        );
+    };
 
-          // Get enrollment
-          const enrollment = await StudentCourseEnrollment.findOne({
-            student: studentId,
-            course: course._id
-          });
-
-          // Get enrollment date
-          let enrollmentDate = plan.periodStartDate || enrollment?.enrollmentDate || plan.createdAt;
-          const startDate = parseDate(enrollmentDate);
-
-          // Get end date
-          let endDate = null;
-          if (plan.periodEndDate) {
-            endDate = parseDate(plan.periodEndDate);
-          } else if (enrollment?.endDate) {
-            endDate = parseDate(enrollment.endDate);
-          } else if (plan.season?.endDate) {
-            endDate = parseDate(plan.season.endDate);
-          }
-
-          // Calculate duration
-          let durationMonths;
-          if (endDate) {
-            durationMonths = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
-              (endDate.getUTCMonth() - startDate.getUTCMonth()) + 1;
-            if (durationMonths < 1) durationMonths = 1;
-          } else {
-            const monthlyFee = course.pricePerMonth || 0;
-            durationMonths = monthlyFee > 0 ? Math.round(plan.totalAmount / monthlyFee) : 8;
-            if (durationMonths < 1) durationMonths = 1;
-          }
-
-          // Calculate monthly breakdown
-          const monthlyBreakdown = [];
-          const expectedLessonsPerMonth = course.weeklyFrequency ? course.weeklyFrequency * 4 : 4;
-          const monthlyFee = course.pricePerMonth || 0;
-          const perLessonFee = course.pricePerLesson || (monthlyFee / expectedLessonsPerMonth);
-
-          // Check if birebir
-          const studentSpecificLessons = await ScheduledLesson.find({
-            course: course._id,
-            student: studentId,
-            status: { $ne: 'cancelled' }
-          }).select('_id').lean();
-          const isBirebir = studentSpecificLessons.length > 0;
-
-          let totalLessons = 0;
-          const monthNames = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
-
-          for (let m = 0; m < durationMonths; m++) {
-            const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m, 1, 0, 0, 0, 0));
-            const monthEnd = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m + 1, 0, 23, 59, 59));
-
-            // Get lessons for this month
-            let lessonQuery = {
-              course: course._id,
-              institution: institutionId,
-              date: { $gte: monthStart, $lte: monthEnd },
-              status: { $ne: 'cancelled' }
-            };
-
-            if (isBirebir) {
-              lessonQuery.student = studentId;
-            } else {
-              lessonQuery.$or = [
-                { student: studentId },
-                { student: null },
-                { student: { $exists: false } }
-              ];
-            }
-
-            const lessons = await ScheduledLesson.find(lessonQuery).lean();
-            let lessonCount = lessons.length;
-
-            // First month: count lessons after enrollment
-            if (m === 0) {
-              lessonCount = lessons.filter(l => parseDate(l.date) >= startDate).length;
-            }
-
-            // Last month: count lessons before period end
-            if (m === durationMonths - 1 && endDate) {
-              lessonCount = lessons.filter(l => {
-                const ld = parseDate(l.date);
-                return (m === 0 ? ld >= startDate : true) && ld <= endDate;
-              }).length;
-            }
-
-            totalLessons += lessonCount;
-
-            const monthName = `${monthNames[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`;
-            const isPartial = (m === 0 || m === durationMonths - 1) && lessonCount < expectedLessonsPerMonth;
-            const amount = isBirebir || isPartial ? lessonCount * perLessonFee : monthlyFee;
-
-            monthlyBreakdown.push({
-              monthName,
-              lessonCount,
-              amount,
-              isPartial,
-              isBirebir
-            });
-          }
-
-          // Calculate discount
-          const discountRatio = plan.totalAmount > 0 ? plan.discountedAmount / plan.totalAmount : 1;
-          const hasDiscount = plan.discountedAmount < plan.totalAmount;
-          const discountedMonthlyFee = Math.floor(monthlyFee * discountRatio);
-          const discountedPerLessonFee = Math.floor(discountedMonthlyFee / expectedLessonsPerMonth);
-
-          // Add discounted amounts to breakdown
-          monthlyBreakdown.forEach(month => {
-            if (month.isPartial || month.isBirebir) {
-              month.discountedAmount = month.lessonCount * discountedPerLessonFee;
-            } else {
-              month.discountedAmount = discountedMonthlyFee;
-            }
-          });
-
-          const lessonDetails = {
-            monthlyFee,
-            perLessonFee,
-            totalLessons,
-            durationMonths,
-            hasDiscount,
-            discountedMonthlyFee,
-            discountedPerLessonFee,
-            isBirebir
-          };
-
-          return {
-            paymentPlan: plan.toObject(),
-            course: course.toObject(),
-            enrollment: enrollment ? enrollment.toObject() : null,
-            monthlyBreakdown,
-            lessonDetails
-          };
-        }));
-
-        // Generate PDF to temp file
-        const tempPath = path.join(tempDir, `report_${studentId}_${Date.now()}.pdf`);
-
-        // Use existing PDF generator but WITHOUT letterhead (pass null)
-        await generateStudentStatusReportPDF({
-          student: student.toObject(),
-          institution: institution.toObject(),
-          paymentPlans: paymentPlansData,
-          letterhead: null // NO letterhead for bulk reports
-        }, tempPath);
-
-        // Add to ZIP (include student ID to handle duplicate names)
-        const fileName = `${student.firstName}_${student.lastName}_${studentId.toString().slice(-6)}.pdf`.replace(/\s+/g, '_');
-        archive.file(tempPath, { name: fileName });
-
-        // Clean up temp file after adding to archive
-        setTimeout(() => {
-          try { fs.unlinkSync(tempPath); } catch (e) { /* ignore */ }
-        }, 1000);
-
-      } catch (err) {
-        console.error(`Error processing student ${studentId}:`, err.message);
-        // Continue with next student
+    // Helper: Add new page with footer
+    const addNewPage = () => {
+      if (globalPageNum > 0) {
+        addFooter(); // Add footer to previous page before creating new one
       }
+      doc.addPage();
+      globalPageNum++;
+      doc.y = topMargin;
+    };
+
+    // Helper: Check if need new page
+    const checkPageBreak = (neededSpace = 100) => {
+      if (doc.y > doc.page.height - bottomMargin - neededSpace) {
+        addNewPage();
+        return true;
+      }
+      return false;
+    };
+
+    // Process each student
+    for (let studentIndex = 0; studentIndex < students.length; studentIndex++) {
+      const student = students[studentIndex];
+
+      // Always start each student on a new page
+      addNewPage();
+
+      // Get payment plans
+      const paymentPlansQuery = {
+        student: student._id,
+        status: { $ne: 'cancelled' }
+      };
+      if (seasonId) paymentPlansQuery.season = seasonId;
+
+      const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
+        .populate('course')
+        .populate('enrollment')
+        .populate('season')
+        .sort({ createdAt: -1 });
+
+      // ===== STUDENT HEADER =====
+      doc.fontSize(14).font('Bold')
+        .text(`${studentIndex + 1}. ${student.firstName} ${student.lastName}`, sideMargin);
+      doc.moveTo(sideMargin, doc.y + 2).lineTo(doc.page.width - sideMargin, doc.y + 2).lineWidth(2).stroke();
+      doc.moveDown(0.5);
+
+      // Student info
+      doc.fontSize(10).font('Regular');
+      if (student.phone) doc.text(`Telefon: ${student.phone}`);
+      if (student.email) doc.text(`E-posta: ${student.email}`);
+      if (student.parentContacts && student.parentContacts.length > 0) {
+        const parent = student.parentContacts[0];
+        doc.text(`Veli: ${parent.name || ''} (${parent.relationship || ''}) - ${parent.phone || ''}`);
+      }
+      doc.moveDown(1);
+
+      // ===== PROCESS PAYMENT PLANS =====
+      if (paymentPlans.length === 0) {
+        doc.fontSize(10).font('Regular')
+          .text('Bu öğrenci için aktif ödeme planı bulunmamaktadır.');
+        continue;
+      }
+
+      for (const plan of paymentPlans) {
+        const course = plan.course;
+        if (!course) continue;
+
+        checkPageBreak(200);
+
+        // Course header
+        doc.fontSize(11).font('Bold')
+          .text(`KURS: ${course.name}`, sideMargin);
+        doc.moveTo(sideMargin, doc.y + 2).lineTo(doc.page.width - sideMargin, doc.y + 2).lineWidth(0.5).stroke();
+        doc.moveDown(0.3);
+
+        // Get enrollment
+        const enrollment = await StudentCourseEnrollment.findOne({
+          student: student._id,
+          course: course._id
+        });
+
+        // Period info
+        doc.fontSize(9).font('Regular');
+        const periodStart = plan.periodStartDate || enrollment?.enrollmentDate || plan.createdAt;
+        const periodEnd = plan.periodEndDate || enrollment?.endDate;
+
+        if (periodStart) {
+          doc.text(`Kayit: ${formatDateTR(periodStart)} - ${periodEnd ? formatDateTR(periodEnd) : 'Devam Ediyor'}`);
+        }
+
+        // Calculate monthly breakdown
+        const startDate = parseDate(periodStart);
+        let endDate = periodEnd ? parseDate(periodEnd) : null;
+        if (!endDate && plan.season?.endDate) {
+          endDate = parseDate(plan.season.endDate);
+        }
+
+        let durationMonths;
+        if (endDate) {
+          durationMonths = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+            (endDate.getUTCMonth() - startDate.getUTCMonth()) + 1;
+          if (durationMonths < 1) durationMonths = 1;
+        } else {
+          const monthlyFee = course.pricePerMonth || 0;
+          durationMonths = monthlyFee > 0 ? Math.round(plan.totalAmount / monthlyFee) : 8;
+          if (durationMonths < 1) durationMonths = 1;
+        }
+
+        // Check if birebir
+        const studentSpecificLessons = await ScheduledLesson.find({
+          course: course._id,
+          student: student._id,
+          status: { $ne: 'cancelled' }
+        }).select('_id').lean();
+        const isBirebir = studentSpecificLessons.length > 0;
+
+        const monthlyFee = course.pricePerMonth || 0;
+        const expectedLessonsPerMonth = course.weeklyFrequency ? course.weeklyFrequency * 4 : 4;
+        const perLessonFee = course.pricePerLesson || (monthlyFee / expectedLessonsPerMonth);
+
+        // Monthly breakdown table
+        doc.moveDown(0.5);
+        doc.fontSize(9).font('Bold').text('Ders Detaylari:', sideMargin);
+        doc.moveDown(0.2);
+
+        const monthNames = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
+        let totalLessons = 0;
+        let totalAmount = 0;
+
+        const tableLeft = sideMargin;
+        let tableY = doc.y;
+
+        doc.fontSize(8).font('Bold');
+        doc.text('Ay', tableLeft, tableY);
+        doc.text('Ders', tableLeft + 100, tableY);
+        doc.text('Tutar', tableLeft + 160, tableY);
+        doc.moveTo(tableLeft, tableY + 12).lineTo(tableLeft + 220, tableY + 12).stroke();
+        tableY += 16;
+
+        doc.font('Regular');
+        for (let m = 0; m < durationMonths && m < 12; m++) { // Max 12 months to save space
+          const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m, 1, 0, 0, 0, 0));
+          const monthEnd = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m + 1, 0, 23, 59, 59));
+
+          let lessonQuery = {
+            course: course._id,
+            institution: institutionId,
+            date: { $gte: monthStart, $lte: monthEnd },
+            status: { $ne: 'cancelled' }
+          };
+
+          if (isBirebir) {
+            lessonQuery.student = student._id;
+          } else {
+            lessonQuery.$or = [
+              { student: student._id },
+              { student: null },
+              { student: { $exists: false } }
+            ];
+          }
+
+          const lessons = await ScheduledLesson.find(lessonQuery).lean();
+          let lessonCount = lessons.length;
+
+          if (m === 0) {
+            lessonCount = lessons.filter(l => parseDate(l.date) >= startDate).length;
+          }
+          if (m === durationMonths - 1 && endDate) {
+            lessonCount = lessons.filter(l => {
+              const ld = parseDate(l.date);
+              return (m === 0 ? ld >= startDate : true) && ld <= endDate;
+            }).length;
+          }
+
+          totalLessons += lessonCount;
+          const isPartial = (m === 0 || m === durationMonths - 1) && lessonCount < expectedLessonsPerMonth;
+          const amount = isBirebir || isPartial ? lessonCount * perLessonFee : monthlyFee;
+          totalAmount += amount;
+
+          const monthName = `${monthNames[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`;
+
+          if (tableY > doc.page.height - bottomMargin - 30) {
+            addNewPage();
+            tableY = doc.y;
+          }
+
+          doc.text(monthName, tableLeft, tableY);
+          doc.text(`${lessonCount} ders`, tableLeft + 100, tableY);
+          doc.text(formatCurrency(amount), tableLeft + 160, tableY);
+          tableY += 12;
+        }
+
+        doc.moveTo(tableLeft, tableY).lineTo(tableLeft + 220, tableY).stroke();
+        tableY += 4;
+        doc.font('Bold').text(`Toplam: ${totalLessons} ders`, tableLeft, tableY);
+        doc.y = tableY + 15;
+
+        // Payment summary
+        checkPageBreak(80);
+        doc.fontSize(10).font('Bold');
+        const planTotal = plan.totalAmount || 0;
+        const discountedAmount = plan.discountedAmount !== undefined && plan.discountedAmount !== null
+          ? plan.discountedAmount : planTotal;
+        const hasDiscount = discountedAmount < planTotal;
+        const isFullScholarship = discountedAmount === 0;
+        const paidAmount = plan.paidAmount || 0;
+        const remaining = discountedAmount - paidAmount;
+
+        doc.text(`Toplam: ${formatCurrency(planTotal)}`);
+
+        if (isFullScholarship) {
+          doc.fillColor('green').text('TAM BURSLU');
+          doc.fillColor('black');
+        } else if (hasDiscount) {
+          const discountPercent = Math.round((1 - discountedAmount / planTotal) * 100);
+          doc.fillColor('green').text(`%${discountPercent} Indirimli: ${formatCurrency(discountedAmount)}`);
+          doc.fillColor('black');
+        }
+
+        doc.text(`Odenen: ${formatCurrency(paidAmount)}`);
+
+        if (remaining > 0) {
+          doc.fillColor('red').text(`Kalan Borc: ${formatCurrency(remaining)}`);
+          doc.fillColor('black');
+        } else if (!isFullScholarship) {
+          doc.fillColor('green').text('ODEME TAMAMLANDI');
+          doc.fillColor('black');
+        }
+
+        // Installments summary (compact)
+        if (plan.installments && plan.installments.length > 0) {
+          checkPageBreak(60);
+          doc.moveDown(0.3);
+          doc.fontSize(9).font('Bold').text('Taksitler:');
+          doc.font('Regular');
+
+          const overdue = plan.installments.filter(i => !i.isPaid && new Date(i.dueDate) < new Date()).length;
+          const pending = plan.installments.filter(i => !i.isPaid && new Date(i.dueDate) >= new Date()).length;
+          const paid = plan.installments.filter(i => i.isPaid).length;
+
+          let statusText = `${plan.installments.length} taksit: `;
+          if (paid > 0) statusText += `${paid} odendi, `;
+          if (overdue > 0) statusText += `${overdue} gecikti, `;
+          if (pending > 0) statusText += `${pending} bekliyor`;
+
+          doc.text(statusText.replace(/, $/, ''));
+        }
+
+        doc.moveDown(0.8);
+      }
+
+      // Force garbage collection hint by nullifying large objects
+      // (Node.js will clean up when needed)
     }
 
-    // Finalize ZIP
-    await archive.finalize();
+    // Add footer to last page
+    addFooter();
+
+    // Finalize PDF
+    doc.end();
 
   } catch (error) {
     console.error('Toplu Rapor hatası:', error);
