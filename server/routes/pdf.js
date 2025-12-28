@@ -561,7 +561,7 @@ router.get('/attendance-history/:studentId', async (req, res) => {
   }
 });
 
-// Toplu Öğrenci Raporu - Tekli raporla aynı içerik, letterhead yok
+// Toplu Öğrenci Raporu - Tekli raporla AYNI içerik, letterhead yok
 router.get('/bulk-student-report', async (req, res) => {
   const archiver = require('archiver');
   const { generateStudentStatusReportPDF } = require('../utils/pdfGenerator');
@@ -604,6 +604,15 @@ router.get('/bulk-student-report', async (req, res) => {
     // Temp directory for PDFs
     const tempDir = os.tmpdir();
 
+    // Turkey timezone helpers (same as individual report)
+    const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+    const parseDate = (dateStr) => {
+      if (!dateStr) return new Date();
+      const d = new Date(dateStr);
+      const adjustedDate = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      return new Date(Date.UTC(adjustedDate.getUTCFullYear(), adjustedDate.getUTCMonth(), adjustedDate.getUTCDate(), 12, 0, 0, 0));
+    };
+
     // Process each student ONE AT A TIME (memory efficient)
     for (let i = 0; i < studentIds.length; i++) {
       const studentId = studentIds[i]._id;
@@ -626,17 +635,155 @@ router.get('/bulk-student-report', async (req, res) => {
           .populate('season')
           .sort({ createdAt: -1 });
 
-        // Build payment plan data (simplified - skip monthly breakdown for memory)
-        const paymentPlansData = paymentPlans.map(plan => {
+        // Build payment plan data with FULL monthly breakdown (same as individual report)
+        const paymentPlansData = await Promise.all(paymentPlans.map(async (plan) => {
           const course = plan.course;
+          if (!course) {
+            return {
+              paymentPlan: plan.toObject(),
+              course: null,
+              enrollment: null,
+              monthlyBreakdown: [],
+              lessonDetails: null
+            };
+          }
+
+          // Get enrollment
+          const enrollment = await StudentCourseEnrollment.findOne({
+            student: studentId,
+            course: course._id
+          });
+
+          // Get enrollment date
+          let enrollmentDate = plan.periodStartDate || enrollment?.enrollmentDate || plan.createdAt;
+          const startDate = parseDate(enrollmentDate);
+
+          // Get end date
+          let endDate = null;
+          if (plan.periodEndDate) {
+            endDate = parseDate(plan.periodEndDate);
+          } else if (enrollment?.endDate) {
+            endDate = parseDate(enrollment.endDate);
+          } else if (plan.season?.endDate) {
+            endDate = parseDate(plan.season.endDate);
+          }
+
+          // Calculate duration
+          let durationMonths;
+          if (endDate) {
+            durationMonths = (endDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+              (endDate.getUTCMonth() - startDate.getUTCMonth()) + 1;
+            if (durationMonths < 1) durationMonths = 1;
+          } else {
+            const monthlyFee = course.pricePerMonth || 0;
+            durationMonths = monthlyFee > 0 ? Math.round(plan.totalAmount / monthlyFee) : 8;
+            if (durationMonths < 1) durationMonths = 1;
+          }
+
+          // Calculate monthly breakdown
+          const monthlyBreakdown = [];
+          const expectedLessonsPerMonth = course.weeklyFrequency ? course.weeklyFrequency * 4 : 4;
+          const monthlyFee = course.pricePerMonth || 0;
+          const perLessonFee = course.pricePerLesson || (monthlyFee / expectedLessonsPerMonth);
+
+          // Check if birebir
+          const studentSpecificLessons = await ScheduledLesson.find({
+            course: course._id,
+            student: studentId,
+            status: { $ne: 'cancelled' }
+          }).select('_id').lean();
+          const isBirebir = studentSpecificLessons.length > 0;
+
+          let totalLessons = 0;
+          const monthNames = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
+
+          for (let m = 0; m < durationMonths; m++) {
+            const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m, 1, 0, 0, 0, 0));
+            const monthEnd = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m + 1, 0, 23, 59, 59));
+
+            // Get lessons for this month
+            let lessonQuery = {
+              course: course._id,
+              institution: institutionId,
+              date: { $gte: monthStart, $lte: monthEnd },
+              status: { $ne: 'cancelled' }
+            };
+
+            if (isBirebir) {
+              lessonQuery.student = studentId;
+            } else {
+              lessonQuery.$or = [
+                { student: studentId },
+                { student: null },
+                { student: { $exists: false } }
+              ];
+            }
+
+            const lessons = await ScheduledLesson.find(lessonQuery).lean();
+            let lessonCount = lessons.length;
+
+            // First month: count lessons after enrollment
+            if (m === 0) {
+              lessonCount = lessons.filter(l => parseDate(l.date) >= startDate).length;
+            }
+
+            // Last month: count lessons before period end
+            if (m === durationMonths - 1 && endDate) {
+              lessonCount = lessons.filter(l => {
+                const ld = parseDate(l.date);
+                return (m === 0 ? ld >= startDate : true) && ld <= endDate;
+              }).length;
+            }
+
+            totalLessons += lessonCount;
+
+            const monthName = `${monthNames[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`;
+            const isPartial = (m === 0 || m === durationMonths - 1) && lessonCount < expectedLessonsPerMonth;
+            const amount = isBirebir || isPartial ? lessonCount * perLessonFee : monthlyFee;
+
+            monthlyBreakdown.push({
+              monthName,
+              lessonCount,
+              amount,
+              isPartial,
+              isBirebir
+            });
+          }
+
+          // Calculate discount
+          const discountRatio = plan.totalAmount > 0 ? plan.discountedAmount / plan.totalAmount : 1;
+          const hasDiscount = plan.discountedAmount < plan.totalAmount;
+          const discountedMonthlyFee = Math.floor(monthlyFee * discountRatio);
+          const discountedPerLessonFee = Math.floor(discountedMonthlyFee / expectedLessonsPerMonth);
+
+          // Add discounted amounts to breakdown
+          monthlyBreakdown.forEach(month => {
+            if (month.isPartial || month.isBirebir) {
+              month.discountedAmount = month.lessonCount * discountedPerLessonFee;
+            } else {
+              month.discountedAmount = discountedMonthlyFee;
+            }
+          });
+
+          const lessonDetails = {
+            monthlyFee,
+            perLessonFee,
+            totalLessons,
+            durationMonths,
+            hasDiscount,
+            discountedMonthlyFee,
+            discountedPerLessonFee,
+            isBirebir
+          };
+
           return {
             paymentPlan: plan.toObject(),
-            course: course ? course.toObject() : null,
-            enrollment: plan.enrollment ? plan.enrollment.toObject() : null,
-            monthlyBreakdown: [], // Skip for memory
-            lessonDetails: null
+            course: course.toObject(),
+            enrollment: enrollment ? enrollment.toObject() : null,
+            monthlyBreakdown,
+            lessonDetails
           };
-        });
+        }));
 
         // Generate PDF to temp file
         const tempPath = path.join(tempDir, `report_${studentId}_${Date.now()}.pdf`);
