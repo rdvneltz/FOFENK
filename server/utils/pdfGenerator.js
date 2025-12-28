@@ -139,7 +139,7 @@ const generatePaymentPlanPDF = (paymentPlan, student, course, institution, outpu
         const col3 = tableLeft + 250;
         const col4 = tableLeft + 400;
 
-        doc.fontSize(10).font('Helvetica-Bold');
+        doc.fontSize(10).font(fonts.bold);
         doc.text('Taksit No', col1, tableTop);
         doc.text('Vade Tarihi', col2, tableTop);
         doc.text('Tutar', col3, tableTop);
@@ -148,7 +148,7 @@ const generatePaymentPlanPDF = (paymentPlan, student, course, institution, outpu
         doc.moveTo(tableLeft, tableTop + 15).lineTo(tableLeft + 500, tableTop + 15).stroke();
 
         // Taksitler
-        doc.font('Helvetica');
+        doc.font(fonts.regular);
         let currentY = tableTop + 25;
 
         paymentPlan.installments.forEach((installment, index) => {
