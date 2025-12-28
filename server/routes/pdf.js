@@ -776,7 +776,19 @@ router.get('/bulk-student-report', async (req, res) => {
 
         // Monthly breakdown table
         doc.moveDown(0.5);
-        doc.fontSize(9).font('Bold').text('Ders Detaylari:', sideMargin);
+        doc.fontSize(9).font('Bold').text('Ders Detaylari - ', sideMargin, doc.y, { continued: true });
+        doc.font('Regular');
+        if (hasDiscount && !isFullScholarship) {
+          // Show both original and discounted fees
+          doc.text(`Aylik: ${formatCurrency(monthlyFee)} | Ders Basi: ${formatCurrency(perLessonFee)}`);
+          doc.fillColor('green')
+            .text(`Indirimli Aylik: ${formatCurrency(discountedMonthlyFee)} | Indirimli Ders Basi: ${formatCurrency(discountedPerLessonFee)}`, sideMargin);
+          doc.fillColor('black');
+        } else if (!isFullScholarship) {
+          doc.text(`Aylik: ${formatCurrency(monthlyFee)} | Ders Basi: ${formatCurrency(perLessonFee)}`);
+        } else {
+          doc.text('TAM BURSLU');
+        }
         doc.moveDown(0.2);
 
         const monthNames = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
