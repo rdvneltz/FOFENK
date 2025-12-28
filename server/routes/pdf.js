@@ -579,10 +579,9 @@ router.get('/bulk-student-report', async (req, res) => {
       return res.status(404).json({ message: 'Kurum bulunamadı' });
     }
 
-    // Get student IDs only first
+    // Get student IDs only first (all statuses - passive students may still have balances)
     const studentQuery = {
-      institution: institutionId,
-      status: { $in: ['active', 'trial'] }
+      institution: institutionId
     };
     if (seasonId) studentQuery.season = seasonId;
 
