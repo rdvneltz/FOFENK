@@ -276,33 +276,70 @@ const Students = () => {
     return null;
   };
 
-  // Handle bulk PDF download (ZIP with all students in batches of 20)
+  // Handle bulk PDF download - downloads each student's report individually
+  const [bulkDownloadProgress, setBulkDownloadProgress] = useState({ current: 0, total: 0 });
+
   const handleBulkPdfDownload = async () => {
+    const studentsToDownload = students.filter(s => s.status === 'active' || s.status === 'trial');
+
+    if (studentsToDownload.length === 0) {
+      alert('İndirilecek öğrenci bulunamadı');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `${studentsToDownload.length} öğrencinin raporu tek tek indirilecek.\n\n` +
+      `Her rapor arasında 1 saniye beklenecek.\n` +
+      `Tahmini süre: ~${studentsToDownload.length} saniye\n\n` +
+      `Devam etmek istiyor musunuz?`
+    );
+
+    if (!confirmed) return;
+
     try {
       setBulkPdfLoading(true);
-      const response = await api.get('/pdf/bulk-student-report', {
-        params: {
-          institutionId: institution._id,
-          seasonId: season._id
-        },
-        responseType: 'blob',
-        timeout: 120000 // 2 minutes timeout for large reports
-      });
+      setBulkDownloadProgress({ current: 0, total: studentsToDownload.length });
 
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      // ZIP file with all student reports
-      link.setAttribute('download', `Toplu_Ogrenci_Raporlari_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.zip`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      for (let i = 0; i < studentsToDownload.length; i++) {
+        const student = studentsToDownload[i];
+        setBulkDownloadProgress({ current: i + 1, total: studentsToDownload.length });
+
+        try {
+          const response = await api.get(`/pdf/student-status-report/${student._id}`, {
+            params: {
+              institutionId: institution._id,
+              seasonId: season._id
+            },
+            responseType: 'blob',
+            timeout: 30000
+          });
+
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `Rapor_${student.firstName}_${student.lastName}.pdf`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          window.URL.revokeObjectURL(url);
+
+          // Wait 1 second between downloads to not overwhelm the server
+          if (i < studentsToDownload.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        } catch (err) {
+          console.error(`Failed to download report for ${student.firstName} ${student.lastName}:`, err);
+          // Continue with next student
+        }
+      }
+
+      alert(`${studentsToDownload.length} öğrenci raporu indirildi!`);
     } catch (error) {
       console.error('Bulk PDF error:', error);
       alert('Toplu rapor oluşturulurken bir hata oluştu');
     } finally {
       setBulkPdfLoading(false);
+      setBulkDownloadProgress({ current: 0, total: 0 });
     }
   };
 
@@ -425,7 +462,7 @@ const Students = () => {
                 Email ({selectedStudents.length})
               </Button>
             )}
-            <Tooltip title={`Tüm öğrencilerin raporunu ZIP olarak indir (${students.length} öğrenci, 20'şerli gruplar halinde)`}>
+            <Tooltip title={`Tüm öğrencilerin raporunu tek tek indir (${students.length} öğrenci)`}>
               <span>
                 <Button
                   size="small"
@@ -435,7 +472,9 @@ const Students = () => {
                   onClick={handleBulkPdfDownload}
                   disabled={bulkPdfLoading || students.length === 0}
                 >
-                  {bulkPdfLoading ? 'Hazırlanıyor...' : `Toplu Rapor (${students.length})`}
+                  {bulkPdfLoading && bulkDownloadProgress.total > 0
+                    ? `${bulkDownloadProgress.current}/${bulkDownloadProgress.total}`
+                    : `Toplu Rapor (${students.length})`}
                 </Button>
               </span>
             </Tooltip>
