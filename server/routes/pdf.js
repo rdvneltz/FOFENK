@@ -561,11 +561,11 @@ router.get('/attendance-history/:studentId', async (req, res) => {
   }
 });
 
-// Toplu Öğrenci Raporu - Basitleştirilmiş (Memory-safe)
-// Her öğrenci tek tek işlenir, letterhead KULLANILMAZ (bellek tasarrufu)
+// Toplu Öğrenci Raporu - Tekli raporla aynı içerik, letterhead yok
 router.get('/bulk-student-report', async (req, res) => {
   const archiver = require('archiver');
-  const PDFDocument = require('pdfkit');
+  const { generateStudentStatusReportPDF } = require('../utils/pdfGenerator');
+  const os = require('os');
 
   try {
     const { institutionId, seasonId } = req.query;
@@ -574,12 +574,12 @@ router.get('/bulk-student-report', async (req, res) => {
       return res.status(400).json({ message: 'Kurum ID gerekli' });
     }
 
-    const institution = await Institution.findById(institutionId).lean();
+    const institution = await Institution.findById(institutionId);
     if (!institution) {
       return res.status(404).json({ message: 'Kurum bulunamadı' });
     }
 
-    // Get student IDs only first (minimal memory)
+    // Get student IDs only first
     const studentQuery = {
       institution: institutionId,
       status: { $in: ['active', 'trial'] }
@@ -597,109 +597,71 @@ router.get('/bulk-student-report', async (req, res) => {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="Toplu_Raporlar_${dateStr}.zip"`);
 
-    // Create ZIP with minimal compression (faster, less memory)
+    // Create ZIP
     const archive = archiver('zip', { zlib: { level: 1 } });
     archive.pipe(res);
 
-    // Turkey timezone offset
-    const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
-    const formatDateTR = (date) => {
-      if (!date) return '-';
-      const d = new Date(date);
-      if (isNaN(d.getTime())) return '-';
-      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
-      return `${adjusted.getUTCDate().toString().padStart(2, '0')}.${(adjusted.getUTCMonth() + 1).toString().padStart(2, '0')}.${adjusted.getUTCFullYear()}`;
-    };
+    // Temp directory for PDFs
+    const tempDir = os.tmpdir();
 
-    const formatCurrency = (amount) => {
-      if (!amount && amount !== 0) return '-';
-      return `₺${Math.round(amount).toLocaleString('tr-TR')}`;
-    };
-
-    // Process each student ONE AT A TIME
+    // Process each student ONE AT A TIME (memory efficient)
     for (let i = 0; i < studentIds.length; i++) {
       const studentId = studentIds[i]._id;
 
-      // Fetch this student's data
-      const student = await Student.findById(studentId)
-        .select('firstName lastName phone email parentContacts')
-        .lean();
+      try {
+        // Get student
+        const student = await Student.findById(studentId);
+        if (!student) continue;
 
-      if (!student) continue;
+        // Get payment plans with full data (same as individual report)
+        const paymentPlansQuery = {
+          student: studentId,
+          status: { $ne: 'cancelled' }
+        };
+        if (seasonId) paymentPlansQuery.season = seasonId;
 
-      // Fetch payment plans
-      const plansQuery = { student: studentId, status: { $ne: 'cancelled' } };
-      if (seasonId) plansQuery.season = seasonId;
+        const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
+          .populate('course')
+          .populate('enrollment')
+          .populate('season')
+          .sort({ createdAt: -1 });
 
-      const plans = await PaymentPlan.find(plansQuery)
-        .populate('course', 'name')
-        .lean();
+        // Build payment plan data (simplified - skip monthly breakdown for memory)
+        const paymentPlansData = paymentPlans.map(plan => {
+          const course = plan.course;
+          return {
+            paymentPlan: plan.toObject(),
+            course: course ? course.toObject() : null,
+            enrollment: plan.enrollment ? plan.enrollment.toObject() : null,
+            monthlyBreakdown: [], // Skip for memory
+            lessonDetails: null
+          };
+        });
 
-      // Create a simple PDF (NO letterhead, NO custom fonts)
-      const chunks = [];
-      const doc = new PDFDocument({ margin: 50, size: 'A4', bufferPages: false });
+        // Generate PDF to temp file
+        const tempPath = path.join(tempDir, `report_${studentId}_${Date.now()}.pdf`);
 
-      doc.on('data', chunk => chunks.push(chunk));
+        // Use existing PDF generator but WITHOUT letterhead (pass null)
+        await generateStudentStatusReportPDF({
+          student: student.toObject(),
+          institution: institution.toObject(),
+          paymentPlans: paymentPlansData,
+          letterhead: null // NO letterhead for bulk reports
+        }, tempPath);
 
-      // Simple header
-      doc.fontSize(16).text(institution.name, { align: 'center' });
-      doc.moveDown(0.5);
-      doc.fontSize(12).text('ÖĞRENCİ DURUM RAPORU', { align: 'center' });
-      doc.moveDown(0.3);
-      doc.fontSize(9).text(`Tarih: ${formatDateTR(new Date())}`, { align: 'center' });
-      doc.moveDown(1);
+        // Add to ZIP
+        const fileName = `${student.firstName}_${student.lastName}.pdf`.replace(/\s+/g, '_');
+        archive.file(tempPath, { name: fileName });
 
-      // Student info
-      doc.fontSize(11).text(`Öğrenci: ${student.firstName} ${student.lastName}`);
-      if (student.phone) doc.text(`Tel: ${student.phone}`);
-      if (student.parentContacts?.[0]) {
-        const p = student.parentContacts[0];
-        doc.text(`Veli: ${p.name} - ${p.phone}`);
+        // Clean up temp file after adding to archive
+        setTimeout(() => {
+          try { fs.unlinkSync(tempPath); } catch (e) { /* ignore */ }
+        }, 1000);
+
+      } catch (err) {
+        console.error(`Error processing student ${studentId}:`, err.message);
+        // Continue with next student
       }
-      doc.moveDown(1);
-
-      // Payment plans
-      if (plans.length === 0) {
-        doc.fillColor('orange').text('Ödeme planı bulunmuyor');
-        doc.fillColor('black');
-      } else {
-        for (const plan of plans) {
-          const courseName = plan.course?.name || 'Kurs';
-          const total = plan.totalAmount || 0;
-          const paid = plan.paidAmount || 0;
-          const remaining = total - paid;
-
-          doc.fontSize(10).fillColor('blue').text(courseName);
-          doc.fillColor('black').fontSize(9);
-          doc.text(`  Toplam: ${formatCurrency(total)} | Ödenen: ${formatCurrency(paid)} | Kalan: ${formatCurrency(remaining)}`);
-
-          // Installments (compact)
-          if (plan.installments?.length > 0) {
-            const instLine = plan.installments.map((inst, idx) => {
-              const status = inst.isPaid ? '✓' : '';
-              return `${idx + 1}.${formatDateTR(inst.dueDate)}:${formatCurrency(inst.amount)}${status}`;
-            }).join(' | ');
-            doc.fontSize(7).text(`  Taksitler: ${instLine}`);
-          }
-          doc.moveDown(0.5);
-        }
-      }
-
-      doc.end();
-
-      // Wait for PDF to complete
-      await new Promise((resolve, reject) => {
-        doc.on('end', resolve);
-        doc.on('error', reject);
-      });
-
-      // Add to ZIP
-      const pdfBuffer = Buffer.concat(chunks);
-      const fileName = `${student.firstName}_${student.lastName}.pdf`.replace(/\s+/g, '_');
-      archive.append(pdfBuffer, { name: fileName });
-
-      // Force garbage collection hint (clear references)
-      chunks.length = 0;
     }
 
     // Finalize ZIP
