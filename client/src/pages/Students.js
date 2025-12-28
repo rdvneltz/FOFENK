@@ -28,6 +28,7 @@ import {
   CardContent,
   Grid,
   Fab,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add,
@@ -42,6 +43,9 @@ import {
   WhatsApp,
   Send,
   MoreVert,
+  PictureAsPdf,
+  Warning,
+  ErrorOutline,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -60,7 +64,9 @@ const Students = () => {
   const [students, setStudents] = useState([]);
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
+  const [paymentPlans, setPaymentPlans] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [bulkPdfLoading, setBulkPdfLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [courseFilter, setCourseFilter] = useState('');
   const [selectedStudents, setSelectedStudents] = useState([]);
@@ -122,7 +128,7 @@ const Students = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [studentsRes, coursesRes, enrollmentsRes] = await Promise.all([
+      const [studentsRes, coursesRes, enrollmentsRes, paymentPlansRes] = await Promise.all([
         api.get('/students', {
           params: {
             institutionId: institution._id,
@@ -136,10 +142,14 @@ const Students = () => {
         api.get('/enrollments', {
           params: { seasonId: season._id, isActive: true },
         }),
+        api.get('/payment-plans', {
+          params: { institutionId: institution._id, seasonId: season._id },
+        }),
       ]);
       setStudents(studentsRes.data);
       setCourses(coursesRes.data);
       setEnrollments(enrollmentsRes.data);
+      setPaymentPlans(paymentPlansRes.data);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -199,6 +209,99 @@ const Students = () => {
         })}
       </Box>
     );
+  };
+
+  // Check student status for issues (no enrollment, missing payment plans)
+  const getStudentIssues = (studentId) => {
+    const studentEnrollments = enrollments.filter(e =>
+      (e.student?._id === studentId || e.student === studentId) && e.isActive
+    );
+    const studentPaymentPlans = paymentPlans.filter(p =>
+      (p.student?._id === studentId || p.student === studentId) && p.status !== 'cancelled'
+    );
+
+    const issues = [];
+
+    // No enrollment at all
+    if (studentEnrollments.length === 0) {
+      issues.push({ type: 'no_enrollment', message: 'Kursa kayıtlı değil' });
+    } else {
+      // Check if each enrollment has a payment plan
+      const enrollmentCourseIds = studentEnrollments.map(e => e.course?._id || e.course);
+      const planCourseIds = studentPaymentPlans.map(p => p.course?._id || p.course);
+
+      const missingPlanCourses = studentEnrollments.filter(e => {
+        const courseId = e.course?._id || e.course;
+        return !planCourseIds.some(pId => String(pId) === String(courseId));
+      });
+
+      if (missingPlanCourses.length > 0) {
+        const courseNames = missingPlanCourses.map(e => e.course?.name || 'Ders').join(', ');
+        issues.push({
+          type: 'missing_payment_plan',
+          message: `Ödeme planı eksik: ${courseNames}`,
+          count: missingPlanCourses.length
+        });
+      }
+    }
+
+    return issues;
+  };
+
+  // Get issue indicator for a student
+  const getStudentIssueIndicator = (studentId) => {
+    const issues = getStudentIssues(studentId);
+    if (issues.length === 0) return null;
+
+    const hasNoEnrollment = issues.some(i => i.type === 'no_enrollment');
+    const hasMissingPaymentPlan = issues.some(i => i.type === 'missing_payment_plan');
+
+    if (hasNoEnrollment) {
+      return (
+        <Tooltip title="Kursa kayıtlı değil">
+          <ErrorOutline sx={{ fontSize: 18, color: 'error.main', ml: 0.5 }} />
+        </Tooltip>
+      );
+    }
+
+    if (hasMissingPaymentPlan) {
+      const missingCount = issues.find(i => i.type === 'missing_payment_plan')?.count || 1;
+      return (
+        <Tooltip title={issues.find(i => i.type === 'missing_payment_plan')?.message}>
+          <Warning sx={{ fontSize: 18, color: 'warning.main', ml: 0.5 }} />
+        </Tooltip>
+      );
+    }
+
+    return null;
+  };
+
+  // Handle bulk PDF download
+  const handleBulkPdfDownload = async () => {
+    try {
+      setBulkPdfLoading(true);
+      const response = await api.get('/pdf/bulk-student-report', {
+        params: {
+          institutionId: institution._id,
+          seasonId: season._id
+        },
+        responseType: 'blob'
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Toplu_Ogrenci_Raporu_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Bulk PDF error:', error);
+      alert('Toplu rapor oluşturulurken bir hata oluştu');
+    } finally {
+      setBulkPdfLoading(false);
+    }
   };
 
   const filteredStudents = students.filter((student) => {
@@ -320,6 +423,16 @@ const Students = () => {
                 Email ({selectedStudents.length})
               </Button>
             )}
+            <Button
+              size="small"
+              variant="outlined"
+              color="secondary"
+              startIcon={bulkPdfLoading ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />}
+              onClick={handleBulkPdfDownload}
+              disabled={bulkPdfLoading || students.length === 0}
+            >
+              {bulkPdfLoading ? 'Hazırlanıyor...' : 'Toplu Rapor'}
+            </Button>
             <Button size="small" variant="outlined" startIcon={<FileDownload />} onClick={handleExportToExcel}>
               Excel
             </Button>
@@ -384,6 +497,7 @@ const Students = () => {
                               <Typography variant="subtitle1" fontWeight="bold" noWrap>
                                 {student.firstName} {student.lastName}
                               </Typography>
+                              {getStudentIssueIndicator(student._id)}
                               {getDiscountBadges(student)}
                               {student.status === 'active' ? (
                                 <Chip label="Kayıtlı" color="success" size="small" sx={{ height: 20 }} />
@@ -502,6 +616,7 @@ const Students = () => {
                               <Typography variant="body2" fontWeight="medium">
                                 {student.firstName} {student.lastName}
                               </Typography>
+                              {getStudentIssueIndicator(student._id)}
                               {getDiscountBadges(student)}
                             </Box>
                             <Typography variant="caption" color="text.secondary">

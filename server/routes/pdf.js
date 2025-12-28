@@ -10,7 +10,7 @@ const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
 const Settings = require('../models/Settings');
 const ScheduledLesson = require('../models/ScheduledLesson');
 const Season = require('../models/Season');
-const { generatePaymentPlanPDF, generateStudentStatusReportPDF, generateAttendanceHistoryPDF } = require('../utils/pdfGenerator');
+const { generatePaymentPlanPDF, generateStudentStatusReportPDF, generateAttendanceHistoryPDF, generateBulkStudentReportPDF } = require('../utils/pdfGenerator');
 const Attendance = require('../models/Attendance');
 
 // Ödeme planı PDF'i oluştur
@@ -557,6 +557,104 @@ router.get('/attendance-history/:studentId', async (req, res) => {
     });
   } catch (error) {
     console.error('Yoklama Geçmişi Raporu oluşturma hatası:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Toplu Öğrenci Raporu PDF'i oluştur
+router.get('/bulk-student-report', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.query;
+
+    if (!institutionId) {
+      return res.status(400).json({ message: 'Kurum ID gerekli' });
+    }
+
+    // Get institution
+    const institution = await Institution.findById(institutionId);
+    if (!institution) {
+      return res.status(404).json({ message: 'Kurum bulunamadı' });
+    }
+
+    // Get settings for letterhead
+    const settings = await Settings.findOne({ institution: institutionId });
+    const letterhead = settings?.letterhead || null;
+
+    // Get all active students for this institution and season
+    const studentQuery = {
+      institution: institutionId,
+      status: { $in: ['active', 'trial'] }
+    };
+    if (seasonId) {
+      studentQuery.season = seasonId;
+    }
+
+    const students = await Student.find(studentQuery)
+      .sort({ firstName: 1, lastName: 1 });
+
+    if (students.length === 0) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    // Build data for each student
+    const studentsData = await Promise.all(students.map(async (student) => {
+      // Get payment plans for this student
+      const paymentPlansQuery = {
+        student: student._id,
+        status: { $ne: 'cancelled' }
+      };
+      if (seasonId) paymentPlansQuery.season = seasonId;
+
+      const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
+        .populate('course')
+        .populate('enrollment')
+        .sort({ createdAt: -1 });
+
+      // Build payment plan data
+      const paymentPlansData = paymentPlans.map(plan => ({
+        paymentPlan: plan.toObject(),
+        course: plan.course?.toObject() || null,
+        enrollment: plan.enrollment?.toObject() || null
+      }));
+
+      return {
+        student: student.toObject(),
+        paymentPlans: paymentPlansData
+      };
+    }));
+
+    // PDF dosyası için path
+    const pdfDir = path.join(__dirname, '../uploads/pdfs');
+    if (!fs.existsSync(pdfDir)) {
+      fs.mkdirSync(pdfDir, { recursive: true });
+    }
+
+    const filename = `toplu-rapor-${institutionId}-${Date.now()}.pdf`;
+    const filepath = path.join(pdfDir, filename);
+
+    // Generate PDF
+    await generateBulkStudentReportPDF({
+      students: studentsData,
+      institution: institution.toObject(),
+      letterhead
+    }, filepath);
+
+    // Send PDF
+    res.download(filepath, `Toplu_Ogrenci_Raporu_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.pdf`, (err) => {
+      if (err) {
+        console.error('PDF gönderim hatası:', err);
+      }
+      // Cleanup after send
+      setTimeout(() => {
+        try {
+          fs.unlinkSync(filepath);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }, 5000);
+    });
+  } catch (error) {
+    console.error('Toplu Rapor oluşturma hatası:', error);
     res.status(500).json({ message: error.message });
   }
 });
