@@ -579,10 +579,9 @@ router.get('/bulk-student-report', async (req, res) => {
       return res.status(404).json({ message: 'Kurum bulunamadı' });
     }
 
-    // Get student IDs only first
+    // Get student IDs only first (all statuses - passive students may still have balances)
     const studentQuery = {
-      institution: institutionId,
-      status: { $in: ['active', 'trial'] }
+      institution: institutionId
     };
     if (seasonId) studentQuery.season = seasonId;
 
@@ -796,8 +795,8 @@ router.get('/bulk-student-report', async (req, res) => {
           letterhead: null // NO letterhead for bulk reports
         }, tempPath);
 
-        // Add to ZIP
-        const fileName = `${student.firstName}_${student.lastName}.pdf`.replace(/\s+/g, '_');
+        // Add to ZIP (include student ID to handle duplicate names)
+        const fileName = `${student.firstName}_${student.lastName}_${studentId.toString().slice(-6)}.pdf`.replace(/\s+/g, '_');
         archive.file(tempPath, { name: fileName });
 
         // Clean up temp file after adding to archive

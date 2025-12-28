@@ -306,13 +306,28 @@ const Students = () => {
     }
   };
 
+  // Turkish-aware lowercase function (handles İ→i, I→ı, etc.)
+  const toTurkishLower = (str) => {
+    if (!str) return '';
+    return str
+      .replace(/İ/g, 'i')
+      .replace(/I/g, 'ı')
+      .replace(/Ş/g, 'ş')
+      .replace(/Ğ/g, 'ğ')
+      .replace(/Ü/g, 'ü')
+      .replace(/Ö/g, 'ö')
+      .replace(/Ç/g, 'ç')
+      .toLowerCase();
+  };
+
   const filteredStudents = students.filter((student) => {
-    const search = searchTerm.toLowerCase();
+    const search = toTurkishLower(searchTerm);
+    // Combine firstName + lastName for "isim soyisim" search
+    const fullName = toTurkishLower(`${student.firstName} ${student.lastName}`);
     const matchesSearch =
-      student.firstName.toLowerCase().includes(search) ||
-      student.lastName.toLowerCase().includes(search) ||
-      student.phone?.includes(search) ||
-      student.email?.toLowerCase().includes(search);
+      fullName.includes(search) ||
+      student.phone?.includes(searchTerm) ||
+      toTurkishLower(student.email).includes(search);
 
     // Course filter
     if (courseFilter) {
