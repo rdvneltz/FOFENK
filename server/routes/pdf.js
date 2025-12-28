@@ -648,27 +648,10 @@ router.get('/bulk-student-report', async (req, res) => {
     const sideMargin = 40;
     const topMargin = 50;
     const bottomMargin = 60;
-    let globalPageNum = 0;
 
-    // Helper: Add footer to current page
-    const addFooter = () => {
-      const footerY = doc.page.height - 30;
-      doc.fontSize(8).font('Regular')
-        .text(
-          `${institution.name} - Sayfa ${globalPageNum}`,
-          sideMargin,
-          footerY,
-          { align: 'center', width: doc.page.width - (sideMargin * 2) }
-        );
-    };
-
-    // Helper: Add new page with footer
+    // Helper: Add new page (NO footer)
     const addNewPage = () => {
-      if (globalPageNum > 0) {
-        addFooter(); // Add footer to previous page before creating new one
-      }
       doc.addPage();
-      globalPageNum++;
       doc.y = topMargin;
     };
 
@@ -781,6 +764,16 @@ router.get('/bulk-student-report', async (req, res) => {
         const expectedLessonsPerMonth = course.weeklyFrequency ? course.weeklyFrequency * 4 : 4;
         const perLessonFee = course.pricePerLesson || (monthlyFee / expectedLessonsPerMonth);
 
+        // Calculate discount info FIRST
+        const planTotal = plan.totalAmount || 0;
+        const discountedAmount = plan.discountedAmount !== undefined && plan.discountedAmount !== null
+          ? plan.discountedAmount : planTotal;
+        const hasDiscount = discountedAmount < planTotal;
+        const isFullScholarship = discountedAmount === 0;
+        const discountRatio = planTotal > 0 ? discountedAmount / planTotal : 1;
+        const discountedMonthlyFee = Math.floor(monthlyFee * discountRatio);
+        const discountedPerLessonFee = Math.floor(perLessonFee * discountRatio);
+
         // Monthly breakdown table
         doc.moveDown(0.5);
         doc.fontSize(9).font('Bold').text('Ders Detaylari:', sideMargin);
@@ -788,7 +781,7 @@ router.get('/bulk-student-report', async (req, res) => {
 
         const monthNames = ['Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
         let totalLessons = 0;
-        let totalAmount = 0;
+        let totalDiscountedAmount = 0;
 
         const tableLeft = sideMargin;
         let tableY = doc.y;
@@ -796,12 +789,12 @@ router.get('/bulk-student-report', async (req, res) => {
         doc.fontSize(8).font('Bold');
         doc.text('Ay', tableLeft, tableY);
         doc.text('Ders', tableLeft + 100, tableY);
-        doc.text('Tutar', tableLeft + 160, tableY);
-        doc.moveTo(tableLeft, tableY + 12).lineTo(tableLeft + 220, tableY + 12).stroke();
+        doc.text('Ucret', tableLeft + 160, tableY);
+        doc.moveTo(tableLeft, tableY + 12).lineTo(tableLeft + 280, tableY + 12).stroke();
         tableY += 16;
 
         doc.font('Regular');
-        for (let m = 0; m < durationMonths && m < 12; m++) { // Max 12 months to save space
+        for (let m = 0; m < durationMonths && m < 12; m++) {
           const monthStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m, 1, 0, 0, 0, 0));
           const monthEnd = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + m + 1, 0, 23, 59, 59));
 
@@ -837,8 +830,9 @@ router.get('/bulk-student-report', async (req, res) => {
 
           totalLessons += lessonCount;
           const isPartial = (m === 0 || m === durationMonths - 1) && lessonCount < expectedLessonsPerMonth;
-          const amount = isBirebir || isPartial ? lessonCount * perLessonFee : monthlyFee;
-          totalAmount += amount;
+          const originalAmount = isBirebir || isPartial ? lessonCount * perLessonFee : monthlyFee;
+          const discAmount = isBirebir || isPartial ? lessonCount * discountedPerLessonFee : discountedMonthlyFee;
+          totalDiscountedAmount += discAmount;
 
           const monthName = `${monthNames[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`;
 
@@ -847,66 +841,110 @@ router.get('/bulk-student-report', async (req, res) => {
             tableY = doc.y;
           }
 
-          doc.text(monthName, tableLeft, tableY);
+          doc.fillColor('black').text(monthName, tableLeft, tableY);
           doc.text(`${lessonCount} ders`, tableLeft + 100, tableY);
-          doc.text(formatCurrency(amount), tableLeft + 160, tableY);
+
+          // Show price with discount (strikethrough original + green discounted)
+          if (hasDiscount && !isFullScholarship) {
+            doc.fillColor('gray')
+              .text(formatCurrency(originalAmount), tableLeft + 160, tableY, { strike: true, continued: true });
+            doc.fillColor('green')
+              .text(` ${formatCurrency(discAmount)}`, { strike: false });
+            doc.fillColor('black');
+          } else {
+            doc.text(formatCurrency(discAmount), tableLeft + 160, tableY);
+          }
           tableY += 12;
         }
 
-        doc.moveTo(tableLeft, tableY).lineTo(tableLeft + 220, tableY).stroke();
+        doc.moveTo(tableLeft, tableY).lineTo(tableLeft + 280, tableY).stroke();
         tableY += 4;
-        doc.font('Bold').text(`Toplam: ${totalLessons} ders`, tableLeft, tableY);
+        doc.font('Bold').fillColor('black');
+        if (hasDiscount && !isFullScholarship) {
+          doc.text(`Toplam: ${totalLessons} ders = `, tableLeft, tableY, { continued: true });
+          doc.fillColor('green').text(formatCurrency(totalDiscountedAmount));
+          doc.fillColor('black');
+        } else {
+          doc.text(`Toplam: ${totalLessons} ders = ${formatCurrency(totalDiscountedAmount)}`, tableLeft, tableY);
+        }
         doc.y = tableY + 15;
 
         // Payment summary
         checkPageBreak(80);
         doc.fontSize(10).font('Bold');
-        const planTotal = plan.totalAmount || 0;
-        const discountedAmount = plan.discountedAmount !== undefined && plan.discountedAmount !== null
-          ? plan.discountedAmount : planTotal;
-        const hasDiscount = discountedAmount < planTotal;
-        const isFullScholarship = discountedAmount === 0;
         const paidAmount = plan.paidAmount || 0;
         const remaining = discountedAmount - paidAmount;
 
-        doc.text(`Toplam: ${formatCurrency(planTotal)}`);
-
         if (isFullScholarship) {
-          doc.fillColor('green').text('TAM BURSLU');
+          doc.fillColor('green').text('TAM BURSLU - ODEME GEREKMIYOR');
           doc.fillColor('black');
-        } else if (hasDiscount) {
-          const discountPercent = Math.round((1 - discountedAmount / planTotal) * 100);
-          doc.fillColor('green').text(`%${discountPercent} Indirimli: ${formatCurrency(discountedAmount)}`);
-          doc.fillColor('black');
+        } else {
+          doc.text(`Toplam Tutar: ${formatCurrency(planTotal)}`);
+          if (hasDiscount) {
+            const discountPercent = Math.round((1 - discountedAmount / planTotal) * 100);
+            doc.fillColor('green').text(`%${discountPercent} Indirimli Tutar: ${formatCurrency(discountedAmount)}`);
+            doc.fillColor('black');
+          }
+          doc.text(`Odenen: ${formatCurrency(paidAmount)}`);
+          if (remaining > 0) {
+            doc.fillColor('red').text(`Kalan Borc: ${formatCurrency(remaining)}`);
+            doc.fillColor('black');
+          } else {
+            doc.fillColor('green').text('ODEME TAMAMLANDI');
+            doc.fillColor('black');
+          }
         }
 
-        doc.text(`Odenen: ${formatCurrency(paidAmount)}`);
+        // DETAILED Installments table
+        if (plan.installments && plan.installments.length > 0 && !isFullScholarship) {
+          checkPageBreak(100);
+          doc.moveDown(0.5);
+          doc.fontSize(9).font('Bold').text('Odeme Plani:', sideMargin);
+          doc.moveDown(0.2);
 
-        if (remaining > 0) {
-          doc.fillColor('red').text(`Kalan Borc: ${formatCurrency(remaining)}`);
-          doc.fillColor('black');
-        } else if (!isFullScholarship) {
-          doc.fillColor('green').text('ODEME TAMAMLANDI');
-          doc.fillColor('black');
-        }
+          let instY = doc.y;
+          const instLeft = sideMargin;
 
-        // Installments summary (compact)
-        if (plan.installments && plan.installments.length > 0) {
-          checkPageBreak(60);
-          doc.moveDown(0.3);
-          doc.fontSize(9).font('Bold').text('Taksitler:');
+          // Table header
+          doc.fontSize(8).font('Bold');
+          doc.text('Taksit', instLeft, instY);
+          doc.text('Vade', instLeft + 50, instY);
+          doc.text('Tutar', instLeft + 120, instY);
+          doc.text('Durum', instLeft + 180, instY);
+          doc.text('Odeme Tarihi', instLeft + 260, instY);
+          doc.moveTo(instLeft, instY + 12).lineTo(instLeft + 350, instY + 12).stroke();
+          instY += 16;
+
           doc.font('Regular');
+          for (let idx = 0; idx < plan.installments.length; idx++) {
+            const inst = plan.installments[idx];
 
-          const overdue = plan.installments.filter(i => !i.isPaid && new Date(i.dueDate) < new Date()).length;
-          const pending = plan.installments.filter(i => !i.isPaid && new Date(i.dueDate) >= new Date()).length;
-          const paid = plan.installments.filter(i => i.isPaid).length;
+            if (instY > doc.page.height - bottomMargin - 20) {
+              addNewPage();
+              instY = doc.y;
+            }
 
-          let statusText = `${plan.installments.length} taksit: `;
-          if (paid > 0) statusText += `${paid} odendi, `;
-          if (overdue > 0) statusText += `${overdue} gecikti, `;
-          if (pending > 0) statusText += `${pending} bekliyor`;
+            const isPaid = inst.isPaid;
+            const isOverdue = !isPaid && new Date(inst.dueDate) < new Date();
 
-          doc.text(statusText.replace(/, $/, ''));
+            doc.fillColor('black').text(`${idx + 1}. Taksit`, instLeft, instY);
+            doc.text(formatDateTR(inst.dueDate), instLeft + 50, instY);
+            doc.text(formatCurrency(inst.amount), instLeft + 120, instY);
+
+            if (isPaid) {
+              doc.fillColor('green').text('ODENDI', instLeft + 180, instY);
+              doc.fillColor('black').text(inst.paidDate ? formatDateTR(inst.paidDate) : '-', instLeft + 260, instY);
+            } else if (isOverdue) {
+              doc.fillColor('red').text('GECIKTI', instLeft + 180, instY);
+              doc.fillColor('black').text('-', instLeft + 260, instY);
+            } else {
+              doc.fillColor('orange').text('BEKLIYOR', instLeft + 180, instY);
+              doc.fillColor('black').text('-', instLeft + 260, instY);
+            }
+            doc.fillColor('black');
+            instY += 12;
+          }
+          doc.y = instY + 5;
         }
 
         doc.moveDown(0.8);
@@ -916,10 +954,7 @@ router.get('/bulk-student-report', async (req, res) => {
       // (Node.js will clean up when needed)
     }
 
-    // Add footer to last page
-    addFooter();
-
-    // Finalize PDF
+    // Finalize PDF (NO footer)
     doc.end();
 
   } catch (error) {
