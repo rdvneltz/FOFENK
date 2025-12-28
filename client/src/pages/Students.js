@@ -276,7 +276,7 @@ const Students = () => {
     return null;
   };
 
-  // Handle bulk PDF download
+  // Handle bulk PDF download (ZIP with all students in batches of 20)
   const handleBulkPdfDownload = async () => {
     try {
       setBulkPdfLoading(true);
@@ -285,13 +285,15 @@ const Students = () => {
           institutionId: institution._id,
           seasonId: season._id
         },
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: 120000 // 2 minutes timeout for large reports
       });
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `Toplu_Ogrenci_Raporu_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.pdf`);
+      // ZIP file with all student reports
+      link.setAttribute('download', `Toplu_Ogrenci_Raporlari_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.zip`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -423,16 +425,20 @@ const Students = () => {
                 Email ({selectedStudents.length})
               </Button>
             )}
-            <Button
-              size="small"
-              variant="outlined"
-              color="secondary"
-              startIcon={bulkPdfLoading ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />}
-              onClick={handleBulkPdfDownload}
-              disabled={bulkPdfLoading || students.length === 0}
-            >
-              {bulkPdfLoading ? 'Hazırlanıyor...' : 'Toplu Rapor'}
-            </Button>
+            <Tooltip title={`Tüm öğrencilerin raporunu ZIP olarak indir (${students.length} öğrenci, 20'şerli gruplar halinde)`}>
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  startIcon={bulkPdfLoading ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />}
+                  onClick={handleBulkPdfDownload}
+                  disabled={bulkPdfLoading || students.length === 0}
+                >
+                  {bulkPdfLoading ? 'Hazırlanıyor...' : `Toplu Rapor (${students.length})`}
+                </Button>
+              </span>
+            </Tooltip>
             <Button size="small" variant="outlined" startIcon={<FileDownload />} onClick={handleExportToExcel}>
               Excel
             </Button>
