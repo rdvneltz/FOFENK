@@ -561,7 +561,7 @@ router.get('/attendance-history/:studentId', async (req, res) => {
   }
 });
 
-// Toplu Öğrenci Raporu PDF'i oluştur
+// Toplu Öğrenci Raporu PDF'i oluştur (Memory-optimized for free tier)
 router.get('/bulk-student-report', async (req, res) => {
   try {
     const { institutionId, seasonId } = req.query;
@@ -570,14 +570,14 @@ router.get('/bulk-student-report', async (req, res) => {
       return res.status(400).json({ message: 'Kurum ID gerekli' });
     }
 
-    // Get institution
-    const institution = await Institution.findById(institutionId);
+    // Get institution (lean for memory efficiency)
+    const institution = await Institution.findById(institutionId).lean();
     if (!institution) {
       return res.status(404).json({ message: 'Kurum bulunamadı' });
     }
 
     // Get settings for letterhead
-    const settings = await Settings.findOne({ institution: institutionId });
+    const settings = await Settings.findOne({ institution: institutionId }).lean();
     const letterhead = settings?.letterhead || null;
 
     // Get all active students for this institution and season
@@ -589,15 +589,23 @@ router.get('/bulk-student-report', async (req, res) => {
       studentQuery.season = seasonId;
     }
 
+    // MEMORY OPTIMIZATION: Limit to 30 students for free tier (512MB)
+    const MAX_STUDENTS = 30;
+    const totalStudents = await Student.countDocuments(studentQuery);
+
     const students = await Student.find(studentQuery)
-      .sort({ firstName: 1, lastName: 1 });
+      .select('firstName lastName phone email parentContacts') // Only select needed fields
+      .sort({ firstName: 1, lastName: 1 })
+      .limit(MAX_STUDENTS)
+      .lean();
 
     if (students.length === 0) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
 
-    // Build data for each student
-    const studentsData = await Promise.all(students.map(async (student) => {
+    // Build data for each student (memory optimized)
+    const studentsData = [];
+    for (const student of students) {
       // Get payment plans for this student
       const paymentPlansQuery = {
         student: student._id,
@@ -606,56 +614,244 @@ router.get('/bulk-student-report', async (req, res) => {
       if (seasonId) paymentPlansQuery.season = seasonId;
 
       const paymentPlans = await PaymentPlan.find(paymentPlansQuery)
-        .populate('course')
-        .populate('enrollment')
-        .sort({ createdAt: -1 });
+        .populate('course', 'name') // Only select name
+        .populate('enrollment', 'enrollmentDate')
+        .sort({ createdAt: -1 })
+        .lean();
 
-      // Build payment plan data
+      // Build payment plan data (minimal)
       const paymentPlansData = paymentPlans.map(plan => ({
-        paymentPlan: plan.toObject(),
-        course: plan.course?.toObject() || null,
-        enrollment: plan.enrollment?.toObject() || null
+        paymentPlan: {
+          totalAmount: plan.totalAmount,
+          discountedAmount: plan.discountedAmount,
+          paidAmount: plan.paidAmount,
+          remainingAmount: plan.remainingAmount,
+          installments: plan.installments
+        },
+        course: plan.course || null,
+        enrollment: plan.enrollment || null
       }));
 
-      return {
-        student: student.toObject(),
+      studentsData.push({
+        student,
         paymentPlans: paymentPlansData
-      };
-    }));
-
-    // PDF dosyası için path
-    const pdfDir = path.join(__dirname, '../uploads/pdfs');
-    if (!fs.existsSync(pdfDir)) {
-      fs.mkdirSync(pdfDir, { recursive: true });
+      });
     }
 
-    const filename = `toplu-rapor-${institutionId}-${Date.now()}.pdf`;
-    const filepath = path.join(pdfDir, filename);
+    // Stream PDF directly to response (no file I/O)
+    const PDFDocument = require('pdfkit');
+    const doc = new PDFDocument({ margin: 40, size: 'A4', bufferPages: true });
 
-    // Generate PDF
-    await generateBulkStudentReportPDF({
-      students: studentsData,
-      institution: institution.toObject(),
-      letterhead
-    }, filepath);
+    // Set response headers for PDF download
+    const filename = `Toplu_Ogrenci_Raporu_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    // Send PDF
-    res.download(filepath, `Toplu_Ogrenci_Raporu_${new Date().toLocaleDateString('tr-TR').replace(/\./g, '_')}.pdf`, (err) => {
-      if (err) {
-        console.error('PDF gönderim hatası:', err);
+    // Pipe directly to response
+    doc.pipe(res);
+
+    // Font setup
+    const FONT_REGULAR = path.join(__dirname, '../assets/fonts/NotoSans-Regular.ttf');
+    const FONT_BOLD = path.join(__dirname, '../assets/fonts/NotoSans-Bold.ttf');
+    let fonts = { regular: 'Helvetica', bold: 'Helvetica-Bold' };
+    if (fs.existsSync(FONT_REGULAR) && fs.existsSync(FONT_BOLD)) {
+      doc.registerFont('Regular', FONT_REGULAR);
+      doc.registerFont('Bold', FONT_BOLD);
+      fonts = { regular: 'Regular', bold: 'Bold' };
+    }
+
+    // Decode letterhead once if exists
+    let letterheadBuffer = null;
+    if (letterhead?.imageUrl && letterhead.imageUrl.startsWith('data:image')) {
+      try {
+        const base64Data = letterhead.imageUrl.split(',')[1];
+        letterheadBuffer = Buffer.from(base64Data, 'base64');
+      } catch (e) {
+        // Ignore letterhead errors
       }
-      // Cleanup after send
-      setTimeout(() => {
+    }
+
+    const topMargin = letterhead?.topMargin || 80;
+    const bottomMargin = letterhead?.bottomMargin || 60;
+    const sideMargin = letterhead?.sideMargin || 40;
+
+    // Helper functions
+    const formatCurrency = (amount) => {
+      if (!amount && amount !== 0) return '-';
+      return `₺${Math.round(amount).toLocaleString('tr-TR')}`;
+    };
+
+    const TURKEY_OFFSET_MS = 3 * 60 * 60 * 1000;
+    const formatDateTR = (date) => {
+      if (!date) return '-';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '-';
+      const adjusted = new Date(d.getTime() + TURKEY_OFFSET_MS);
+      const day = adjusted.getUTCDate().toString().padStart(2, '0');
+      const month = (adjusted.getUTCMonth() + 1).toString().padStart(2, '0');
+      const year = adjusted.getUTCFullYear();
+      return `${day}.${month}.${year}`;
+    };
+
+    const drawLetterhead = () => {
+      if (letterheadBuffer) {
         try {
-          fs.unlinkSync(filepath);
+          doc.image(letterheadBuffer, 0, 0, {
+            width: doc.page.width,
+            height: doc.page.height
+          });
         } catch (e) {
-          // Ignore cleanup errors
+          // Ignore image errors
         }
-      }, 5000);
+      }
+    };
+
+    // Process each student
+    studentsData.forEach((studentData, studentIndex) => {
+      const { student, paymentPlans } = studentData;
+
+      // Add new page for each student (except first)
+      if (studentIndex > 0) {
+        doc.addPage();
+      }
+
+      // Draw letterhead
+      drawLetterhead();
+      doc.y = topMargin;
+
+      // Student header
+      doc.fontSize(14).font(fonts.bold)
+        .text(`${student.firstName} ${student.lastName}`, sideMargin, doc.y, { align: 'center' });
+      doc.moveDown(0.3);
+
+      doc.fontSize(9).font(fonts.regular)
+        .text(`Rapor Tarihi: ${formatDateTR(new Date())}`, { align: 'center' });
+      doc.moveDown(1);
+
+      // Student contact info (compact)
+      doc.fontSize(9).font(fonts.regular);
+      const contactParts = [];
+      if (student.phone) contactParts.push(`Tel: ${student.phone}`);
+      if (student.email) contactParts.push(`E-posta: ${student.email}`);
+      if (contactParts.length > 0) {
+        doc.text(contactParts.join(' | '), { align: 'center' });
+        doc.moveDown(0.5);
+      }
+
+      // Parent info (compact)
+      if (student.parentContacts && student.parentContacts.length > 0) {
+        const parent = student.parentContacts[0];
+        doc.text(`Veli: ${parent.name} (${parent.relationship}) - ${parent.phone}`, { align: 'center' });
+      }
+      doc.moveDown(1);
+
+      // Check if student has any payment plans
+      if (!paymentPlans || paymentPlans.length === 0) {
+        doc.fontSize(10).font(fonts.bold).fillColor('orange')
+          .text('Henüz ödeme planı oluşturulmamış', sideMargin, doc.y, { align: 'center' });
+        doc.fillColor('black');
+        return;
+      }
+
+      // Process each payment plan
+      paymentPlans.forEach((planData) => {
+        const { paymentPlan, course, enrollment } = planData;
+        if (!course) return;
+
+        // Check if we need a new page
+        if (doc.y > doc.page.height - bottomMargin - 150) {
+          doc.addPage();
+          drawLetterhead();
+          doc.y = topMargin;
+        }
+
+        // Course header
+        const courseHeaderY = doc.y;
+        doc.rect(sideMargin, courseHeaderY, doc.page.width - (sideMargin * 2), 18)
+          .fill('#1976d2');
+        doc.fontSize(10).font(fonts.bold).fillColor('white')
+          .text((course.name || 'Ders').toUpperCase(), sideMargin + 5, courseHeaderY + 4);
+        doc.fillColor('black');
+        doc.y = courseHeaderY + 22;
+
+        // Enrollment info
+        doc.fontSize(9).font(fonts.regular);
+        if (enrollment?.enrollmentDate) {
+          doc.text(`Kayıt: ${formatDateTR(enrollment.enrollmentDate)}`, sideMargin);
+        }
+
+        // Payment summary - compact single line
+        const total = paymentPlan.totalAmount || 0;
+        const paid = paymentPlan.paidAmount || 0;
+        const remaining = paymentPlan.remainingAmount || (total - paid);
+
+        doc.font(fonts.bold).fontSize(9)
+          .text(`Toplam: ${formatCurrency(total)}  |  Ödenen: `, sideMargin, doc.y + 5, { continued: true })
+          .fillColor('green').text(formatCurrency(paid), { continued: true })
+          .fillColor('black').text('  |  Kalan: ', { continued: true })
+          .fillColor(remaining > 0 ? 'red' : 'green').text(formatCurrency(remaining));
+        doc.fillColor('black');
+        doc.moveDown(0.8);
+
+        // Installments - super compact (2 per line)
+        if (paymentPlan.installments && paymentPlan.installments.length > 0) {
+          doc.fontSize(7).font(fonts.regular);
+          let instX = sideMargin;
+          const instWidth = (doc.page.width - sideMargin * 2) / 2;
+
+          paymentPlan.installments.forEach((inst, idx) => {
+            const isPaid = inst.isPaid || inst.status === 'paid';
+            const color = isPaid ? 'green' : 'gray';
+
+            doc.fillColor(color)
+              .text(`${idx + 1}. ${formatDateTR(inst.dueDate)}: ${formatCurrency(inst.amount)}${isPaid ? ' ✓' : ''}`,
+                instX, doc.y, { width: instWidth - 5, continued: false });
+
+            if (idx % 2 === 0) {
+              instX = sideMargin + instWidth;
+              doc.y -= 10; // Stay on same line
+            } else {
+              instX = sideMargin;
+            }
+          });
+          doc.fillColor('black');
+          doc.moveDown(1);
+        }
+      });
     });
+
+    // Show warning if there are more students
+    if (totalStudents > MAX_STUDENTS) {
+      doc.addPage();
+      drawLetterhead();
+      doc.y = topMargin;
+      doc.fontSize(12).font(fonts.bold).fillColor('orange')
+        .text(`UYARI: Toplam ${totalStudents} öğrenciden sadece ilk ${MAX_STUDENTS} tanesi gösterilmektedir.`, sideMargin, doc.y, { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(10).font(fonts.regular).fillColor('black')
+        .text('Tüm öğrencileri görmek için bireysel raporları kullanın.', { align: 'center' });
+    }
+
+    // Footer - page numbers
+    const range = doc.bufferedPageRange();
+    for (let i = 0; i < range.count; i++) {
+      doc.switchToPage(range.start + i);
+      doc.fontSize(8).font(fonts.regular)
+        .text(
+          `${institution.name} - Toplu Rapor - Sayfa ${i + 1}/${range.count}`,
+          sideMargin,
+          doc.page.height - bottomMargin + 10,
+          { align: 'center', width: doc.page.width - (sideMargin * 2) }
+        );
+    }
+
+    doc.end();
+
   } catch (error) {
     console.error('Toplu Rapor oluşturma hatası:', error);
-    res.status(500).json({ message: error.message });
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message });
+    }
   }
 });
 

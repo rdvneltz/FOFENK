@@ -423,16 +423,20 @@ const Students = () => {
                 Email ({selectedStudents.length})
               </Button>
             )}
-            <Button
-              size="small"
-              variant="outlined"
-              color="secondary"
-              startIcon={bulkPdfLoading ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />}
-              onClick={handleBulkPdfDownload}
-              disabled={bulkPdfLoading || students.length === 0}
-            >
-              {bulkPdfLoading ? 'Hazırlanıyor...' : 'Toplu Rapor'}
-            </Button>
+            <Tooltip title={students.length > 30 ? `İlk 30 öğrenci dahil edilecek (Toplam: ${students.length})` : 'Tüm öğrencilerin raporunu indir'}>
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                  startIcon={bulkPdfLoading ? <CircularProgress size={16} color="inherit" /> : <PictureAsPdf />}
+                  onClick={handleBulkPdfDownload}
+                  disabled={bulkPdfLoading || students.length === 0}
+                >
+                  {bulkPdfLoading ? 'Hazırlanıyor...' : students.length > 30 ? `Toplu Rapor (30/${students.length})` : 'Toplu Rapor'}
+                </Button>
+              </span>
+            </Tooltip>
             <Button size="small" variant="outlined" startIcon={<FileDownload />} onClick={handleExportToExcel}>
               Excel
             </Button>
