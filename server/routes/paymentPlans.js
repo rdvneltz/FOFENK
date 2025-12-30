@@ -751,26 +751,48 @@ router.post('/:id/pay-installment', async (req, res) => {
       installmentPaymentMethod === 'creditCard' ||
       installment.paymentMethod === 'creditCard';
 
-    // Handle overpayment distribution
+    // Handle overpayment - apply excess to future installments' paidAmount (NOT amount!)
+    // Note: The main excess handling is done later (lines ~897-927) based on calculated excess
+    // This section handles frontend-provided excess amount
     let overpaymentNote = '';
     if (excessAmount > 0 && overpaymentHandling) {
       const remainingInstallments = paymentPlan.installments.filter(
-        inst => !inst.isPaid && inst.installmentNumber !== installmentNumber
-      );
+        inst => !inst.isPaid && inst.installmentNumber > installmentNumber
+      ).sort((a, b) => a.installmentNumber - b.installmentNumber);
 
       if (remainingInstallments.length > 0) {
+        let remainingExcess = excessAmount;
+
         if (overpaymentHandling === 'next') {
-          // Apply excess to next installment only
+          // Apply excess to next installment's paidAmount (NOT amount!)
           const nextInstallment = remainingInstallments[0];
-          nextInstallment.amount = Math.max(0, (nextInstallment.amount || 0) - excessAmount);
-          overpaymentNote = ` (₺${excessAmount} fazla ödeme ${nextInstallment.installmentNumber}. taksite uygulandı)`;
-        } else if (overpaymentHandling === 'distribute') {
-          // Distribute excess across all remaining installments
-          const excessPerInstallment = excessAmount / remainingInstallments.length;
-          for (const inst of remainingInstallments) {
-            inst.amount = Math.max(0, (inst.amount || 0) - excessPerInstallment);
+          const nextRemaining = (nextInstallment.amount || 0) - (nextInstallment.paidAmount || 0);
+          const applyAmount = Math.min(remainingExcess, nextRemaining);
+
+          nextInstallment.paidAmount = (nextInstallment.paidAmount || 0) + applyAmount;
+          if (nextInstallment.paidAmount >= nextInstallment.amount) {
+            nextInstallment.isPaid = true;
+            nextInstallment.paidDate = paymentDate || new Date();
           }
-          overpaymentNote = ` (₺${excessAmount} fazla ödeme ${remainingInstallments.length} taksite dağıtıldı)`;
+          overpaymentNote = ` (₺${applyAmount} fazla ödeme ${nextInstallment.installmentNumber}. taksite uygulandı)`;
+        } else if (overpaymentHandling === 'distribute') {
+          // Distribute excess across remaining installments' paidAmount
+          let appliedTotal = 0;
+          for (const inst of remainingInstallments) {
+            if (remainingExcess <= 0) break;
+
+            const instRemaining = (inst.amount || 0) - (inst.paidAmount || 0);
+            const applyAmount = Math.min(remainingExcess, instRemaining);
+
+            inst.paidAmount = (inst.paidAmount || 0) + applyAmount;
+            if (inst.paidAmount >= inst.amount) {
+              inst.isPaid = true;
+              inst.paidDate = paymentDate || new Date();
+            }
+            remainingExcess -= applyAmount;
+            appliedTotal += applyAmount;
+          }
+          overpaymentNote = ` (₺${appliedTotal} fazla ödeme sonraki taksitlere dağıtıldı)`;
         }
       }
     }
@@ -886,7 +908,8 @@ router.post('/:id/pay-installment', async (req, res) => {
     // Calculate excess amount for this installment
     const thisInstallmentExcess = isFullyPaid ? (newTotalPaidAmount - installmentAmount) : 0;
 
-    installment.paidAmount = newTotalPaidAmount;
+    // IMPORTANT: Cap paidAmount at installment amount - excess goes to future installments
+    installment.paidAmount = Math.min(newTotalPaidAmount, installmentAmount);
     installment.isPaid = isFullyPaid;
     installment.lastPaymentDate = paymentDate || new Date();
     if (isFullyPaid) {
@@ -919,11 +942,8 @@ router.post('/:id/pay-installment', async (req, res) => {
         }
       }
 
-      // If still excess and no more installments, this is overpayment on last installment
-      if (remainingExcess > 0) {
-        // Cap the paid amount at the installment amount for the last installment
-        installment.paidAmount = installmentAmount;
-      }
+      // If still excess after all installments, it's already handled (paidAmount is capped above)
+      // The excess simply means the plan is being overpaid - remainingAmount will go negative if needed
     }
 
     // Update payment plan totals
