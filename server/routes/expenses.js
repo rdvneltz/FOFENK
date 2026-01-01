@@ -86,6 +86,14 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // Clean up empty string values for ObjectId fields (MongoDB can't cast "" to ObjectId)
+    const objectIdFields = ['instructor', 'cashRegister', 'institution', 'season', 'recurringExpense', 'relatedPayment'];
+    for (const field of objectIdFields) {
+      if (req.body[field] === '' || req.body[field] === null) {
+        delete req.body[field];
+      }
+    }
+
     const expense = new Expense(req.body);
     const newExpense = await expense.save();
 
@@ -161,6 +169,14 @@ router.put('/:id', async (req, res) => {
       await Instructor.findByIdAndUpdate(oldExpense.instructor, {
         $inc: { balance: oldExpense.amount }
       });
+    }
+
+    // Clean up empty string values for ObjectId fields (MongoDB can't cast "" to ObjectId)
+    const objectIdFields = ['instructor', 'cashRegister', 'institution', 'season', 'recurringExpense', 'relatedPayment'];
+    for (const field of objectIdFields) {
+      if (req.body[field] === '' || req.body[field] === null) {
+        delete req.body[field];
+      }
     }
 
     const expense = await Expense.findByIdAndUpdate(
