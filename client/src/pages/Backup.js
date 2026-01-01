@@ -27,7 +27,8 @@ import {
   Download as DownloadIcon,
   Restore as RestoreIcon,
   Delete as DeleteIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  TableChart as ExcelIcon
 } from '@mui/icons-material';
 import axios from 'axios';
 import { format } from 'date-fns';
@@ -36,6 +37,7 @@ const Backup = () => {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [restoreDialog, setRestoreDialog] = useState({ open: false, backup: null });
   const [deleteDialog, setDeleteDialog] = useState({ open: false, backup: null });
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -119,6 +121,44 @@ const Backup = () => {
     }
   };
 
+  const handleDownloadExcelBackup = async () => {
+    try {
+      setDownloadingExcel(true);
+      showSnackbar('Excel yedek hazırlanıyor, lütfen bekleyin...', 'info');
+
+      const response = await axios.get('/api/export/full-backup', {
+        responseType: 'blob',
+        timeout: 120000 // 2 minutes timeout for large data
+      });
+
+      // Extract filename from Content-Disposition header or use default
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'FOFORA-Yedek.xlsx';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = decodeURIComponent(filenameMatch[1].replace(/['"]/g, ''));
+        }
+      }
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      showSnackbar('Excel yedek indirildi!', 'success');
+    } catch (error) {
+      console.error('Error downloading Excel backup:', error);
+      showSnackbar('Excel yedek indirilirken hata oluştu', 'error');
+    } finally {
+      setDownloadingExcel(false);
+    }
+  };
+
   const showSnackbar = (message, severity) => {
     setSnackbar({ open: true, message, severity });
   };
@@ -129,10 +169,49 @@ const Backup = () => {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      {/* Excel Backup Section - Human Readable */}
+      <Paper sx={{ p: 3, mb: 3, bgcolor: '#e8f5e9' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box>
+            <Typography variant="h5" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <ExcelIcon color="success" />
+              Okunabilir Excel Yedek
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Tüm verilerinizi (öğrenciler, ödemeler, giderler, kasalar vb.) tek bir Excel dosyasında indirin.
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            color="success"
+            size="large"
+            startIcon={downloadingExcel ? <CircularProgress size={20} color="inherit" /> : <DownloadIcon />}
+            onClick={handleDownloadExcelBackup}
+            disabled={downloadingExcel}
+            sx={{ minWidth: 200 }}
+          >
+            {downloadingExcel ? 'Hazırlanıyor...' : 'Excel Yedek İndir'}
+          </Button>
+        </Box>
+        <Alert severity="success" icon={false}>
+          <Typography variant="body2">
+            <strong>Bu yedek sisteme bağımlı değildir!</strong> İndirdiğiniz Excel dosyasını herhangi bir bilgisayarda açarak tüm verilerinizi görebilirsiniz:
+          </Typography>
+          <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
+            <li>Öğrenci listesi ve iletişim bilgileri</li>
+            <li>Ödeme planları ve taksit detayları</li>
+            <li>Kasa bakiyeleri ve hareketler</li>
+            <li>Giderler ve eğitmen ödemeleri</li>
+            <li>Ders programları ve yoklama kayıtları</li>
+          </Box>
+        </Alert>
+      </Paper>
+
+      {/* Database Backup Section */}
       <Paper sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
           <Typography variant="h5" component="h1">
-            Veritabanı Yedekleme
+            Veritabanı Yedekleme (Teknik)
           </Typography>
           <Box>
             <Button
@@ -157,6 +236,8 @@ const Backup = () => {
 
         <Alert severity="info" sx={{ mb: 3 }}>
           Otomatik yedekleme her gece saat 02:00'da çalışır. Son 30 günün yedekleri saklanır.
+          <br />
+          <strong>Not:</strong> Bu yedekler teknik formatta olup sisteme geri yükleme için kullanılır.
         </Alert>
 
         {loading ? (
