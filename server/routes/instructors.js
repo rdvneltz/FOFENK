@@ -8,6 +8,7 @@ const ActivityLog = require('../models/ActivityLog');
 router.get('/', async (req, res) => {
   try {
     const Expense = require('../models/Expense');
+    const ScheduledLesson = require('../models/ScheduledLesson');
     const { institution, institutionId, season, seasonId } = req.query;
     const filter = {};
 
@@ -24,9 +25,10 @@ router.get('/', async (req, res) => {
       .populate('season', 'name')
       .sort({ lastName: 1, firstName: 1 });
 
-    // Calculate balance from overdue expenses for each instructor
+    // Calculate balance from overdue expenses AND unpaid lessons for each instructor
     const instructorsWithBalance = await Promise.all(
       instructors.map(async (instructor) => {
+        // 1. Overdue salary expenses (for monthly instructors)
         const overdueExpenses = await Expense.find({
           instructor: instructor._id,
           category: 'Eğitmen Ödemesi',
@@ -34,9 +36,32 @@ router.get('/', async (req, res) => {
         });
         const overdueBalance = overdueExpenses.reduce((sum, e) => sum + e.amount, 0);
 
+        // 2. Unpaid completed lessons (for per-lesson instructors)
+        let unpaidLessonsBalance = 0;
+        if (instructor.paymentType === 'perLesson' || instructor.paymentType === 'hourly') {
+          const unpaidLessons = await ScheduledLesson.find({
+            instructor: instructor._id,
+            status: 'completed',
+            instructorPaymentPaid: { $ne: true }
+          });
+
+          unpaidLessonsBalance = unpaidLessons.reduce((sum, lesson) => {
+            // Use saved payment amount if available, otherwise calculate from instructor rate
+            const amount = lesson.instructorPaymentAmount || instructor.paymentAmount || 0;
+            return sum + amount;
+          }, 0);
+        }
+
         // Return instructor with calculated balance (negative = we owe them)
         const instructorObj = instructor.toObject();
-        instructorObj.balance = -overdueBalance;
+        instructorObj.balance = -(overdueBalance + unpaidLessonsBalance);
+        instructorObj.unpaidLessonsCount = instructor.paymentType === 'perLesson' || instructor.paymentType === 'hourly'
+          ? (await ScheduledLesson.countDocuments({
+              instructor: instructor._id,
+              status: 'completed',
+              instructorPaymentPaid: { $ne: true }
+            }))
+          : 0;
         return instructorObj;
       })
     );
@@ -111,12 +136,30 @@ router.get('/:id/details', async (req, res) => {
       status: 'completed'
     });
 
+    // Get unpaid completed lessons (for per-lesson/hourly instructors)
+    const unpaidLessons = await ScheduledLesson.find({
+      instructor: req.params.id,
+      status: 'completed',
+      instructorPaymentPaid: { $ne: true }
+    });
+
+    const unpaidLessonsCount = unpaidLessons.length;
+    const unpaidLessonsAmount = unpaidLessons.reduce((sum, lesson) => {
+      const amount = lesson.instructorPaymentAmount || instructor.paymentAmount || 0;
+      return sum + amount;
+    }, 0);
+
     // Calculate total paid (only from paid expenses)
     const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
 
-    // Calculate balance from OVERDUE expenses only (negative = we owe them money)
+    // Calculate balance from OVERDUE expenses AND unpaid lessons (negative = we owe them money)
     const overdueBalance = overdueExpenses.reduce((sum, expense) => sum + expense.amount, 0);
-    const calculatedBalance = -overdueBalance; // Negative because we owe them
+    const totalOwed = overdueBalance + (
+      (instructor.paymentType === 'perLesson' || instructor.paymentType === 'hourly')
+        ? unpaidLessonsAmount
+        : 0
+    );
+    const calculatedBalance = -totalOwed; // Negative because we owe them
 
     // Calculate total accrued (for monthly instructors)
     const totalAccrued = salaryAccruals.reduce((sum, accrual) => sum + accrual.amount, 0);
@@ -139,11 +182,18 @@ router.get('/:id/details', async (req, res) => {
         recurring: salaryRecurring,
         overdue: overdueExpenses
       },
+      unpaidLessons: {
+        count: unpaidLessonsCount,
+        amount: unpaidLessonsAmount,
+        lessons: unpaidLessons
+      },
       statistics: {
         totalPaid,
         totalAccrued,
         balance: calculatedBalance,
         overdueCount: overdueExpenses.length,
+        unpaidLessonsCount,
+        unpaidLessonsAmount,
         completedLessons,
         expectedPayment: instructor.paymentType === 'perLesson' ? expectedPayment : null,
         paymentType: instructor.paymentType,
