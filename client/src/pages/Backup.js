@@ -1,16 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Container,
   Paper,
   Typography,
   Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -20,107 +13,33 @@ import {
   Alert,
   Snackbar,
   Box,
-  Chip
+  Divider,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText
 } from '@mui/material';
 import {
   Backup as BackupIcon,
   Download as DownloadIcon,
-  Restore as RestoreIcon,
-  Delete as DeleteIcon,
-  Refresh as RefreshIcon,
-  TableChart as ExcelIcon
+  Upload as UploadIcon,
+  TableChart as ExcelIcon,
+  Warning as WarningIcon,
+  CheckCircle as CheckIcon,
+  Storage as StorageIcon
 } from '@mui/icons-material';
 import axios from 'axios';
-import { format } from 'date-fns';
 
 const Backup = () => {
-  const [backups, setBackups] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [downloadingExcel, setDownloadingExcel] = useState(false);
-  const [restoreDialog, setRestoreDialog] = useState({ open: false, backup: null });
-  const [deleteDialog, setDeleteDialog] = useState({ open: false, backup: null });
+  const [downloadingJson, setDownloadingJson] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [restoreDialog, setRestoreDialog] = useState({ open: false, file: null });
+  const [restoreResult, setRestoreResult] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const fileInputRef = useRef(null);
 
-  useEffect(() => {
-    fetchBackups();
-  }, []);
-
-  const fetchBackups = async () => {
-    try {
-      setLoading(true);
-      const response = await axios.get('/api/backup/list');
-      setBackups(response.data);
-    } catch (error) {
-      console.error('Error fetching backups:', error);
-      showSnackbar('Yedekler yüklenemedi', 'error');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleCreateBackup = async () => {
-    try {
-      setCreating(true);
-      await axios.post('/api/backup/create');
-      showSnackbar('Yedek başarıyla oluşturuldu', 'success');
-      fetchBackups();
-    } catch (error) {
-      console.error('Error creating backup:', error);
-      showSnackbar('Yedek oluşturulurken hata oluştu', 'error');
-    } finally {
-      setCreating(false);
-    }
-  };
-
-  const handleDownload = async (backupName) => {
-    try {
-      const response = await axios.get(`/api/backup/download/${backupName}`, {
-        responseType: 'blob'
-      });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${backupName}.zip`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
-      showSnackbar('Yedek indirildi', 'success');
-    } catch (error) {
-      console.error('Error downloading backup:', error);
-      showSnackbar('Yedek indirilirken hata oluştu', 'error');
-    }
-  };
-
-  const handleRestore = async () => {
-    if (!restoreDialog.backup) return;
-
-    try {
-      await axios.post(`/api/backup/restore/${restoreDialog.backup.name}`);
-      showSnackbar('Yedek başarıyla geri yüklendi', 'success');
-      setRestoreDialog({ open: false, backup: null });
-    } catch (error) {
-      console.error('Error restoring backup:', error);
-      showSnackbar('Yedek geri yüklenirken hata oluştu', 'error');
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteDialog.backup) return;
-
-    try {
-      await axios.delete(`/api/backup/${deleteDialog.backup.name}`);
-      showSnackbar('Yedek silindi', 'success');
-      setDeleteDialog({ open: false, backup: null });
-      fetchBackups();
-    } catch (error) {
-      console.error('Error deleting backup:', error);
-      showSnackbar('Yedek silinirken hata oluştu', 'error');
-    }
-  };
-
+  // Download Excel backup (human-readable)
   const handleDownloadExcelBackup = async () => {
     try {
       setDownloadingExcel(true);
@@ -128,10 +47,9 @@ const Backup = () => {
 
       const response = await axios.get('/api/export/full-backup', {
         responseType: 'blob',
-        timeout: 120000 // 2 minutes timeout for large data
+        timeout: 120000
       });
 
-      // Extract filename from Content-Disposition header or use default
       const contentDisposition = response.headers['content-disposition'];
       let filename = 'FOFORA-Yedek.xlsx';
       if (contentDisposition) {
@@ -159,6 +77,85 @@ const Backup = () => {
     }
   };
 
+  // Download JSON backup (restorable)
+  const handleDownloadJsonBackup = async () => {
+    try {
+      setDownloadingJson(true);
+      showSnackbar('Teknik yedek hazırlanıyor, lütfen bekleyin...', 'info');
+
+      const response = await axios.get('/api/backup/download-json', {
+        responseType: 'blob',
+        timeout: 120000
+      });
+
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'FOFORA-Backup.zip';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = decodeURIComponent(filenameMatch[1].replace(/['"]/g, ''));
+        }
+      }
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      showSnackbar('Teknik yedek indirildi!', 'success');
+    } catch (error) {
+      console.error('Error downloading JSON backup:', error);
+      showSnackbar('Teknik yedek indirilirken hata oluştu', 'error');
+    } finally {
+      setDownloadingJson(false);
+    }
+  };
+
+  // Handle file selection for restore
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setRestoreDialog({ open: true, file });
+    }
+    // Reset file input
+    event.target.value = '';
+  };
+
+  // Restore from backup file
+  const handleRestore = async () => {
+    if (!restoreDialog.file) return;
+
+    try {
+      setUploading(true);
+      setRestoreDialog({ open: false, file: null });
+      showSnackbar('Yedek geri yükleniyor, lütfen bekleyin...', 'info');
+
+      const formData = new FormData();
+      formData.append('backup', restoreDialog.file);
+
+      const response = await axios.post('/api/backup/restore-json', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 300000 // 5 minutes for large backups
+      });
+
+      if (response.data.success) {
+        setRestoreResult(response.data);
+        showSnackbar('Yedek başarıyla geri yüklendi!', 'success');
+      } else {
+        showSnackbar(response.data.message || 'Geri yükleme başarısız', 'error');
+      }
+    } catch (error) {
+      console.error('Error restoring backup:', error);
+      showSnackbar(error.response?.data?.message || 'Geri yükleme sırasında hata oluştu', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const showSnackbar = (message, severity) => {
     setSnackbar({ open: true, message, severity });
   };
@@ -178,7 +175,7 @@ const Backup = () => {
               Okunabilir Excel Yedek
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Tüm verilerinizi (öğrenciler, ödemeler, giderler, kasalar vb.) tek bir Excel dosyasında indirin.
+              Tüm verilerinizi Excel dosyasında indirin. Herhangi bir bilgisayarda açılabilir.
             </Typography>
           </Box>
           <Button
@@ -187,170 +184,144 @@ const Backup = () => {
             size="large"
             startIcon={downloadingExcel ? <CircularProgress size={20} color="inherit" /> : <DownloadIcon />}
             onClick={handleDownloadExcelBackup}
-            disabled={downloadingExcel}
+            disabled={downloadingExcel || downloadingJson || uploading}
             sx={{ minWidth: 200 }}
           >
-            {downloadingExcel ? 'Hazırlanıyor...' : 'Excel Yedek İndir'}
+            {downloadingExcel ? 'Hazırlanıyor...' : 'Excel İndir'}
           </Button>
         </Box>
         <Alert severity="success" icon={false}>
           <Typography variant="body2">
-            <strong>Bu yedek sisteme bağımlı değildir!</strong> İndirdiğiniz Excel dosyasını herhangi bir bilgisayarda açarak tüm verilerinizi görebilirsiniz:
+            <strong>Sadece okumak için!</strong> Bu yedek sisteme geri yüklenemez ama tüm verilerinizi görebilirsiniz:
           </Typography>
           <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
             <li>Öğrenci listesi ve iletişim bilgileri</li>
             <li>Ödeme planları ve taksit detayları</li>
-            <li>Kasa bakiyeleri ve hareketler</li>
-            <li>Giderler ve eğitmen ödemeleri</li>
-            <li>Ders programları ve yoklama kayıtları</li>
+            <li>Kasa bakiyeleri, giderler, eğitmenler</li>
           </Box>
         </Alert>
       </Paper>
 
-      {/* Database Backup Section */}
-      <Paper sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h5" component="h1">
-            Veritabanı Yedekleme (Teknik)
-          </Typography>
+      {/* Technical Backup Section - Restorable */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Box>
-            <Button
-              variant="outlined"
-              startIcon={<RefreshIcon />}
-              onClick={fetchBackups}
-              sx={{ mr: 2 }}
-              disabled={loading}
-            >
-              Yenile
-            </Button>
+            <Typography variant="h5" component="h2" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <StorageIcon color="primary" />
+              Teknik Yedek (Geri Yüklenebilir)
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Veritabanının tam yedeği. Sisteme geri yüklenebilir.
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 2 }}>
             <Button
               variant="contained"
-              startIcon={<BackupIcon />}
-              onClick={handleCreateBackup}
-              disabled={creating}
+              color="primary"
+              size="large"
+              startIcon={downloadingJson ? <CircularProgress size={20} color="inherit" /> : <DownloadIcon />}
+              onClick={handleDownloadJsonBackup}
+              disabled={downloadingExcel || downloadingJson || uploading}
+              sx={{ minWidth: 180 }}
             >
-              {creating ? 'Oluşturuluyor...' : 'Yeni Yedek Al'}
+              {downloadingJson ? 'Hazırlanıyor...' : 'Yedek İndir'}
             </Button>
+            <Button
+              variant="outlined"
+              color="warning"
+              size="large"
+              startIcon={uploading ? <CircularProgress size={20} color="inherit" /> : <UploadIcon />}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={downloadingExcel || downloadingJson || uploading}
+              sx={{ minWidth: 180 }}
+            >
+              {uploading ? 'Yükleniyor...' : 'Yedek Yükle'}
+            </Button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              accept=".zip"
+              style={{ display: 'none' }}
+            />
           </Box>
         </Box>
 
-        <Alert severity="info" sx={{ mb: 3 }}>
-          Otomatik yedekleme her gece saat 02:00'da çalışır. Son 30 günün yedekleri saklanır.
-          <br />
-          <strong>Not:</strong> Bu yedekler teknik formatta olup sisteme geri yükleme için kullanılır.
-        </Alert>
-
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          <strong>Render Free Tier Uyarısı:</strong> Teknik yedekleme Render ücretsiz sürümde çalışmaz (mongodump yüklü değil).
-          <br />
-          Alternatifler:
-          <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
-            <li><strong>Excel Yedek:</strong> Yukarıdaki yeşil butonu kullanın - tüm verilerinizi Excel olarak indirir</li>
-            <li><strong>MongoDB Atlas:</strong> Atlas Dashboard → Backup → Take Snapshot</li>
-          </ul>
-        </Alert>
-
-        {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
+        <Alert severity="info" sx={{ mb: 2 }}>
+          <strong>Nasıl Çalışır:</strong>
+          <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
+            <li><strong>Yedek İndir:</strong> Tüm veritabanını ZIP dosyası olarak bilgisayarınıza indirin</li>
+            <li><strong>Yedek Yükle:</strong> Daha önce indirdiğiniz yedeği sisteme geri yükleyin</li>
           </Box>
-        ) : backups.length === 0 ? (
-          <Alert severity="warning">Henüz yedek bulunmuyor.</Alert>
-        ) : (
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Yedek Adı</TableCell>
-                  <TableCell>Tarih</TableCell>
-                  <TableCell>Boyut</TableCell>
-                  <TableCell align="right">İşlemler</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {backups.map((backup) => (
-                  <TableRow key={backup.name}>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {backup.name}
-                        {backups.indexOf(backup) === 0 && (
-                          <Chip label="En Yeni" size="small" color="primary" />
-                        )}
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      {format(new Date(backup.created), 'dd.MM.yyyy HH:mm:ss')}
-                    </TableCell>
-                    <TableCell>{backup.sizeFormatted}</TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        color="primary"
-                        onClick={() => handleDownload(backup.name)}
-                        title="İndir"
-                      >
-                        <DownloadIcon />
-                      </IconButton>
-                      <IconButton
-                        color="success"
-                        onClick={() => setRestoreDialog({ open: true, backup })}
-                        title="Geri Yükle"
-                      >
-                        <RestoreIcon />
-                      </IconButton>
-                      <IconButton
-                        color="error"
-                        onClick={() => setDeleteDialog({ open: true, backup })}
-                        title="Sil"
-                      >
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
+        </Alert>
+
+        <Alert severity="warning">
+          <strong>Dikkat:</strong> Yedek yüklemek mevcut tüm verileri SİLER ve yedekteki verilerle değiştirir. Bu işlem geri alınamaz!
+        </Alert>
       </Paper>
 
-      {/* Restore Dialog */}
-      <Dialog open={restoreDialog.open} onClose={() => setRestoreDialog({ open: false, backup: null })}>
-        <DialogTitle>Yedek Geri Yükle</DialogTitle>
+      {/* Restore Result */}
+      {restoreResult && (
+        <Paper sx={{ p: 3, mb: 3, bgcolor: '#e3f2fd' }}>
+          <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CheckIcon color="success" />
+            Geri Yükleme Tamamlandı
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            Yedek Tarihi: {new Date(restoreResult.backupDate).toLocaleString('tr-TR')}
+          </Typography>
+          <Divider sx={{ my: 2 }} />
+          <List dense>
+            {restoreResult.results?.map((result, index) => (
+              <ListItem key={index}>
+                <ListItemIcon>
+                  {result.status === 'success' ? (
+                    <CheckIcon color="success" fontSize="small" />
+                  ) : result.status === 'error' ? (
+                    <WarningIcon color="error" fontSize="small" />
+                  ) : (
+                    <WarningIcon color="disabled" fontSize="small" />
+                  )}
+                </ListItemIcon>
+                <ListItemText
+                  primary={result.collection}
+                  secondary={result.status === 'success' ? `${result.count} kayıt` : result.status}
+                />
+              </ListItem>
+            ))}
+          </List>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => setRestoreResult(null)}
+            sx={{ mt: 2 }}
+          >
+            Kapat
+          </Button>
+        </Paper>
+      )}
+
+      {/* Restore Confirmation Dialog */}
+      <Dialog open={restoreDialog.open} onClose={() => setRestoreDialog({ open: false, file: null })}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningIcon color="warning" />
+          Yedek Geri Yükle
+        </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            <strong>{restoreDialog.backup?.name}</strong> yedeğini geri yüklemek istediğinize emin misiniz?
+            <strong>{restoreDialog.file?.name}</strong> dosyasını geri yüklemek istediğinize emin misiniz?
             <br /><br />
-            <Alert severity="warning">
-              Bu işlem mevcut veritabanını tamamen değiştirecektir. İşlem geri alınamaz!
+            <Alert severity="error">
+              Bu işlem mevcut TÜM VERİLERİ SİLECEK ve yedekteki verilerle değiştirecektir. Bu işlem GERİ ALINAMAZ!
             </Alert>
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setRestoreDialog({ open: false, backup: null })}>
+          <Button onClick={() => setRestoreDialog({ open: false, file: null })}>
             İptal
           </Button>
-          <Button onClick={handleRestore} variant="contained" color="success" autoFocus>
-            Geri Yükle
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Delete Dialog */}
-      <Dialog open={deleteDialog.open} onClose={() => setDeleteDialog({ open: false, backup: null })}>
-        <DialogTitle>Yedek Sil</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            <strong>{deleteDialog.backup?.name}</strong> yedeğini silmek istediğinize emin misiniz?
-            <br />
-            Bu işlem geri alınamaz!
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialog({ open: false, backup: null })}>
-            İptal
-          </Button>
-          <Button onClick={handleDelete} variant="contained" color="error" autoFocus>
-            Sil
+          <Button onClick={handleRestore} variant="contained" color="error" autoFocus>
+            Evet, Geri Yükle
           </Button>
         </DialogActions>
       </Dialog>
