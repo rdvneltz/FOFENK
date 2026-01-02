@@ -240,6 +240,16 @@ const Backup = () => {
           <strong>Not:</strong> Bu yedekler teknik formatta olup sisteme geri yükleme için kullanılır.
         </Alert>
 
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <strong>Render Free Tier Uyarısı:</strong> Teknik yedekleme Render ücretsiz sürümde çalışmaz (mongodump yüklü değil).
+          <br />
+          Alternatifler:
+          <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
+            <li><strong>Excel Yedek:</strong> Yukarıdaki yeşil butonu kullanın - tüm verilerinizi Excel olarak indirir</li>
+            <li><strong>MongoDB Atlas:</strong> Atlas Dashboard → Backup → Take Snapshot</li>
+          </ul>
+        </Alert>
+
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
             <CircularProgress />
