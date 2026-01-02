@@ -28,7 +28,7 @@ import {
   CheckCircle as CheckIcon,
   Storage as StorageIcon
 } from '@mui/icons-material';
-import axios from 'axios';
+import api from '../api';
 
 const Backup = () => {
   const [downloadingExcel, setDownloadingExcel] = useState(false);
@@ -45,7 +45,7 @@ const Backup = () => {
       setDownloadingExcel(true);
       showSnackbar('Excel yedek hazırlanıyor, lütfen bekleyin...', 'info');
 
-      const response = await axios.get('/api/export/full-backup', {
+      const response = await api.get('/export/full-backup', {
         responseType: 'blob',
         timeout: 120000
       });
@@ -83,7 +83,7 @@ const Backup = () => {
       setDownloadingJson(true);
       showSnackbar('Teknik yedek hazırlanıyor, lütfen bekleyin...', 'info');
 
-      const response = await axios.get('/api/backup/download-json', {
+      const response = await api.get('/backup/download-json', {
         responseType: 'blob',
         timeout: 120000
       });
@@ -137,7 +137,7 @@ const Backup = () => {
       const formData = new FormData();
       formData.append('backup', restoreDialog.file);
 
-      const response = await axios.post('/api/backup/restore-json', formData, {
+      const response = await api.post('/backup/restore-json', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 300000 // 5 minutes for large backups
       });
