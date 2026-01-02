@@ -29,6 +29,7 @@ import {
   Assessment as ReportIcon,
   Layers as SeasonIcon,
   Business as BusinessIcon,
+  Backup as BackupIcon,
 } from '@mui/icons-material';
 import useServerHealth from '../../hooks/useServerHealth';
 import ServerStatusIndicator from '../Common/ServerStatusIndicator';
@@ -52,6 +53,7 @@ const allMenuItems = [
   { text: 'Mesaj Şablonları', icon: <MessageIcon />, path: '/message-templates' },
   { divider: true, group: 'system' },
   { text: 'Raporlar', icon: <ReportIcon />, path: '/reports', permission: 'canViewReports' },
+  { text: 'Yedekleme', icon: <BackupIcon />, path: '/backup', permission: 'canManageSettings' },
   { text: 'Ayarlar', icon: <SettingsIcon />, path: '/settings', permission: 'canManageSettings' },
 ];
 
