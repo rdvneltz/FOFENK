@@ -47,7 +47,8 @@ router.get('/', async (req, res) => {
 
           unpaidLessonsBalance = unpaidLessons.reduce((sum, lesson) => {
             // Use saved payment amount if available, otherwise calculate from instructor rate
-            const amount = lesson.instructorPaymentAmount || instructor.paymentAmount || 0;
+            // Use ?? (nullish coalescing) to handle 0 TL payments correctly (0 is a valid value, not falsy)
+            const amount = lesson.instructorPaymentAmount ?? instructor.paymentAmount ?? 0;
             return sum + amount;
           }, 0);
         }
@@ -145,7 +146,8 @@ router.get('/:id/details', async (req, res) => {
 
     const unpaidLessonsCount = unpaidLessons.length;
     const unpaidLessonsAmount = unpaidLessons.reduce((sum, lesson) => {
-      const amount = lesson.instructorPaymentAmount || instructor.paymentAmount || 0;
+      // Use ?? (nullish coalescing) to handle 0 TL payments correctly (0 is a valid value, not falsy)
+      const amount = lesson.instructorPaymentAmount ?? instructor.paymentAmount ?? 0;
       return sum + amount;
     }, 0);
 
