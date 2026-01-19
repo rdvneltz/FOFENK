@@ -231,6 +231,18 @@ router.post('/', async (req, res) => {
 // Update student
 router.put('/:id', async (req, res) => {
   try {
+    const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+
+    // Get the current student to check if status is changing
+    const currentStudent = await Student.findById(req.params.id);
+    if (!currentStudent) {
+      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    }
+
+    const wasActive = currentStudent.status === 'active';
+    const willBePassive = req.body.status === 'passive';
+
+    // Update the student
     const student = await Student.findByIdAndUpdate(
       req.params.id,
       { ...req.body, updatedBy: req.body.updatedBy },
@@ -238,17 +250,38 @@ router.put('/:id', async (req, res) => {
     ).populate('institution', 'name')
      .populate('season', 'name startDate endDate');
 
-    if (!student) {
-      return res.status(404).json({ message: 'Öğrenci bulunamadı' });
+    // If status changed from active to passive, deactivate enrollments
+    if (wasActive && willBePassive) {
+      await StudentCourseEnrollment.updateMany(
+        { student: req.params.id, isActive: true },
+        { $set: { isActive: false, updatedAt: new Date(), updatedBy: req.body.updatedBy || 'system' } }
+      );
+    }
+
+    // If status changed from passive to active, reactivate enrollments
+    const willBeActive = req.body.status === 'active';
+    const wasPassive = currentStudent.status === 'passive';
+    if (wasPassive && willBeActive) {
+      await StudentCourseEnrollment.updateMany(
+        { student: req.params.id, isActive: false },
+        { $set: { isActive: true, updatedAt: new Date(), updatedBy: req.body.updatedBy || 'system' } }
+      );
     }
 
     // Log activity
+    let description = `Öğrenci güncellendi: ${student.firstName} ${student.lastName}`;
+    if (wasActive && willBePassive) {
+      description += ' (Pasif duruma alındı, ders kayıtları deaktive edildi)';
+    } else if (wasPassive && willBeActive) {
+      description += ' (Aktif duruma alındı, ders kayıtları yeniden aktifleştirildi)';
+    }
+
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'Student',
       entityId: student._id,
-      description: `Öğrenci güncellendi: ${student.firstName} ${student.lastName}`,
+      description: description,
       institution: student.institution._id,
       season: student.season._id
     });
@@ -336,66 +369,120 @@ router.delete('/:id', async (req, res) => {
     const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
     const CashRegister = require('../models/CashRegister');
 
+    // keepPayments: true means preserve payments/expenses in cash registers
+    const keepPayments = req.query.keepPayments === 'true' || req.body?.keepPayments === true;
+
     const student = await Student.findById(req.params.id);
     if (!student) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
 
-    // Delete related records and revert cash register balances
-    // 1. Get all payments and revert their effects before deleting
-    const payments = await Payment.find({ student: req.params.id });
-    for (const payment of payments) {
-      // Revert cash register balance (subtract payment amount)
-      if (payment.cashRegister) {
-        await CashRegister.findByIdAndUpdate(payment.cashRegister, {
-          $inc: { balance: -payment.amount }
-        });
-      }
-    }
-    await Payment.deleteMany({ student: req.params.id });
+    let deletedPaymentsCount = 0;
+    let deletedExpensesCount = 0;
+    let revertedAmount = 0;
 
-    // 2. Get all related expenses and revert their effects before deleting
-    // Note: Only use relatedStudent field - description regex matching was removed
-    // as it could cause false positives and delete unrelated expenses
-    const relatedExpenses = await Expense.find({
-      relatedStudent: req.params.id
-    });
-    for (const expense of relatedExpenses) {
-      // Revert cash register balance (add back expense amount)
-      if (expense.cashRegister) {
-        await CashRegister.findByIdAndUpdate(expense.cashRegister, {
-          $inc: { balance: expense.amount }
-        });
-      }
-    }
-    await Expense.deleteMany({
-      relatedStudent: req.params.id
-    });
+    if (keepPayments) {
+      // Only update Payment records to remove student reference, but KEEP the records
+      // This preserves cash register history and balances
+      const payments = await Payment.find({ student: req.params.id });
+      deletedPaymentsCount = payments.length;
+      revertedAmount = payments.reduce((sum, p) => sum + p.amount, 0);
 
-    // 3. Delete payment plans
+      // Remove student reference from payments but keep the payment records
+      await Payment.updateMany(
+        { student: req.params.id },
+        {
+          $set: {
+            studentDeleted: true,
+            studentName: `${student.firstName} ${student.lastName} (SİLİNDİ)`,
+            deletedStudentId: req.params.id
+          },
+          $unset: { student: 1 }
+        }
+      );
+
+      // Same for expenses - keep records but mark student as deleted
+      const relatedExpenses = await Expense.find({ relatedStudent: req.params.id });
+      deletedExpensesCount = relatedExpenses.length;
+
+      await Expense.updateMany(
+        { relatedStudent: req.params.id },
+        {
+          $set: {
+            studentDeleted: true,
+            studentName: `${student.firstName} ${student.lastName} (SİLİNDİ)`
+          },
+          $unset: { relatedStudent: 1 }
+        }
+      );
+    } else {
+      // Original behavior: Delete payments and revert cash register balances
+      // 1. Get all payments and revert their effects before deleting
+      const payments = await Payment.find({ student: req.params.id });
+      deletedPaymentsCount = payments.length;
+      for (const payment of payments) {
+        revertedAmount += payment.amount;
+        // Revert cash register balance (subtract payment amount)
+        if (payment.cashRegister) {
+          await CashRegister.findByIdAndUpdate(payment.cashRegister, {
+            $inc: { balance: -payment.amount }
+          });
+        }
+      }
+      await Payment.deleteMany({ student: req.params.id });
+
+      // 2. Get all related expenses and revert their effects before deleting
+      const relatedExpenses = await Expense.find({
+        relatedStudent: req.params.id
+      });
+      deletedExpensesCount = relatedExpenses.length;
+      for (const expense of relatedExpenses) {
+        // Revert cash register balance (add back expense amount)
+        if (expense.cashRegister) {
+          await CashRegister.findByIdAndUpdate(expense.cashRegister, {
+            $inc: { balance: expense.amount }
+          });
+        }
+      }
+      await Expense.deleteMany({
+        relatedStudent: req.params.id
+      });
+    }
+
+    // 3. Delete payment plans (always delete these)
     await PaymentPlan.deleteMany({ student: req.params.id });
 
-    // 4. Delete enrollments
+    // 4. Delete enrollments (always delete these)
     await StudentCourseEnrollment.deleteMany({ student: req.params.id });
 
     // 5. Finally delete the student
     await Student.findByIdAndDelete(req.params.id);
 
     // Log activity
+    const description = keepPayments
+      ? `Öğrenci silindi (ödeme kayıtları korundu): ${student.firstName} ${student.lastName}`
+      : `Öğrenci ve ilgili tüm kayıtlar silindi: ${student.firstName} ${student.lastName}`;
+
     await ActivityLog.create({
       user: req.body?.deletedBy || 'System',
       action: 'delete',
       entity: 'Student',
       entityId: student._id,
-      description: `Öğrenci ve ilgili tüm kayıtlar silindi: ${student.firstName} ${student.lastName}`,
+      description: description,
       institution: student.institution,
       season: student.season
     });
 
     res.json({
-      message: 'Öğrenci ve ilgili tüm kayıtlar başarıyla silindi',
+      message: keepPayments
+        ? 'Öğrenci silindi, ödeme kayıtları kasalarda korundu'
+        : 'Öğrenci ve ilgili tüm kayıtlar başarıyla silindi',
       deleted: {
-        student: student.firstName + ' ' + student.lastName
+        student: student.firstName + ' ' + student.lastName,
+        paymentsHandled: deletedPaymentsCount,
+        expensesHandled: deletedExpensesCount,
+        revertedAmount: keepPayments ? 0 : revertedAmount,
+        paymentsKept: keepPayments
       }
     });
   } catch (error) {
@@ -407,10 +494,48 @@ router.delete('/:id', async (req, res) => {
 // Archive student
 router.post('/:id/archive', async (req, res) => {
   try {
+    const PaymentPlan = require('../models/PaymentPlan');
+    const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
+
     const student = await Student.findById(req.params.id);
     if (!student) {
       return res.status(404).json({ message: 'Öğrenci bulunamadı' });
     }
+
+    // Check if student has any unpaid installments
+    const paymentPlans = await PaymentPlan.find({ student: req.params.id });
+    let hasUnpaidInstallments = false;
+    let unpaidDetails = [];
+
+    for (const plan of paymentPlans) {
+      for (const inst of plan.installments || []) {
+        if (!inst.isPaid) {
+          hasUnpaidInstallments = true;
+          unpaidDetails.push({
+            courseName: plan.courseName || 'Bilinmiyor',
+            installmentNumber: inst.installmentNumber,
+            amount: inst.amount,
+            paidAmount: inst.paidAmount || 0,
+            remaining: (inst.amount || 0) - (inst.paidAmount || 0)
+          });
+        }
+      }
+    }
+
+    // Prevent archiving if there are unpaid installments
+    if (hasUnpaidInstallments) {
+      return res.status(400).json({
+        message: 'Bu öğrencinin ödenmemiş taksitleri var. Arşivlemeden önce tüm ödemelerin tamamlanması gerekiyor.',
+        unpaidInstallments: unpaidDetails,
+        totalUnpaid: unpaidDetails.reduce((sum, d) => sum + d.remaining, 0)
+      });
+    }
+
+    // Deactivate all enrollments for this student
+    await StudentCourseEnrollment.updateMany(
+      { student: req.params.id, isActive: true },
+      { $set: { isActive: false, updatedAt: new Date(), updatedBy: req.body.archivedBy || 'system' } }
+    );
 
     student.isArchived = true;
     student.archivedDate = new Date();
@@ -423,7 +548,7 @@ router.post('/:id/archive', async (req, res) => {
       action: 'archive',
       entity: 'Student',
       entityId: student._id,
-      description: `Öğrenci arşivlendi: ${student.firstName} ${student.lastName}${req.body.reason ? ` - Sebep: ${req.body.reason}` : ''}`,
+      description: `Öğrenci arşivlendi: ${student.firstName} ${student.lastName}${req.body.reason ? ` - Sebep: ${req.body.reason}` : ''} (Tüm ders kayıtları deaktive edildi)`,
       institution: student.institution,
       season: student.season
     });

@@ -215,7 +215,7 @@ const Courses = () => {
     setOpenBulkEnroll(true);
   };
 
-  // Load and show enrolled students for a course
+  // Load and show enrolled students for a course (exclude passive/archived students)
   const handleShowStudents = async (course) => {
     setStudentListDialog({ open: true, course, students: [], loading: true });
     try {
@@ -224,6 +224,7 @@ const Courses = () => {
           courseId: course._id,
           seasonId: season._id,
           isActive: true,
+          excludeInactiveStudents: true,
           populate: 'student'
         }
       });

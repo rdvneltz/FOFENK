@@ -6,7 +6,7 @@ const ActivityLog = require('../models/ActivityLog');
 // Get all enrollments with filtering
 router.get('/', async (req, res) => {
   try {
-    const { studentId, courseId, isActive } = req.query;
+    const { studentId, courseId, isActive, excludeInactiveStudents } = req.query;
     // Accept both 'institution' and 'institutionId' parameters for compatibility
     const institutionId = req.query.institution || req.query.institutionId;
     const seasonId = req.query.season || req.query.seasonId;
@@ -18,16 +18,25 @@ router.get('/', async (req, res) => {
     if (courseId) filter.course = courseId;
     if (isActive !== undefined) filter.isActive = isActive === 'true';
 
-    const enrollments = await StudentCourseEnrollment.find(filter)
+    let enrollments = await StudentCourseEnrollment.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
-      .populate('student', 'firstName lastName studentId phone email parentContacts defaultNotificationRecipient')
+      .populate('student', 'firstName lastName studentId phone email parentContacts defaultNotificationRecipient status isArchived')
       .populate({
         path: 'course',
         select: 'name pricingType pricePerMonth pricePerLesson schedule weeklyFrequency expectedLessonsPerMonth instructor',
         populate: { path: 'instructor', select: 'firstName lastName phone email' }
       })
       .sort({ enrollmentDate: -1 });
+
+    // Filter out enrollments for archived or passive students if requested
+    if (excludeInactiveStudents === 'true') {
+      enrollments = enrollments.filter(e =>
+        e.student &&
+        e.student.isArchived !== true &&
+        e.student.status !== 'passive'
+      );
+    }
 
     res.json(enrollments);
   } catch (error) {

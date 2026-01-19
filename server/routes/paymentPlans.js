@@ -1002,6 +1002,79 @@ router.post('/:id/pay-installment', async (req, res) => {
   }
 });
 
+// Check what will be affected before deleting payment plan
+router.get('/:id/check-delete', async (req, res) => {
+  try {
+    const paymentPlan = await PaymentPlan.findById(req.params.id)
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name');
+
+    if (!paymentPlan) {
+      return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
+    }
+
+    // Find all related payments
+    const relatedPayments = await Payment.find({ paymentPlan: paymentPlan._id })
+      .populate('cashRegister', 'name');
+
+    // Analyze paid installments
+    const paidInstallments = (paymentPlan.installments || []).filter(inst => inst.isPaid || (inst.paidAmount && inst.paidAmount > 0));
+    const unpaidInstallments = (paymentPlan.installments || []).filter(inst => !inst.isPaid && (!inst.paidAmount || inst.paidAmount === 0));
+    const partiallyPaidInstallments = (paymentPlan.installments || []).filter(inst => !inst.isPaid && inst.paidAmount && inst.paidAmount > 0);
+
+    // Group payments by cash register
+    const paymentsByCashRegister = {};
+    let totalPaidAmount = 0;
+
+    for (const payment of relatedPayments) {
+      if (payment.status !== 'refunded') {
+        const registerName = payment.cashRegister?.name || 'Bilinmeyen Kasa';
+        const registerId = payment.cashRegister?._id?.toString() || 'unknown';
+
+        if (!paymentsByCashRegister[registerId]) {
+          paymentsByCashRegister[registerId] = {
+            name: registerName,
+            payments: [],
+            totalAmount: 0
+          };
+        }
+        paymentsByCashRegister[registerId].payments.push({
+          amount: payment.amount,
+          date: payment.paymentDate,
+          paymentType: payment.paymentType
+        });
+        paymentsByCashRegister[registerId].totalAmount += payment.amount;
+        totalPaidAmount += payment.amount;
+      }
+    }
+
+    const hasPaidInstallments = paidInstallments.length > 0 || partiallyPaidInstallments.length > 0;
+    const isFullyPaid = paymentPlan.isCompleted || unpaidInstallments.length === 0;
+
+    res.json({
+      paymentPlan: {
+        id: paymentPlan._id,
+        studentName: paymentPlan.student ? `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}` : 'Bilinmiyor',
+        courseName: paymentPlan.course?.name || 'Bilinmiyor',
+        totalAmount: paymentPlan.discountedAmount || paymentPlan.totalAmount,
+        paidAmount: paymentPlan.paidAmount || 0
+      },
+      hasPaidInstallments,
+      isFullyPaid,
+      paidInstallmentsCount: paidInstallments.length,
+      partiallyPaidInstallmentsCount: partiallyPaidInstallments.length,
+      totalPaidAmount,
+      paymentsByCashRegister: Object.values(paymentsByCashRegister),
+      warningMessage: hasPaidInstallments
+        ? `Bu ödeme planında ${paidInstallments.length} tamamı ödenmiş${partiallyPaidInstallments.length > 0 ? ` ve ${partiallyPaidInstallments.length} kısmi ödenmiş` : ''} taksit bulunuyor. Toplam ${totalPaidAmount.toLocaleString('tr-TR')} TL kasalardan geri alınacak.`
+        : null
+    });
+  } catch (error) {
+    console.error('Error checking payment plan:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Delete payment plan
 router.delete('/:id', async (req, res) => {
   try {

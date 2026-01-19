@@ -89,12 +89,16 @@ const ArchivedStudents = () => {
     }
   };
 
-  const handleDelete = async () => {
+  // keepPayments: true = preserve payment records, false = delete and revert cash register
+  const handleDelete = async (keepPayments = false) => {
     try {
-      await api.delete(`/students/${deleteDialog.student._id}`, {
-        data: { deletedBy: user?.username }
+      await api.delete(`/students/${deleteDialog.student._id}?keepPayments=${keepPayments}`, {
+        data: { deletedBy: user?.username, keepPayments }
       });
-      alert(`${deleteDialog.student.firstName} ${deleteDialog.student.lastName} kalıcı olarak silindi`);
+      const message = keepPayments
+        ? `${deleteDialog.student.firstName} ${deleteDialog.student.lastName} silindi (ödeme kayıtları korundu)`
+        : `${deleteDialog.student.firstName} ${deleteDialog.student.lastName} ve tüm kayıtları silindi`;
+      alert(message);
       setDeleteDialog({ open: false, student: null, relatedRecords: null, loading: false, showDeleteConfirm: false });
       loadArchivedStudents();
     } catch (error) {
@@ -266,19 +270,55 @@ const ArchivedStudents = () => {
                 </Box>
               )}
 
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                Bu kayıtları da silmek istiyor musunuz?
-              </Alert>
+              {deleteDialog.relatedRecords.totals.paymentCount > 0 && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  <Typography variant="body2" fontWeight="bold" gutterBottom>
+                    Silme seçenekleri:
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>Sadece Öğrenciyi Sil:</strong> Öğrenci silinir ama ödeme kayıtları kasalarda kalır. Kasa bakiyeleri ve gelir-gider raporları değişmez.
+                  </Typography>
+                  <Typography variant="body2" sx={{ mt: 1 }}>
+                    <strong>Tümünü Sil:</strong> Öğrenci ve tüm ödeme kayıtları silinir. Kasalardan toplam ₺{deleteDialog.relatedRecords.totals.totalIncome.toLocaleString('tr-TR')} düşülür.
+                  </Typography>
+                </Alert>
+              )}
             </>
           ) : null}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialog({ open: false, student: null, relatedRecords: null, loading: false, showDeleteConfirm: false })}>
+        <DialogActions sx={{ flexDirection: { xs: 'column', sm: 'row' }, gap: 1, p: 2 }}>
+          <Button
+            onClick={() => setDeleteDialog({ open: false, student: null, relatedRecords: null, loading: false, showDeleteConfirm: false })}
+            sx={{ order: { xs: 3, sm: 1 } }}
+          >
             İptal
           </Button>
+          {deleteDialog.relatedRecords && deleteDialog.relatedRecords.totals.paymentCount > 0 && (
+            <Button
+              onClick={() => handleDelete(true)}
+              variant="outlined"
+              color="warning"
+              sx={{ order: { xs: 2, sm: 2 } }}
+            >
+              Sadece Öğrenciyi Sil
+              <Typography variant="caption" display="block" sx={{ fontSize: '0.65rem' }}>
+                (Ödemeler korunsun)
+              </Typography>
+            </Button>
+          )}
           {deleteDialog.relatedRecords && (
-            <Button onClick={handleDelete} variant="contained" color="error">
+            <Button
+              onClick={() => handleDelete(false)}
+              variant="contained"
+              color="error"
+              sx={{ order: { xs: 1, sm: 3 } }}
+            >
               Tümünü Sil
+              {deleteDialog.relatedRecords.totals.paymentCount > 0 && (
+                <Typography variant="caption" display="block" sx={{ fontSize: '0.65rem' }}>
+                  (Kasalardan düşülsün)
+                </Typography>
+              )}
             </Button>
           )}
         </DialogActions>

@@ -23,13 +23,40 @@ router.get('/', async (req, res) => {
     // Add enrollment count for each course
     const StudentCourseEnrollment = require('../models/StudentCourseEnrollment');
     const Instructor = require('../models/Instructor');
+    const Student = require('../models/Student');
 
     const coursesWithEnrollment = await Promise.all(
       courses.map(async (course) => {
-        const enrollmentCount = await StudentCourseEnrollment.countDocuments({
-          course: course._id,
-          isActive: true
-        });
+        // Count only active enrollments where the student is not archived and not passive
+        const activeEnrollments = await StudentCourseEnrollment.aggregate([
+          {
+            $match: {
+              course: course._id,
+              isActive: true
+            }
+          },
+          {
+            $lookup: {
+              from: 'students',
+              localField: 'student',
+              foreignField: '_id',
+              as: 'studentInfo'
+            }
+          },
+          {
+            $unwind: '$studentInfo'
+          },
+          {
+            $match: {
+              'studentInfo.isArchived': { $ne: true },
+              'studentInfo.status': { $ne: 'passive' }
+            }
+          },
+          {
+            $count: 'count'
+          }
+        ]);
+        const enrollmentCount = activeEnrollments.length > 0 ? activeEnrollments[0].count : 0;
 
         // Manually populate instructor if exists
         let instructor = null;
