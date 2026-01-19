@@ -39,6 +39,7 @@ import {
   CalendarMonth,
   Send,
   Email,
+  Schedule,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -65,6 +66,14 @@ const TrialLessons = () => {
   // Notification state
   const [notificationMenu, setNotificationMenu] = useState({ anchorEl: null, trial: null });
   const [emailDialog, setEmailDialog] = useState({ open: false, recipients: [], subject: '', message: '', templateData: {} });
+  // Postpone dialog state
+  const [postponeDialog, setPostponeDialog] = useState({
+    open: false,
+    trial: null,
+    newDate: '',
+    newTime: '',
+    reason: '',
+  });
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -250,6 +259,50 @@ const TrialLessons = () => {
     }
   };
 
+  // Postpone handlers
+  const handleOpenPostponeDialog = (trial) => {
+    setPostponeDialog({
+      open: true,
+      trial,
+      newDate: '',
+      newTime: '',
+      reason: '',
+    });
+  };
+
+  const handleClosePostponeDialog = () => {
+    setPostponeDialog({
+      open: false,
+      trial: null,
+      newDate: '',
+      newTime: '',
+      reason: '',
+    });
+  };
+
+  const handlePostpone = async () => {
+    if (!postponeDialog.newDate || !postponeDialog.newTime) {
+      setError('Lütfen yeni tarih ve saat girin');
+      return;
+    }
+
+    try {
+      await api.put(`/trial-lessons/${postponeDialog.trial._id}`, {
+        originalScheduledDate: postponeDialog.trial.scheduledDate,
+        originalScheduledTime: postponeDialog.trial.scheduledTime,
+        scheduledDate: postponeDialog.newDate,
+        scheduledTime: postponeDialog.newTime,
+        postponeReason: postponeDialog.reason,
+        status: 'pending', // Reset to pending so it can be completed at new time
+        updatedBy: user?.username,
+      });
+      await loadData();
+      handleClosePostponeDialog();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Erteleme hatası');
+    }
+  };
+
   const handleViewDetail = (trial) => {
     setSelectedTrial(trial);
     setDetailDialogOpen(true);
@@ -324,7 +377,7 @@ const TrialLessons = () => {
     time: trial.scheduledTime,
   });
 
-  const getStatusChip = (status) => {
+  const getStatusChip = (status, trial) => {
     switch (status) {
       case 'completed':
         return <Chip label="Tamamlandı" color="success" size="small" />;
@@ -333,6 +386,14 @@ const TrialLessons = () => {
       case 'converted':
         return <Chip label="Kayıt Oldu" color="primary" size="small" />;
       default:
+        // Check if it was postponed (has originalScheduledDate)
+        if (trial?.originalScheduledDate) {
+          return (
+            <Tooltip title={`Eski tarih: ${new Date(trial.originalScheduledDate).toLocaleDateString('tr-TR')} ${trial.originalScheduledTime || ''}`}>
+              <Chip label="Ertelendi" color="secondary" size="small" icon={<Schedule sx={{ fontSize: 14 }} />} />
+            </Tooltip>
+          );
+        }
         return <Chip label="Bekliyor" color="warning" size="small" />;
     }
   };
@@ -366,10 +427,21 @@ const TrialLessons = () => {
     }
   });
 
-  // Sort by date (most recent first)
-  const sortedTrials = [...filteredTrials].sort((a, b) =>
-    new Date(b.scheduledDate) - new Date(a.scheduledDate)
-  );
+  // Sort by date and time (most recent first)
+  const sortedTrials = [...filteredTrials].sort((a, b) => {
+    const dateA = new Date(a.scheduledDate);
+    const dateB = new Date(b.scheduledDate);
+
+    // First compare dates
+    if (dateB.getTime() !== dateA.getTime()) {
+      return dateB.getTime() - dateA.getTime();
+    }
+
+    // If same date, compare times
+    const timeA = a.scheduledTime || '00:00';
+    const timeB = b.scheduledTime || '00:00';
+    return timeB.localeCompare(timeA);
+  });
 
   if (loading && trials.length === 0) {
     return <LoadingSpinner message="Deneme dersleri yükleniyor..." />;
@@ -532,7 +604,7 @@ const TrialLessons = () => {
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    {getStatusChip(trial.status)}
+                    {getStatusChip(trial.status, trial)}
                     {trial.interestedInEnrollment === true && (
                       <Chip
                         label="İlgili"
@@ -572,6 +644,15 @@ const TrialLessons = () => {
                               onClick={() => handleUpdateStatus(trial._id, 'completed')}
                             >
                               <CheckCircle fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Ertele">
+                            <IconButton
+                              size="small"
+                              color="secondary"
+                              onClick={() => handleOpenPostponeDialog(trial)}
+                            >
+                              <Schedule fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="İptal Et">
@@ -921,6 +1002,66 @@ const TrialLessons = () => {
           setEmailDialog({ open: false, recipients: [], subject: '', message: '', templateData: {} });
         }}
       />
+
+      {/* Postpone Dialog */}
+      <Dialog open={postponeDialog.open} onClose={handleClosePostponeDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Deneme Dersi Ertele</DialogTitle>
+        <DialogContent>
+          {postponeDialog.trial && (
+            <Box sx={{ mb: 2, mt: 1, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="subtitle1" fontWeight="bold">
+                {postponeDialog.trial.firstName} {postponeDialog.trial.lastName}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Mevcut: {new Date(postponeDialog.trial.scheduledDate).toLocaleDateString('tr-TR')} - {postponeDialog.trial.scheduledTime}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Ders: {postponeDialog.trial.course?.name}
+              </Typography>
+            </Box>
+          )}
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Yeni Tarih"
+                type="date"
+                value={postponeDialog.newDate}
+                onChange={(e) => setPostponeDialog({ ...postponeDialog, newDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Yeni Saat"
+                type="time"
+                value={postponeDialog.newTime}
+                onChange={(e) => setPostponeDialog({ ...postponeDialog, newTime: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Erteleme Nedeni (Opsiyonel)"
+                value={postponeDialog.reason}
+                onChange={(e) => setPostponeDialog({ ...postponeDialog, reason: e.target.value })}
+                multiline
+                rows={2}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClosePostponeDialog}>İptal</Button>
+          <Button variant="contained" color="secondary" onClick={handlePostpone}>
+            Ertele
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

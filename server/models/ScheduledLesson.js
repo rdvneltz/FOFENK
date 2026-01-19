@@ -67,6 +67,12 @@ const scheduledLessonSchema = new mongoose.Schema({
     enum: ['scheduled', 'completed', 'cancelled', 'postponed'],
     default: 'scheduled'
   },
+  // Erteleme bilgileri - orijinal tarih ve saat
+  originalDate: Date,
+  originalStartTime: String,
+  originalEndTime: String,
+  // Erteleme nedeni
+  postponeReason: String,
   // Eğitmen dersi onayladı mı (derse girdi mi)
   instructorConfirmed: {
     type: Boolean,
