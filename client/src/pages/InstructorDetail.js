@@ -42,6 +42,7 @@ import {
   Payment as PaymentIcon,
   AccountBalance,
   Delete,
+  Undo,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -71,12 +72,19 @@ const InstructorDetail = () => {
     open: false,
     amount: '',
     cashRegisterId: '',
-    description: ''
+    description: '',
+    expenseDate: new Date().toISOString().split('T')[0]
   });
   const [payLessonDialog, setPayLessonDialog] = useState({
     open: false,
     lesson: null,
-    cashRegisterId: ''
+    cashRegisterId: '',
+    expenseDate: new Date().toISOString().split('T')[0]
+  });
+  const [reversePaymentDialog, setReversePaymentDialog] = useState({
+    open: false,
+    payment: null,
+    processing: false
   });
   const [salaryAccruals, setSalaryAccruals] = useState([]);
   const [salaryExpenses, setSalaryExpenses] = useState({ recurring: null, expenses: [] });
@@ -207,7 +215,7 @@ const InstructorDetail = () => {
         category: 'Eğitmen Ödemesi',
         amount: parseFloat(paymentDialog.amount),
         description: paymentDialog.description || `${instructor.firstName} ${instructor.lastName} - Eğitmen ödemesi`,
-        expenseDate: new Date(),
+        expenseDate: paymentDialog.expenseDate || new Date().toISOString().split('T')[0],
         cashRegister: paymentDialog.cashRegisterId,
         instructor: id,
         institution: institution._id,
@@ -216,7 +224,7 @@ const InstructorDetail = () => {
       });
 
       alert('Ödeme başarıyla kaydedildi');
-      setPaymentDialog({ open: false, amount: '', cashRegisterId: cashRegisters[0]?._id || '', description: '' });
+      setPaymentDialog({ open: false, amount: '', cashRegisterId: cashRegisters[0]?._id || '', description: '', expenseDate: new Date().toISOString().split('T')[0] });
       loadInstructor(); // Reload to show new payment
     } catch (error) {
       alert('Ödeme hatası: ' + (error.response?.data?.message || error.message));
@@ -242,7 +250,7 @@ const InstructorDetail = () => {
         category: 'Eğitmen Ödemesi',
         amount: lesson.instructorPaymentAmount,
         description: `${lesson.course?.name || 'Ders'} - ${new Date(lesson.date).toLocaleDateString('tr-TR')} - ${instructor.firstName} ${instructor.lastName} (${lesson.actualDuration || 0} saat)`,
-        expenseDate: new Date(),
+        expenseDate: payLessonDialog.expenseDate || new Date().toISOString().split('T')[0],
         cashRegister: cashRegisterId,
         instructor: id,
         institution: institution._id,
@@ -264,7 +272,7 @@ const InstructorDetail = () => {
       });
 
       alert(`Ödeme başarıyla yapıldı! ₺${lesson.instructorPaymentAmount.toFixed(2)}`);
-      setPayLessonDialog({ open: false, lesson: null, cashRegisterId: '' });
+      setPayLessonDialog({ open: false, lesson: null, cashRegisterId: '', expenseDate: new Date().toISOString().split('T')[0] });
       loadInstructor(); // Reload to update balance and lesson list
     } catch (error) {
       alert('Ödeme hatası: ' + (error.response?.data?.message || error.message));
@@ -306,6 +314,28 @@ const InstructorDetail = () => {
       loadInstructor();
     } catch (error) {
       alert('Silme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Reverse (undo) a payment
+  const handleReversePayment = async () => {
+    const { payment } = reversePaymentDialog;
+    if (!payment) return;
+
+    setReversePaymentDialog(prev => ({ ...prev, processing: true }));
+
+    try {
+      // Delete the expense (this will automatically restore the cash register balance)
+      await api.delete(`/expenses/${payment._id}`, {
+        data: { deletedBy: user?.username }
+      });
+
+      alert(`Ödeme geri alındı: ₺${payment.amount.toLocaleString('tr-TR')}\nKasa bakiyesi otomatik olarak güncellendi.`);
+      setReversePaymentDialog({ open: false, payment: null, processing: false });
+      loadInstructor();
+    } catch (error) {
+      setReversePaymentDialog(prev => ({ ...prev, processing: false }));
+      alert('Geri alma hatası: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -628,6 +658,7 @@ const InstructorDetail = () => {
                             <TableCell>Açıklama</TableCell>
                             <TableCell>Tutar</TableCell>
                             <TableCell>Kasa</TableCell>
+                            <TableCell>İşlem</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -643,6 +674,17 @@ const InstructorDetail = () => {
                                 </Typography>
                               </TableCell>
                               <TableCell>{payment.cashRegister?.name || '-'}</TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="outlined"
+                                  color="warning"
+                                  size="small"
+                                  startIcon={<Undo />}
+                                  onClick={() => setReversePaymentDialog({ open: true, payment: payment, processing: false })}
+                                >
+                                  Geri Al
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -1036,7 +1078,7 @@ const InstructorDetail = () => {
               </Alert>
 
               <Grid container spacing={2}>
-                <Grid item xs={12}>
+                <Grid item xs={12} sm={6}>
                   <FormControl fullWidth required>
                     <InputLabel>Kasa Seç</InputLabel>
                     <Select
@@ -1052,12 +1094,23 @@ const InstructorDetail = () => {
                     </Select>
                   </FormControl>
                 </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="Ödeme Tarihi"
+                    type="date"
+                    value={payLessonDialog.expenseDate}
+                    onChange={(e) => setPayLessonDialog({ ...payLessonDialog, expenseDate: e.target.value })}
+                    InputLabelProps={{ shrink: true }}
+                    required
+                  />
+                </Grid>
               </Grid>
             </>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPayLessonDialog({ open: false, lesson: null, cashRegisterId: '' })}>
+          <Button onClick={() => setPayLessonDialog({ open: false, lesson: null, cashRegisterId: '', expenseDate: new Date().toISOString().split('T')[0] })}>
             İptal
           </Button>
           <Button
@@ -1081,7 +1134,7 @@ const InstructorDetail = () => {
         <DialogTitle>Eğitmen Ödemesi</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
-            <Grid item xs={12}>
+            <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
                 label="Tutar (₺)"
@@ -1090,6 +1143,17 @@ const InstructorDetail = () => {
                 onChange={(e) => setPaymentDialog({ ...paymentDialog, amount: e.target.value })}
                 required
                 inputProps={{ min: 0, step: 0.01 }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Ödeme Tarihi"
+                type="date"
+                value={paymentDialog.expenseDate}
+                onChange={(e) => setPaymentDialog({ ...paymentDialog, expenseDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
               />
             </Grid>
             <Grid item xs={12}>
@@ -1377,6 +1441,62 @@ const InstructorDetail = () => {
             startIcon={<AccountBalance />}
           >
             Şablon Oluştur
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reverse Payment Dialog */}
+      <Dialog
+        open={reversePaymentDialog.open}
+        onClose={() => !reversePaymentDialog.processing && setReversePaymentDialog({ open: false, payment: null, processing: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ödeme Geri Al</DialogTitle>
+        <DialogContent>
+          {reversePaymentDialog.payment && (
+            <>
+              <Alert severity="warning" sx={{ mb: 2, mt: 1 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Bu işlem geri alınamaz!
+                </Typography>
+                <Typography variant="body2">
+                  Aşağıdaki ödeme silinecek ve kasa bakiyesi otomatik olarak güncellenecektir.
+                </Typography>
+              </Alert>
+
+              <Box sx={{ p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                <Typography variant="body2" gutterBottom>
+                  <strong>Tarih:</strong> {new Date(reversePaymentDialog.payment.expenseDate).toLocaleDateString('tr-TR')}
+                </Typography>
+                <Typography variant="body2" gutterBottom>
+                  <strong>Açıklama:</strong> {reversePaymentDialog.payment.description}
+                </Typography>
+                <Typography variant="body2" gutterBottom>
+                  <strong>Kasa:</strong> {reversePaymentDialog.payment.cashRegister?.name || '-'}
+                </Typography>
+                <Typography variant="h6" color="error.main" sx={{ mt: 1 }}>
+                  Tutar: ₺{reversePaymentDialog.payment.amount?.toLocaleString('tr-TR')}
+                </Typography>
+              </Box>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setReversePaymentDialog({ open: false, payment: null, processing: false })}
+            disabled={reversePaymentDialog.processing}
+          >
+            İptal
+          </Button>
+          <Button
+            onClick={handleReversePayment}
+            variant="contained"
+            color="warning"
+            startIcon={<Undo />}
+            disabled={reversePaymentDialog.processing}
+          >
+            {reversePaymentDialog.processing ? 'İşleniyor...' : 'Ödemeyi Geri Al'}
           </Button>
         </DialogActions>
       </Dialog>
