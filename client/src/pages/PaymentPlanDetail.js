@@ -91,6 +91,12 @@ const PaymentPlanDetail = () => {
     periodStartDate: null,
     periodEndDate: null
   });
+  // Payment dates edit dialog for paid installments
+  const [paymentDatesDialog, setPaymentDatesDialog] = useState({
+    open: false,
+    installment: null,
+    payments: []
+  });
 
   useEffect(() => {
     loadPaymentPlan();
@@ -161,6 +167,63 @@ const PaymentPlanDetail = () => {
     } catch (error) {
       setError('Dönem tarihleri güncellenirken hata oluştu');
     }
+  };
+
+  // Open payment dates edit dialog for a paid installment
+  const handleOpenPaymentDatesDialog = (installment) => {
+    // Initialize payments array - use existing payments or create from legacy paidDate
+    let paymentsData = [];
+
+    if (installment.payments && installment.payments.length > 0) {
+      paymentsData = installment.payments.map(p => ({
+        ...p,
+        paidDate: new Date(p.paidDate)
+      }));
+    } else if (installment.paidDate || installment.paidAmount > 0) {
+      // Legacy: single payment record
+      paymentsData = [{
+        amount: installment.paidAmount || installment.amount || 0,
+        paidDate: installment.paidDate ? new Date(installment.paidDate) : new Date(),
+        paymentMethod: installment.paymentMethod || 'cash'
+      }];
+    }
+
+    setPaymentDatesDialog({
+      open: true,
+      installment,
+      payments: paymentsData
+    });
+  };
+
+  // Save payment dates changes
+  const handleSavePaymentDates = async () => {
+    try {
+      await api.put(`/payment-plans/${id}/installment/${paymentDatesDialog.installment.installmentNumber}/payment-dates`, {
+        payments: paymentDatesDialog.payments.map(p => ({
+          amount: p.amount,
+          paidDate: p.paidDate,
+          paymentMethod: p.paymentMethod,
+          cashRegister: p.cashRegister,
+          notes: p.notes
+        })),
+        updatedBy: user?.username
+      });
+      setSuccess('Ödeme tarihleri güncellendi');
+      setPaymentDatesDialog({ open: false, installment: null, payments: [] });
+      loadPaymentPlan();
+    } catch (error) {
+      setError('Ödeme tarihleri güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Update a payment date in the dialog
+  const handleUpdatePaymentDate = (index, field, value) => {
+    setPaymentDatesDialog(prev => ({
+      ...prev,
+      payments: prev.payments.map((p, i) =>
+        i === index ? { ...p, [field]: value } : p
+      )
+    }));
   };
 
   const loadSettings = async () => {
@@ -973,9 +1036,26 @@ Fofora Tiyatro`;
                           const totalAmount = installment.amount || 0;
                           const isPartiallyPaid = paidAmount > 0 && paidAmount < totalAmount;
                           const isFullyPaid = installment.isPaid;
+                          const hasPayments = (installment.payments && installment.payments.length > 0) || installment.paidDate;
+
+                          // Get payment dates to display
+                          const paymentDates = installment.payments && installment.payments.length > 0
+                            ? installment.payments.map(p => ({
+                                date: new Date(p.paidDate),
+                                amount: p.amount
+                              }))
+                            : installment.paidDate
+                              ? [{ date: new Date(installment.paidDate), amount: paidAmount }]
+                              : [];
 
                           return (
-                            <Box>
+                            <Box
+                              sx={{
+                                cursor: hasPayments ? 'pointer' : 'default',
+                                '&:hover': hasPayments ? { bgcolor: 'action.hover', borderRadius: 1 } : {}
+                              }}
+                              onClick={() => hasPayments && handleOpenPaymentDatesDialog(installment)}
+                            >
                               <Chip
                                 label={isFullyPaid ? 'Ödendi' : isPartiallyPaid ? 'Kısmi Ödeme' : 'Bekliyor'}
                                 color={isFullyPaid ? 'success' : isPartiallyPaid ? 'info' : 'warning'}
@@ -989,6 +1069,29 @@ Fofora Tiyatro`;
                               {isPartiallyPaid && (
                                 <Typography variant="caption" color="error" display="block">
                                   Kalan: ₺{(totalAmount - paidAmount).toLocaleString('tr-TR')}
+                                </Typography>
+                              )}
+                              {/* Display payment dates */}
+                              {paymentDates.length > 0 && (
+                                <Box sx={{ mt: 0.5 }}>
+                                  {paymentDates.map((payment, idx) => (
+                                    <Typography
+                                      key={idx}
+                                      variant="caption"
+                                      display="block"
+                                      color="text.secondary"
+                                      sx={{ fontSize: '0.7rem' }}
+                                    >
+                                      {paymentDates.length > 1 ? `${idx + 1}. ` : ''}
+                                      {payment.date.toLocaleDateString('tr-TR')}
+                                      {paymentDates.length > 1 && ` (₺${payment.amount?.toLocaleString('tr-TR')})`}
+                                    </Typography>
+                                  ))}
+                                </Box>
+                              )}
+                              {hasPayments && (
+                                <Typography variant="caption" color="primary" sx={{ fontSize: '0.65rem', mt: 0.5, display: 'block' }}>
+                                  (düzenlemek için tıkla)
                                 </Typography>
                               )}
                             </Box>
@@ -1520,6 +1623,91 @@ Fofora Tiyatro`;
             İptal
           </Button>
           <Button onClick={handleSavePeriod} variant="contained" color="primary">
+            Kaydet
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Payment Dates Edit Dialog */}
+      <Dialog
+        open={paymentDatesDialog.open}
+        onClose={() => setPaymentDatesDialog({ open: false, installment: null, payments: [] })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {paymentDatesDialog.installment?.installmentNumber}. Taksit Ödeme Tarihleri
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            {paymentDatesDialog.payments.length === 0 ? (
+              <Alert severity="info">
+                Bu taksit için henüz ödeme kaydı bulunmuyor.
+              </Alert>
+            ) : (
+              <>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  {paymentDatesDialog.payments.length > 1
+                    ? `Bu taksit ${paymentDatesDialog.payments.length} parça halinde ödenmiştir. Her bir ödemenin tarihini düzenleyebilirsiniz.`
+                    : 'Ödeme tarihini düzenleyebilirsiniz.'}
+                </Alert>
+
+                {paymentDatesDialog.payments.map((payment, index) => (
+                  <Paper key={index} sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          {paymentDatesDialog.payments.length > 1 ? `${index + 1}. Ödeme` : 'Ödeme'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Tutar: <strong>₺{payment.amount?.toLocaleString('tr-TR')}</strong>
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12} sm={6}>
+                        <Typography variant="body2" color="text.secondary">
+                          Yöntem: {payment.paymentMethod === 'creditCard' ? 'Kredi Kartı' : payment.paymentMethod === 'transfer' ? 'Havale/EFT' : 'Nakit'}
+                        </Typography>
+                      </Grid>
+                      <Grid item xs={12}>
+                        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={tr}>
+                          <DatePicker
+                            label="Ödeme Tarihi"
+                            value={payment.paidDate}
+                            onChange={(date) => handleUpdatePaymentDate(index, 'paidDate', date)}
+                            slotProps={{
+                              textField: {
+                                fullWidth: true,
+                                size: 'small'
+                              }
+                            }}
+                          />
+                        </LocalizationProvider>
+                      </Grid>
+                    </Grid>
+                  </Paper>
+                ))}
+
+                <Box sx={{ mt: 2, p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
+                  <Typography variant="body2">
+                    <strong>Toplam Ödenen:</strong> ₺{paymentDatesDialog.payments.reduce((sum, p) => sum + (p.amount || 0), 0).toLocaleString('tr-TR')}
+                  </Typography>
+                </Box>
+              </>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentDatesDialog({ open: false, installment: null, payments: [] })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleSavePaymentDates}
+            variant="contained"
+            color="primary"
+            disabled={paymentDatesDialog.payments.length === 0}
+          >
             Kaydet
           </Button>
         </DialogActions>

@@ -1,5 +1,31 @@
 const mongoose = require('mongoose');
 
+// Individual payment record for partial payments
+const paymentRecordSchema = new mongoose.Schema({
+  amount: {
+    type: Number,
+    required: true
+  },
+  paidDate: {
+    type: Date,
+    required: true
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['cash', 'creditCard', 'transfer'],
+    default: 'cash'
+  },
+  cashRegister: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CashRegister'
+  },
+  notes: String,
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+}, { _id: true });
+
 const installmentSchema = new mongoose.Schema({
   installmentNumber: Number,
   amount: Number, // Toplam tutar (komisyon + KDV dahil)
@@ -13,10 +39,12 @@ const installmentSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  paidDate: Date,
+  paidDate: Date, // Legacy: ilk/tek ödeme tarihi (geriye uyumluluk için)
+  // Parça parça ödemeler için ödeme kayıtları
+  payments: [paymentRecordSchema],
   paymentMethod: {
     type: String,
-    enum: ['cash', 'creditCard'],
+    enum: ['cash', 'creditCard', 'transfer'],
     default: 'cash'
   },
   // Kredi kartı taksit sayısı (sadece creditCard için)

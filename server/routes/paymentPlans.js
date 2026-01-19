@@ -917,6 +917,18 @@ router.post('/:id/pay-installment', async (req, res) => {
     }
     installment.isInvoiced = isInvoiced || installment.isInvoiced;
 
+    // Add payment record to the payments array
+    if (!installment.payments) {
+      installment.payments = [];
+    }
+    installment.payments.push({
+      amount: Math.min(amount, installmentAmount - previousPaidAmount), // Actual amount applied to this installment
+      paidDate: paymentDate || new Date(),
+      paymentMethod: isCreditCardPayment ? 'creditCard' : 'cash',
+      cashRegister: cashRegisterId,
+      notes: overpaymentNote ? overpaymentNote.trim() : null
+    });
+
     // If there's excess from this installment, apply to next unpaid installments
     if (thisInstallmentExcess > 0) {
       let remainingExcess = thisInstallmentExcess;
@@ -1223,6 +1235,73 @@ router.post('/:id/refund-installment', async (req, res) => {
     });
   } catch (error) {
     console.error('Error refunding installment:', error);
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Update payment dates for a paid installment
+router.put('/:id/installment/:installmentNumber/payment-dates', async (req, res) => {
+  try {
+    const { payments, updatedBy } = req.body;
+    const installmentNumber = parseInt(req.params.installmentNumber);
+
+    const paymentPlan = await PaymentPlan.findById(req.params.id);
+
+    if (!paymentPlan) {
+      return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
+    }
+
+    const installment = paymentPlan.installments.find(
+      inst => inst.installmentNumber === installmentNumber
+    );
+
+    if (!installment) {
+      return res.status(404).json({ message: 'Taksit bulunamadı' });
+    }
+
+    if (!installment.isPaid && (!installment.paidAmount || installment.paidAmount === 0)) {
+      return res.status(400).json({ message: 'Bu taksit henüz ödenmemiş, tarih güncellemesi yapılamaz' });
+    }
+
+    // Update the payments array with new dates
+    if (payments && Array.isArray(payments)) {
+      installment.payments = payments.map(p => ({
+        amount: p.amount,
+        paidDate: new Date(p.paidDate),
+        paymentMethod: p.paymentMethod || 'cash',
+        cashRegister: p.cashRegister,
+        notes: p.notes
+      }));
+
+      // Update paidDate to the last payment date if fully paid
+      if (installment.isPaid && payments.length > 0) {
+        const sortedPayments = [...payments].sort((a, b) => new Date(b.paidDate) - new Date(a.paidDate));
+        installment.paidDate = new Date(sortedPayments[0].paidDate);
+      }
+    }
+
+    await paymentPlan.save();
+
+    // Log activity
+    await ActivityLog.create({
+      user: updatedBy || 'System',
+      action: 'update',
+      entity: 'PaymentPlan',
+      entityId: paymentPlan._id,
+      description: `${installmentNumber}. taksit ödeme tarihleri güncellendi`,
+      institution: paymentPlan.institution,
+      season: paymentPlan.season
+    });
+
+    const populatedPaymentPlan = await PaymentPlan.findById(paymentPlan._id)
+      .populate('institution', 'name')
+      .populate('season', 'name startDate endDate')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
+      .populate('course', 'name');
+
+    res.json(populatedPaymentPlan);
+  } catch (error) {
+    console.error('Error updating payment dates:', error);
     res.status(400).json({ message: error.message });
   }
 });
