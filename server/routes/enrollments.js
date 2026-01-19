@@ -10,15 +10,111 @@ router.get('/', async (req, res) => {
     // Accept both 'institution' and 'institutionId' parameters for compatibility
     const institutionId = req.query.institution || req.query.institutionId;
     const seasonId = req.query.season || req.query.seasonId;
-    const filter = {};
 
+    // If excludeInactiveStudents is requested, use aggregation for reliable filtering
+    if (excludeInactiveStudents === 'true') {
+      const mongoose = require('mongoose');
+      const matchStage = { isActive: true };
+
+      if (institutionId) matchStage.institution = new mongoose.Types.ObjectId(institutionId);
+      if (seasonId) matchStage.season = new mongoose.Types.ObjectId(seasonId);
+      if (studentId) matchStage.student = new mongoose.Types.ObjectId(studentId);
+      if (courseId) matchStage.course = new mongoose.Types.ObjectId(courseId);
+
+      const enrollments = await StudentCourseEnrollment.aggregate([
+        { $match: matchStage },
+        {
+          $lookup: {
+            from: 'students',
+            localField: 'student',
+            foreignField: '_id',
+            as: 'studentData'
+          }
+        },
+        { $unwind: { path: '$studentData', preserveNullAndEmptyArrays: false } },
+        {
+          $match: {
+            'studentData.isArchived': { $ne: true },
+            'studentData.status': { $ne: 'passive' }
+          }
+        },
+        {
+          $lookup: {
+            from: 'courses',
+            localField: 'course',
+            foreignField: '_id',
+            as: 'courseData'
+          }
+        },
+        { $unwind: { path: '$courseData', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'institutions',
+            localField: 'institution',
+            foreignField: '_id',
+            as: 'institutionData'
+          }
+        },
+        { $unwind: { path: '$institutionData', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'seasons',
+            localField: 'season',
+            foreignField: '_id',
+            as: 'seasonData'
+          }
+        },
+        { $unwind: { path: '$seasonData', preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            _id: 1,
+            student: {
+              _id: '$studentData._id',
+              firstName: '$studentData.firstName',
+              lastName: '$studentData.lastName',
+              studentId: '$studentData.studentId',
+              phone: '$studentData.phone',
+              email: '$studentData.email',
+              status: '$studentData.status',
+              isArchived: '$studentData.isArchived'
+            },
+            course: {
+              _id: '$courseData._id',
+              name: '$courseData.name',
+              pricingType: '$courseData.pricingType',
+              pricePerMonth: '$courseData.pricePerMonth',
+              pricePerLesson: '$courseData.pricePerLesson'
+            },
+            institution: {
+              _id: '$institutionData._id',
+              name: '$institutionData.name'
+            },
+            season: {
+              _id: '$seasonData._id',
+              name: '$seasonData.name'
+            },
+            enrollmentDate: 1,
+            isActive: 1,
+            discount: 1,
+            customPrice: 1,
+            notes: 1
+          }
+        },
+        { $sort: { enrollmentDate: -1 } }
+      ]);
+
+      return res.json(enrollments);
+    }
+
+    // Original logic for other cases
+    const filter = {};
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
     if (studentId) filter.student = studentId;
     if (courseId) filter.course = courseId;
     if (isActive !== undefined) filter.isActive = isActive === 'true';
 
-    let enrollments = await StudentCourseEnrollment.find(filter)
+    const enrollments = await StudentCourseEnrollment.find(filter)
       .populate('institution', 'name')
       .populate('season', 'name startDate endDate')
       .populate('student', 'firstName lastName studentId phone email parentContacts defaultNotificationRecipient status isArchived')
@@ -28,22 +124,6 @@ router.get('/', async (req, res) => {
         populate: { path: 'instructor', select: 'firstName lastName phone email' }
       })
       .sort({ enrollmentDate: -1 });
-
-    // Filter out enrollments for archived or passive students if requested
-    if (excludeInactiveStudents === 'true') {
-      enrollments = enrollments.filter(e => {
-        // Skip if student not populated
-        if (!e.student) return false;
-
-        // Exclude archived students (check for any truthy value)
-        if (e.student.isArchived) return false;
-
-        // Exclude passive students
-        if (e.student.status === 'passive') return false;
-
-        return true;
-      });
-    }
 
     res.json(enrollments);
   } catch (error) {
