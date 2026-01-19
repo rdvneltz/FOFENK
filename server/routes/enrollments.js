@@ -31,11 +31,18 @@ router.get('/', async (req, res) => {
 
     // Filter out enrollments for archived or passive students if requested
     if (excludeInactiveStudents === 'true') {
-      enrollments = enrollments.filter(e =>
-        e.student &&
-        e.student.isArchived !== true &&
-        e.student.status !== 'passive'
-      );
+      enrollments = enrollments.filter(e => {
+        // Skip if student not populated
+        if (!e.student) return false;
+
+        // Exclude archived students (check for any truthy value)
+        if (e.student.isArchived) return false;
+
+        // Exclude passive students
+        if (e.student.status === 'passive') return false;
+
+        return true;
+      });
     }
 
     res.json(enrollments);
