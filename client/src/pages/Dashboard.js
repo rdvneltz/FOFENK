@@ -238,7 +238,7 @@ const Dashboard = () => {
   const loadEnrollments = async () => {
     try {
       const response = await api.get('/enrollments', {
-        params: { seasonId: season._id, isActive: true, populate: 'student' }
+        params: { seasonId: season._id, isActive: true, excludeInactiveStudents: true, populate: 'student' }
       });
       setAllEnrollments(response.data);
     } catch (error) {
@@ -357,7 +357,7 @@ const Dashboard = () => {
     try {
       const [coursesRes, enrollmentsRes] = await Promise.all([
         api.get('/courses', { params: { institution: institution._id, season: season._id } }),
-        api.get('/enrollments', { params: { seasonId: season._id, isActive: true } })
+        api.get('/enrollments', { params: { seasonId: season._id, isActive: true, excludeInactiveStudents: true } })
       ]);
 
       const courses = coursesRes.data;
