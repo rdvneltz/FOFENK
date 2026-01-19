@@ -11,7 +11,7 @@ const Instructor = require('../models/Instructor');
 const Course = require('../models/Course');
 const Attendance = require('../models/Attendance');
 
-// Get dashboard overview (alias for dashboard-stats)
+// Get dashboard overview
 router.get('/dashboard', async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
@@ -98,90 +98,6 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
-// Get dashboard statistics
-router.get('/dashboard-stats', async (req, res) => {
-  try {
-    const { startDate, endDate } = req.query;
-    // Accept both 'institution' and 'institutionId' parameters for compatibility
-    const institutionId = req.query.institution || req.query.institutionId;
-    const seasonId = req.query.season || req.query.seasonId;
-    const filter = {};
-
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
-
-    // Total students
-    const totalStudents = await Student.countDocuments(filter);
-
-    // Date filter for payments and expenses
-    const dateFilter = { ...filter };
-    if (startDate && endDate) {
-      dateFilter.$or = [
-        { paymentDate: { $gte: new Date(startDate), $lte: new Date(endDate) } },
-        { date: { $gte: new Date(startDate), $lte: new Date(endDate) } }
-      ];
-    }
-
-    // Total income (payments)
-    const paymentsFilter = { ...filter };
-    if (startDate && endDate) {
-      paymentsFilter.paymentDate = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    const totalIncome = await Payment.aggregate([
-      { $match: paymentsFilter },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-
-    // Total expenses
-    const expensesFilter = { ...filter };
-    if (startDate && endDate) {
-      expensesFilter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
-    }
-    const totalExpenses = await Expense.aggregate([
-      { $match: expensesFilter },
-      { $group: { _id: null, total: { $sum: '$amount' } } }
-    ]);
-
-    // Cash register balances
-    const cashRegisterFilter = institutionId ? { institution: institutionId } : {};
-    const cashRegisters = await CashRegister.find(cashRegisterFilter).select('name balance');
-
-    const totalCashRegisterBalance = cashRegisters.reduce((sum, cr) => sum + cr.balance, 0);
-
-    // Active enrollments
-    const activeEnrollments = await StudentCourseEnrollment.countDocuments({
-      ...filter,
-      status: 'active'
-    });
-
-    // Total courses
-    const totalCourses = await Course.countDocuments(filter);
-
-    // Total instructors
-    const instructorFilter = institutionId ? { institution: institutionId } : {};
-    const totalInstructors = await Instructor.countDocuments(instructorFilter);
-
-    res.json({
-      totalStudents,
-      totalIncome: totalIncome.length > 0 ? totalIncome[0].total : 0,
-      totalExpenses: totalExpenses.length > 0 ? totalExpenses[0].total : 0,
-      netIncome: (totalIncome.length > 0 ? totalIncome[0].total : 0) - (totalExpenses.length > 0 ? totalExpenses[0].total : 0),
-      cashRegisters,
-      totalCashRegisterBalance,
-      activeEnrollments,
-      totalCourses,
-      totalInstructors
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
 
 // Get student balances (debt/credit list)
 router.get('/student-balances', async (req, res) => {

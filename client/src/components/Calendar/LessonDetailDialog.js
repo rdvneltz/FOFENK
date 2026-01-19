@@ -389,7 +389,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       return;
     }
 
-    if (!paymentAmount || isNaN(payment) || payment < 0) {
+    if (paymentAmount === '' || paymentAmount === null || paymentAmount === undefined || isNaN(payment) || payment < 0) {
       setCompletionError('Lütfen geçerli bir ödeme tutarı girin');
       return;
     }
