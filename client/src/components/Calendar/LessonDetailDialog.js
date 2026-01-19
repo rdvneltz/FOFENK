@@ -83,6 +83,9 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   const [editingPayment, setEditingPayment] = useState(false);
   const [paymentEditError, setPaymentEditError] = useState('');
 
+  // Revert completion state
+  const [reverting, setReverting] = useState(false);
+
   // Expanded sections
   const [attendanceExpanded, setAttendanceExpanded] = useState(true);
 
@@ -562,6 +565,54 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       setPaymentEditError('Ödeme güncellenirken hata oluştu: ' + (error.response?.data?.message || error.message));
     } finally {
       setEditingPayment(false);
+    }
+  };
+
+  // Revert lesson completion back to scheduled
+  const handleRevertCompletion = async () => {
+    if (!window.confirm(
+      'Bu dersin tamamlanma durumunu geri almak istediğinizden emin misiniz?\n\n' +
+      '• Ders durumu "Planlandı" olarak değişecek\n' +
+      '• Eğitmen bakiyesinden bu ders için eklenen tutar düşülecek\n' +
+      '• Ödeme bilgileri sıfırlanacak'
+    )) {
+      return;
+    }
+
+    setReverting(true);
+
+    try {
+      // Update lesson status back to scheduled and clear payment info
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        status: 'scheduled',
+        instructorPaymentCalculated: false,
+        instructorPaymentAmount: null,
+        instructorPaymentPaid: false,
+        actualDuration: null,
+        // Also reset additional instructors payment info
+        additionalInstructors: (lessonData.additionalInstructors || []).map(ai => ({
+          ...ai,
+          paymentCalculated: false,
+          paymentAmount: 0,
+          paymentPaid: false
+        })),
+        updatedBy: user?.username
+      });
+
+      // Note: Instructor balance is calculated dynamically from unpaid lessons,
+      // so we don't need to manually adjust it. When the lesson status changes
+      // from 'completed' to 'scheduled', it will no longer be included in the
+      // unpaid lessons calculation.
+
+      setStatus('scheduled');
+      alert('✅ Ders durumu geri alındı!\n\nDers artık "Planlandı" durumunda.');
+
+      loadLessonDetails();
+      onUpdated();
+    } catch (error) {
+      alert('Ders durumu geri alınırken hata oluştu: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setReverting(false);
     }
   };
 
@@ -1165,7 +1216,19 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
                             </Typography>
                           )}
                         </Alert>
-                        {lessonData.instructorPaymentPaid && (
+                        {!lessonData.instructorPaymentPaid ? (
+                          <Button
+                            variant="outlined"
+                            color="warning"
+                            size="small"
+                            startIcon={<Cancel />}
+                            onClick={handleRevertCompletion}
+                            disabled={reverting}
+                            sx={{ mt: 2 }}
+                          >
+                            {reverting ? 'Geri Alınıyor...' : 'Tamamlanmayı Geri Al'}
+                          </Button>
+                        ) : (
                           <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
                             Ödeme yapıldığı için düzenleme yapılamaz. Değişiklik için önce ödemeyi iptal edin.
                           </Typography>
