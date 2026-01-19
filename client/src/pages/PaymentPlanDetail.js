@@ -29,7 +29,7 @@ import {
   FormControlLabel,
   Tooltip,
 } from '@mui/material';
-import { ArrowBack, Edit, Delete, Payment, Undo, CreditCard, Money, Receipt, WhatsApp, Email, Send, LocalOffer, School } from '@mui/icons-material';
+import { ArrowBack, Edit, Delete, Payment, Undo, CreditCard, Money, Receipt, WhatsApp, Email, Send, LocalOffer, School, AccountBalance } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -66,7 +66,11 @@ const PaymentPlanDetail = () => {
     open: false,
     installment: null
   });
-  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState({
+    open: false,
+    checkInfo: null,
+    loading: false
+  });
   const [refundDialog, setRefundDialog] = useState({
     open: false,
     installment: null,
@@ -393,6 +397,18 @@ const PaymentPlanDetail = () => {
       }
     } catch (error) {
       setError(error.response?.data?.message || 'İade işlemi sırasında hata oluştu');
+    }
+  };
+
+  // Check payment plan before showing delete dialog
+  const handleCheckDelete = async () => {
+    setDeleteDialog({ open: true, checkInfo: null, loading: true });
+    try {
+      const response = await api.get(`/payment-plans/${id}/check-delete`);
+      setDeleteDialog({ open: true, checkInfo: response.data, loading: false });
+    } catch (error) {
+      setDeleteDialog({ open: false, checkInfo: null, loading: false });
+      setError('Silme kontrolü yapılırken hata oluştu');
     }
   };
 
@@ -811,7 +827,7 @@ Fofora Tiyatro`;
             variant="outlined"
             color="error"
             startIcon={<Delete />}
-            onClick={() => setDeleteDialog(true)}
+            onClick={handleCheckDelete}
           >
             Ödeme Planını Sil
           </Button>
@@ -1328,16 +1344,89 @@ Fofora Tiyatro`;
         onSubmit={handlePayInstallment}
       />
 
-      {/* Delete Confirmation */}
-      <ConfirmDialog
-        open={deleteDialog}
-        onClose={() => setDeleteDialog(false)}
-        onConfirm={handleDelete}
-        title="Ödeme Planını Sil"
-        message="Bu ödeme planını silmek istediğinizden emin misiniz? Bu işlem geri alınamaz."
-        confirmText="Sil"
-        confirmColor="error"
-      />
+      {/* Delete Confirmation with Warning */}
+      <Dialog
+        open={deleteDialog.open}
+        onClose={() => setDeleteDialog({ open: false, checkInfo: null, loading: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: 'error.light', color: 'error.contrastText' }}>
+          Ödeme Planını Sil
+        </DialogTitle>
+        <DialogContent sx={{ mt: 2 }}>
+          {deleteDialog.loading ? (
+            <Box sx={{ textAlign: 'center', py: 3 }}>
+              <Typography color="text.secondary">Kontrol ediliyor...</Typography>
+            </Box>
+          ) : deleteDialog.checkInfo ? (
+            <>
+              {deleteDialog.checkInfo.hasPaidInstallments && (
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  <Typography variant="body2" fontWeight="bold" gutterBottom>
+                    DİKKAT: Bu ödeme planında ödenmiş taksitler var!
+                  </Typography>
+                  <Typography variant="body2">
+                    {deleteDialog.checkInfo.warningMessage}
+                  </Typography>
+                </Alert>
+              )}
+
+              {deleteDialog.checkInfo.isFullyPaid && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    Bu ödeme planının tüm taksitleri ödenmiş durumda.
+                  </Typography>
+                </Alert>
+              )}
+
+              {deleteDialog.checkInfo.paymentsByCashRegister?.length > 0 && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Kasalardan geri alınacak ödemeler:
+                  </Typography>
+                  <List dense>
+                    {deleteDialog.checkInfo.paymentsByCashRegister.map((register, idx) => (
+                      <ListItem key={idx} sx={{ py: 0 }}>
+                        <ListItemIcon sx={{ minWidth: 36 }}>
+                          <AccountBalance fontSize="small" color="warning" />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={`${register.name}: -₺${register.totalAmount?.toLocaleString('tr-TR')}`}
+                          secondary={`${register.payments?.length || 0} ödeme kaydı silinecek`}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+              )}
+
+              <Alert severity="error">
+                <Typography variant="body2">
+                  Bu işlem geri alınamaz. Ödeme planı ve tüm ilgili kayıtlar silinecektir.
+                </Typography>
+              </Alert>
+            </>
+          ) : (
+            <Typography color="text.secondary">
+              Bu ödeme planını silmek istediğinizden emin misiniz?
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialog({ open: false, checkInfo: null, loading: false })}>
+            İptal
+          </Button>
+          <Button
+            onClick={handleDelete}
+            variant="contained"
+            color="error"
+            disabled={deleteDialog.loading}
+          >
+            {deleteDialog.checkInfo?.hasPaidInstallments ? 'Yine de Sil' : 'Sil'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Refund Dialog */}
       <Dialog

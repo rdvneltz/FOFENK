@@ -23,11 +23,17 @@ router.get('/dashboard', async (req, res) => {
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
 
-    // Total students
-    const totalStudents = await Student.countDocuments(filter);
+    // Count only active, non-archived students (students currently attending courses)
+    // A student must be: status = 'active' AND not archived
+    const activeStudentFilter = {
+      ...filter,
+      status: 'active',
+      isArchived: { $ne: true }
+    };
+    const totalStudents = await Student.countDocuments(activeStudentFilter);
 
-    // Active students (status: 'active')
-    const activeStudents = await Student.countDocuments({ ...filter, status: 'active' });
+    // For backwards compatibility, also provide activeStudents (same count now)
+    const activeStudents = totalStudents;
 
     // Build aggregate filter with ObjectIds
     const aggregateFilter = {};

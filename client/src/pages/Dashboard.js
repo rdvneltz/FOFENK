@@ -811,10 +811,9 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                 <Group color="primary" sx={{ fontSize: 28 }} />
                 <Box>
                   <Typography variant="h4" sx={{ lineHeight: 1 }}>{stats.totalStudents}</Typography>
-                  <Typography variant="caption" color="text.secondary">Öğrenci</Typography>
+                  <Typography variant="caption" color="text.secondary">Kayıtlı Öğrenci</Typography>
                 </Box>
               </Box>
-              <Chip size="small" label={`${stats.activeStudents} aktif`} color="primary" variant="outlined" />
             </Box>
 
             {/* Discount Breakdown - Scrollable */}
