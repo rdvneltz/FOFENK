@@ -41,6 +41,8 @@ const expenseSchema = new mongoose.Schema({
       'Eğitim Materyali',
       'Kasa Giriş (Manuel)',
       'Kasa Çıkış (Manuel)',
+      'Virman (Çıkış)',
+      'Virman (Giriş)',
       'Diğer'
     ]
   },
@@ -119,6 +121,23 @@ const expenseSchema = new mongoose.Schema({
   isManualIncome: {
     type: Boolean,
     default: false
+  },
+  // Virman (transfer) kaydı mı
+  isTransfer: {
+    type: Boolean,
+    default: false
+  },
+  // Virman yönü (in: gelen, out: giden)
+  transferDirection: {
+    type: String,
+    enum: ['in', 'out', null],
+    default: null
+  },
+  // İlişkili kasa (virman işlemlerinde karşı kasa)
+  relatedCashRegister: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CashRegister',
+    default: null
   },
   // İlişkili ödeme (eğer KDV veya komisyon gideriyse)
   relatedPayment: {
