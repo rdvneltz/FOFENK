@@ -77,7 +77,9 @@ const Settings = () => {
     imageUrl: null,
     topMargin: 120,
     bottomMargin: 60,
-    sideMargin: 40
+    sideMargin: 40,
+    iban: '',
+    footerNote: ''
   });
   const [letterheadFile, setLetterheadFile] = useState(null);
   const [letterheadPreview, setLetterheadPreview] = useState(null);
@@ -259,6 +261,8 @@ const Settings = () => {
       formData.append('topMargin', letterhead.topMargin);
       formData.append('bottomMargin', letterhead.bottomMargin);
       formData.append('sideMargin', letterhead.sideMargin);
+      formData.append('iban', letterhead.iban || '');
+      formData.append('footerNote', letterhead.footerNote || '');
       formData.append('updatedBy', currentUser?.username);
 
       await api.post(`/settings/letterhead/${institution._id}`, formData, {
@@ -284,7 +288,7 @@ const Settings = () => {
       await api.delete(`/settings/letterhead/${institution._id}`, {
         data: { updatedBy: currentUser?.username }
       });
-      setLetterhead({ imageUrl: null, topMargin: 120, bottomMargin: 60, sideMargin: 40 });
+      setLetterhead({ imageUrl: null, topMargin: 120, bottomMargin: 60, sideMargin: 40, iban: '', footerNote: '' });
       setLetterheadPreview(null);
       setLetterheadFile(null);
       setSuccess('Antetli kağıt silindi');
@@ -760,6 +764,40 @@ const Settings = () => {
                       InputProps={{
                         endAdornment: <InputAdornment position="end">px</InputAdornment>,
                       }}
+                    />
+                  </Grid>
+                </Grid>
+
+                {/* IBAN ve Not Alanları */}
+                <Typography variant="subtitle2" sx={{ mt: 4, mb: 2 }}>
+                  Rapor Alt Bilgileri
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                  Bu bilgiler toplu raporların alt kısmında otomatik olarak gösterilecektir.
+                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="IBAN"
+                      placeholder="TR00 0000 0000 0000 0000 0000 00"
+                      value={letterhead.iban || ''}
+                      onChange={(e) => setLetterhead({ ...letterhead, iban: e.target.value })}
+                      helperText="Raporlarda gösterilecek IBAN bilgisi"
+                    />
+                  </Grid>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="Ek Not"
+                      multiline
+                      rows={3}
+                      placeholder="Örn: Ödeme yaparken açıklama kısmına öğrenci adını yazınız..."
+                      value={letterhead.footerNote || ''}
+                      onChange={(e) => setLetterhead({ ...letterhead, footerNote: e.target.value })}
+                      helperText="Raporların alt kısmında gösterilecek ek not"
                     />
                   </Grid>
                 </Grid>

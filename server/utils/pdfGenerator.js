@@ -544,12 +544,51 @@ const generateStudentStatusReportPDF = (data, outputPath) => {
       // Footer position: A4 height is 841.89, place footer 25pt from absolute bottom
       const absoluteFooterY = 841.89 - 25;
 
+      // Check if IBAN or footerNote exists
+      const hasIban = letterhead?.iban && letterhead.iban.trim().length > 0;
+      const hasFooterNote = letterhead?.footerNote && letterhead.footerNote.trim().length > 0;
+
       for (let i = 0; i < totalPages; i++) {
         doc.switchToPage(range.start + i);
 
         // CRITICAL: Reset Y position to top of page to prevent page break triggering
         doc.y = 0;
         doc.x = 0;
+
+        let footerStartY = absoluteFooterY;
+
+        // Only show IBAN and footer note on last page
+        if (i === totalPages - 1 && (hasIban || hasFooterNote)) {
+          let extraFooterY = absoluteFooterY - 45; // Start higher for extra info
+
+          if (hasIban) {
+            doc.fontSize(9).font(fonts.regular);
+            doc.text(
+              `IBAN: ${letterhead.iban}`,
+              sideMargin,
+              extraFooterY,
+              {
+                align: 'center',
+                width: doc.page.width - (sideMargin * 2),
+                lineBreak: false
+              }
+            );
+            extraFooterY += 12;
+          }
+
+          if (hasFooterNote) {
+            doc.fontSize(8).font(fonts.regular);
+            doc.text(
+              letterhead.footerNote,
+              sideMargin,
+              extraFooterY,
+              {
+                align: 'center',
+                width: doc.page.width - (sideMargin * 2)
+              }
+            );
+          }
+        }
 
         const footerText = `${institution.name} - Sayfa ${i + 1}/${totalPages}`;
 

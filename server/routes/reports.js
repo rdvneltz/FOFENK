@@ -320,12 +320,12 @@ router.get('/income-expense-chart', async (req, res) => {
       {
         $match: {
           ...filter,
-          date: { $gte: start, $lte: end }
+          expenseDate: { $gte: start, $lte: end }
         }
       },
       {
         $group: {
-          _id: { $dateToString: { format: dateFormat, date: '$date' } },
+          _id: { $dateToString: { format: dateFormat, date: '$expenseDate' } },
           total: { $sum: '$amount' }
         }
       },
@@ -504,7 +504,7 @@ router.get('/expense-category-stats', async (req, res) => {
     if (seasonId) filter.season = seasonId;
 
     if (startDate && endDate) {
-      filter.date = {
+      filter.expenseDate = {
         $gte: new Date(startDate),
         $lte: new Date(endDate)
       };
@@ -740,7 +740,7 @@ router.get('/financial-comprehensive', async (req, res) => {
     // Expense statistics by category
     const expenseFilter = { ...filter };
     if (Object.keys(dateFilter).length > 0) {
-      expenseFilter.date = dateFilter;
+      expenseFilter.expenseDate = dateFilter;
     }
 
     const expensesByCategory = await Expense.aggregate([
@@ -780,12 +780,12 @@ router.get('/financial-comprehensive', async (req, res) => {
       {
         $match: {
           ...filter,
-          date: { $gte: start, $lte: end }
+          expenseDate: { $gte: start, $lte: end }
         }
       },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$date' } },
+          _id: { $dateToString: { format: '%Y-%m', date: '$expenseDate' } },
           total: { $sum: '$amount' }
         }
       },

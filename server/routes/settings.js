@@ -246,28 +246,33 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// Upload letterhead image
+// Upload letterhead image and settings
 router.post('/letterhead/:institutionId', upload.single('letterhead'), async (req, res) => {
   try {
     const { institutionId } = req.params;
-    const { topMargin, bottomMargin, sideMargin } = req.body;
-
-    if (!req.file) {
-      return res.status(400).json({ message: 'Antetli kağıt görseli gerekli' });
-    }
-
-    // Convert to Base64
-    const base64Image = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    const { topMargin, bottomMargin, sideMargin, iban, footerNote } = req.body;
 
     // Find or create settings for this institution
     let settings = await Settings.findOne({ institution: institutionId });
 
+    // Prepare letterhead data
     const letterheadData = {
-      imageUrl: base64Image,
       topMargin: parseInt(topMargin) || 120,
       bottomMargin: parseInt(bottomMargin) || 60,
-      sideMargin: parseInt(sideMargin) || 40
+      sideMargin: parseInt(sideMargin) || 40,
+      iban: iban || '',
+      footerNote: footerNote || ''
     };
+
+    // If file uploaded, convert to Base64
+    if (req.file) {
+      letterheadData.imageUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    } else if (settings && settings.letterhead && settings.letterhead.imageUrl) {
+      // Keep existing image if no new file uploaded
+      letterheadData.imageUrl = settings.letterhead.imageUrl;
+    } else {
+      return res.status(400).json({ message: 'Antetli kağıt görseli gerekli' });
+    }
 
     if (settings) {
       settings.letterhead = letterheadData;
@@ -287,12 +292,12 @@ router.post('/letterhead/:institutionId', upload.single('letterhead'), async (re
       action: 'update',
       entity: 'Settings',
       entityId: settings._id,
-      description: 'Antetli kağıt yüklendi',
+      description: 'Antetli kağıt ayarları güncellendi',
       institution: institutionId
     });
 
     res.json({
-      message: 'Antetli kağıt başarıyla yüklendi',
+      message: 'Antetli kağıt ayarları başarıyla kaydedildi',
       letterhead: settings.letterhead
     });
   } catch (error) {
@@ -316,7 +321,9 @@ router.delete('/letterhead/:institutionId', async (req, res) => {
       imageUrl: null,
       topMargin: 120,
       bottomMargin: 60,
-      sideMargin: 40
+      sideMargin: 40,
+      iban: '',
+      footerNote: ''
     };
     settings.updatedBy = req.body?.updatedBy || 'System';
     await settings.save();

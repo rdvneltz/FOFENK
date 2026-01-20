@@ -63,6 +63,16 @@ const settingsSchema = new mongoose.Schema({
     sideMargin: {
       type: Number,
       default: 40 // px - yanlardan boşluk
+    },
+    // IBAN bilgisi - raporlarda alt kısımda gösterilir
+    iban: {
+      type: String,
+      default: ''
+    },
+    // Ek not - raporlarda alt kısımda gösterilir
+    footerNote: {
+      type: String,
+      default: ''
     }
   },
   createdAt: {

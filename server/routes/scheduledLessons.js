@@ -20,24 +20,25 @@ router.get('/', async (req, res) => {
     if (instructorId) filter.instructor = instructorId;
     if (studentId) filter.student = studentId;
 
-    // Month/year filter for calendar view
+    // Month/year filter for calendar view - use UTC for consistent timezone handling
     if (month && year) {
       const monthNum = parseInt(month);
       const yearNum = parseInt(year);
-      const startOfMonth = new Date(yearNum, monthNum - 1, 1);
-      const endOfMonth = new Date(yearNum, monthNum, 0, 23, 59, 59, 999);
+      // Create UTC dates to avoid timezone issues
+      const startOfMonth = new Date(Date.UTC(yearNum, monthNum - 1, 1, 0, 0, 0, 0));
+      // Get last day of month by going to day 0 of next month
+      const lastDay = new Date(Date.UTC(yearNum, monthNum, 0)).getUTCDate();
+      const endOfMonth = new Date(Date.UTC(yearNum, monthNum - 1, lastDay, 23, 59, 59, 999));
 
       filter.date = {
         $gte: startOfMonth,
         $lte: endOfMonth
       };
     } else if (startDate && endDate) {
-      // Date range filter - parse dates as local dates with full day range
-      const [startYear, startMonth, startDay] = startDate.split('-').map(Number);
-      const [endYear, endMonth, endDay] = endDate.split('-').map(Number);
-
-      const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
-      const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
+      // Date range filter - use UTC dates for consistent comparison
+      // This ensures timezone-safe date matching
+      const start = new Date(startDate + 'T00:00:00.000Z');
+      const end = new Date(endDate + 'T23:59:59.999Z');
 
       filter.date = {
         $gte: start,

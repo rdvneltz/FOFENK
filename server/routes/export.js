@@ -212,6 +212,175 @@ router.get('/report', async (req, res) => {
   }
 });
 
+// Export cash register transactions to Excel
+router.get('/cash-register-transactions/:cashRegisterId', async (req, res) => {
+  try {
+    const { cashRegisterId } = req.params;
+    const ExcelJS = require('exceljs');
+
+    const cashRegister = await CashRegister.findById(cashRegisterId)
+      .populate('institution', 'name');
+
+    if (!cashRegister) {
+      return res.status(404).json({ message: 'Kasa bulunamadı' });
+    }
+
+    // Get payments for this cash register
+    const payments = await Payment.find({ cashRegister: cashRegisterId })
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name')
+      .sort({ paymentDate: -1 })
+      .lean();
+
+    // Get expenses for this cash register
+    const expenses = await Expense.find({ cashRegister: cashRegisterId })
+      .populate('instructor', 'firstName lastName')
+      .sort({ expenseDate: -1 })
+      .lean();
+
+    // Combine and sort by date
+    const allTransactions = [];
+
+    // Add payments as income
+    payments.forEach(p => {
+      allTransactions.push({
+        date: p.paymentDate || p.createdAt,
+        type: 'GİRİŞ',
+        category: 'Ödeme',
+        description: p.student ? `${p.student.firstName} ${p.student.lastName}${p.course ? ' - ' + p.course.name : ''}` : (p.description || 'Ödeme'),
+        amount: p.amount || 0,
+        inAmount: p.amount || 0,
+        outAmount: 0,
+        paymentMethod: p.paymentMethod || '-',
+        notes: p.notes || ''
+      });
+    });
+
+    // Add expenses (outgoing) and manual income/transfers (incoming)
+    expenses.forEach(e => {
+      // Check if this is income (manual income or incoming transfer)
+      const isIncome = e.isManualIncome === true ||
+                       e.category === 'Kasa Giriş (Manuel)' ||
+                       e.category === 'Virman (Giriş)';
+
+      allTransactions.push({
+        date: e.expenseDate || e.createdAt,
+        type: isIncome ? 'GİRİŞ' : 'ÇIKIŞ',
+        category: e.category || 'Gider',
+        description: e.description || (e.instructor ? `Eğitmen: ${e.instructor.firstName} ${e.instructor.lastName}` : 'Gider'),
+        amount: e.amount || 0,
+        inAmount: isIncome ? (e.amount || 0) : 0,
+        outAmount: isIncome ? 0 : (e.amount || 0),
+        paymentMethod: e.paymentMethod || '-',
+        notes: e.notes || ''
+      });
+    });
+
+    // Sort by date (newest first)
+    allTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    // Create Excel workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'FOFORA';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Kasa Hareketleri');
+
+    // Title row
+    worksheet.mergeCells('A1:H1');
+    worksheet.getCell('A1').value = `${cashRegister.name} - Kasa Hareketleri Raporu`;
+    worksheet.getCell('A1').font = { size: 16, bold: true };
+    worksheet.getCell('A1').alignment = { horizontal: 'center' };
+
+    // Info row
+    worksheet.mergeCells('A2:H2');
+    worksheet.getCell('A2').value = `Oluşturulma Tarihi: ${new Date().toLocaleString('tr-TR')} | Güncel Bakiye: ${cashRegister.currentBalance?.toLocaleString('tr-TR') || 0} TL`;
+    worksheet.getCell('A2').alignment = { horizontal: 'center' };
+
+    // Empty row
+    worksheet.addRow([]);
+
+    // Headers
+    const headerRow = worksheet.addRow(['Tarih', 'Tür', 'Kategori', 'Açıklama', 'Giriş', 'Çıkış', 'Ödeme Yöntemi', 'Notlar']);
+    headerRow.font = { bold: true };
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF4CAF50' }
+      };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    });
+
+    // Set column widths
+    worksheet.columns = [
+      { width: 15 }, // Tarih
+      { width: 10 }, // Tür
+      { width: 15 }, // Kategori
+      { width: 40 }, // Açıklama
+      { width: 15 }, // Giriş
+      { width: 15 }, // Çıkış
+      { width: 15 }, // Ödeme Yöntemi
+      { width: 30 }, // Notlar
+    ];
+
+    // Data rows
+    let totalIn = 0;
+    let totalOut = 0;
+
+    allTransactions.forEach(t => {
+      const row = worksheet.addRow([
+        new Date(t.date).toLocaleDateString('tr-TR'),
+        t.type,
+        t.category,
+        t.description,
+        t.inAmount > 0 ? t.inAmount : '',
+        t.outAmount > 0 ? t.outAmount : '',
+        t.paymentMethod,
+        t.notes
+      ]);
+
+      // Color coding for in/out
+      if (t.type === 'GİRİŞ') {
+        row.getCell(5).font = { color: { argb: 'FF4CAF50' } }; // Green for income
+        totalIn += t.inAmount;
+      } else {
+        row.getCell(6).font = { color: { argb: 'FFF44336' } }; // Red for expense
+        totalOut += t.outAmount;
+      }
+    });
+
+    // Summary row
+    worksheet.addRow([]);
+    const summaryRow = worksheet.addRow(['', '', '', 'TOPLAM', totalIn, totalOut, '', '']);
+    summaryRow.font = { bold: true };
+    summaryRow.getCell(5).font = { bold: true, color: { argb: 'FF4CAF50' } };
+    summaryRow.getCell(6).font = { bold: true, color: { argb: 'FFF44336' } };
+
+    // Net row
+    const netRow = worksheet.addRow(['', '', '', 'NET', totalIn - totalOut, '', '', '']);
+    netRow.font = { bold: true };
+    netRow.getCell(5).font = { bold: true, color: totalIn - totalOut >= 0 ? { argb: 'FF4CAF50' } : { argb: 'FFF44336' } };
+
+    // Set response headers
+    const dateStr = new Date().toLocaleDateString('tr-TR').replace(/\./g, '_');
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="Kasa_Hareketleri_${cashRegister.name.replace(/\s/g, '_')}_${dateStr}.xlsx"`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error('Cash register transactions export error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Comprehensive backup - ALL data in one Excel file
 router.get('/full-backup', async (req, res) => {
   try {

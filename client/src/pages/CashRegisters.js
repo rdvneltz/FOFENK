@@ -27,7 +27,7 @@ import {
   TableRow,
   Chip,
 } from '@mui/material';
-import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz, Receipt, Delete } from '@mui/icons-material';
+import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz, Receipt, Delete, Download } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -333,18 +333,83 @@ const CashRegisters = () => {
         </Alert>
       )}
 
+      {/* Summary Card */}
+      {cashRegisters.length > 0 && (
+        <Paper
+          sx={{
+            p: 3,
+            mb: 3,
+            background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+            color: 'white',
+            borderRadius: 2
+          }}
+        >
+          <Grid container spacing={3} alignItems="center">
+            <Grid item xs={12} md={4}>
+              <Typography variant="subtitle2" sx={{ opacity: 0.9 }}>
+                Toplam Bakiye
+              </Typography>
+              <Typography variant="h3" sx={{ fontWeight: 'bold' }}>
+                ₺{cashRegisters.reduce((sum, r) => sum + (r.balance || 0), 0).toLocaleString('tr-TR')}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={8}>
+              <Grid container spacing={2}>
+                {cashRegisters.slice(0, 4).map((register) => (
+                  <Grid item xs={6} sm={3} key={register._id}>
+                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 1 }}>
+                      <Typography variant="caption" sx={{ opacity: 0.9, display: 'block' }}>
+                        {register.name}
+                      </Typography>
+                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                        ₺{(register.balance || 0).toLocaleString('tr-TR')}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+            </Grid>
+          </Grid>
+        </Paper>
+      )}
+
       <Grid container spacing={3}>
         {cashRegisters.length === 0 ? (
           <Grid item xs={12}>
             <Paper sx={{ p: 4, textAlign: 'center' }}>
-              <Typography color="text.secondary">Henüz kasa eklenmedi</Typography>
+              <AccountBalance sx={{ fontSize: 60, color: 'text.disabled', mb: 2 }} />
+              <Typography variant="h6" color="text.secondary" gutterBottom>
+                Henüz kasa eklenmedi
+              </Typography>
+              <Typography variant="body2" color="text.disabled" sx={{ mb: 2 }}>
+                Yeni bir kasa ekleyerek başlayın
+              </Typography>
+              <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
+                Yeni Kasa Ekle
+              </Button>
             </Paper>
           </Grid>
         ) : (
-          cashRegisters.map((register) => (
+          cashRegisters
+            .sort((a, b) => (b.balance || 0) - (a.balance || 0))
+            .map((register, index) => (
             <Grid item xs={12} sm={6} md={4} key={register._id}>
-              <Card elevation={3}>
-                <CardContent>
+              <Card
+                elevation={3}
+                sx={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderTop: 4,
+                  borderColor: register.balance >= 0 ? 'primary.main' : 'error.main',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)',
+                    boxShadow: 6
+                  }
+                }}
+              >
+                <CardContent sx={{ flexGrow: 1 }}>
                   <Box
                     sx={{
                       display: 'flex',
@@ -354,8 +419,15 @@ const CashRegisters = () => {
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <AccountBalance color="primary" />
-                      <Typography variant="h6">{register.name}</Typography>
+                      <AccountBalance color="primary" sx={{ fontSize: 28 }} />
+                      <Box>
+                        <Typography variant="h6" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+                          {register.name}
+                        </Typography>
+                        {index === 0 && (
+                          <Chip label="En Yüksek" size="small" color="primary" sx={{ mt: 0.5 }} />
+                        )}
+                      </Box>
                     </Box>
                     <IconButton
                       size="small"
@@ -367,27 +439,42 @@ const CashRegisters = () => {
                   </Box>
 
                   {register.description && (
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, minHeight: 40 }}>
                       {register.description}
                     </Typography>
                   )}
 
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" color="text.secondary">
+                  <Box
+                    sx={{
+                      mt: 2,
+                      p: 2,
+                      bgcolor: register.balance >= 0 ? 'success.50' : 'error.50',
+                      borderRadius: 2,
+                      textAlign: 'center'
+                    }}
+                  >
+                    <Typography variant="caption" color="text.secondary" display="block">
                       Mevcut Bakiye
                     </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-                      <Typography variant="h4" color="primary.main">
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mt: 0.5 }}>
+                      <Typography
+                        variant="h4"
+                        sx={{
+                          fontWeight: 'bold',
+                          color: register.balance >= 0 ? 'success.main' : 'error.main'
+                        }}
+                      >
                         ₺{(register.balance || 0).toLocaleString('tr-TR')}
                       </Typography>
-                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
                         <Tooltip title="Bakiye Artır">
                           <IconButton
                             size="small"
                             color="success"
                             onClick={() => handleAdjustBalance(register, 'add')}
+                            sx={{ p: 0.5 }}
                           >
-                            <AddCircle />
+                            <AddCircle fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Bakiye Azalt">
@@ -395,29 +482,48 @@ const CashRegisters = () => {
                             size="small"
                             color="error"
                             onClick={() => handleAdjustBalance(register, 'subtract')}
+                            sx={{ p: 0.5 }}
                           >
-                            <RemoveCircle />
+                            <RemoveCircle fontSize="small" />
                           </IconButton>
                         </Tooltip>
                       </Box>
                     </Box>
                   </Box>
 
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" color="text.secondary">
-                      Başlangıç Bakiyesi
-                    </Typography>
-                    <Typography variant="body1">
-                      ₺{(register.initialBalance || 0).toLocaleString('tr-TR')}
-                    </Typography>
+                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Başlangıç Bakiyesi
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        ₺{(register.initialBalance || 0).toLocaleString('tr-TR')}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="caption" color="text.secondary">
+                        Değişim
+                      </Typography>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          fontWeight: 500,
+                          color: (register.balance || 0) - (register.initialBalance || 0) >= 0 ? 'success.main' : 'error.main'
+                        }}
+                      >
+                        {(register.balance || 0) - (register.initialBalance || 0) >= 0 ? '+' : ''}
+                        ₺{((register.balance || 0) - (register.initialBalance || 0)).toLocaleString('tr-TR')}
+                      </Typography>
+                    </Box>
                   </Box>
 
                   <Box sx={{ mt: 3 }}>
                     <Button
                       fullWidth
-                      variant="outlined"
+                      variant="contained"
                       startIcon={<Receipt />}
                       onClick={() => loadTransactions(register)}
+                      sx={{ borderRadius: 2 }}
                     >
                       Hareketler
                     </Button>
@@ -666,8 +772,21 @@ const CashRegisters = () => {
         maxWidth="lg"
         fullWidth
       >
-        <DialogTitle>
-          Kasa Hareketleri - {transactionsDialog.cashRegister?.name}
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Kasa Hareketleri - {transactionsDialog.cashRegister?.name}</span>
+          {transactionsDialog.cashRegister && (
+            <Button
+              variant="contained"
+              color="success"
+              size="small"
+              startIcon={<Download />}
+              onClick={() => {
+                window.open(`/api/export/cash-register-transactions/${transactionsDialog.cashRegister._id}`, '_blank');
+              }}
+            >
+              Excel İndir
+            </Button>
+          )}
         </DialogTitle>
         <DialogContent>
           {transactionsDialog.loading ? (
@@ -706,12 +825,25 @@ const CashRegisters = () => {
                       </TableCell>
                       <TableCell>
                         <Chip
-                          label={transaction.type === 'income' ? 'Gelir' : 'Gider'}
-                          color={transaction.type === 'income' ? 'success' : 'error'}
+                          label={transaction.isTransfer
+                            ? (transaction.transferDirection === 'in' ? 'Virman Giriş' : 'Virman Çıkış')
+                            : (transaction.type === 'income' ? 'Gelir' : 'Gider')}
+                          color={transaction.isTransfer
+                            ? (transaction.transferDirection === 'in' ? 'info' : 'warning')
+                            : (transaction.type === 'income' ? 'success' : 'error')}
                           size="small"
+                          icon={transaction.isTransfer ? <SwapHoriz /> : undefined}
                         />
                       </TableCell>
-                      <TableCell>{transaction.description}</TableCell>
+                      <TableCell>
+                        {transaction.description}
+                        {transaction.isTransfer && transaction.relatedCashRegister && (
+                          <Typography variant="caption" display="block" color="text.secondary">
+                            {transaction.transferDirection === 'in' ? 'Gelen: ' : 'Giden: '}
+                            {transaction.relatedCashRegister.name}
+                          </Typography>
+                        )}
+                      </TableCell>
                       <TableCell>{transaction.category}</TableCell>
                       <TableCell align="right">
                         <Typography
