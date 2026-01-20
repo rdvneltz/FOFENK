@@ -554,7 +554,7 @@ const Calendar = () => {
           <Chip
             size="small"
             sx={{ bgcolor: '#9c27b0', color: 'white', height: 24 }}
-            label="Kayıt Oldu"
+            label="Ertelendi ↻"
           />
           <Chip
             size="small"

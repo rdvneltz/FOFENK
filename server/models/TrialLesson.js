@@ -48,12 +48,17 @@ const trialLessonSchema = new mongoose.Schema({
     type: Number,
     default: 60
   },
-  // Durum: bekliyor, tamamlandı, iptal, kayıt oldu
+  // Durum: bekliyor, tamamlandı, iptal, kayıt oldu, ertelendi
   status: {
     type: String,
-    enum: ['pending', 'completed', 'cancelled', 'converted'],
+    enum: ['pending', 'completed', 'cancelled', 'converted', 'postponed'],
     default: 'pending'
   },
+  // Erteleme bilgileri - orijinal tarih ve saat
+  originalScheduledDate: Date,
+  originalScheduledTime: String,
+  // Erteleme nedeni
+  postponeReason: String,
   // Deneme dersine katıldı mı
   attended: {
     type: Boolean,

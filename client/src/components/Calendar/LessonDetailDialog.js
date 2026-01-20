@@ -89,6 +89,16 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   // Expanded sections
   const [attendanceExpanded, setAttendanceExpanded] = useState(true);
 
+  // Postpone dialog state
+  const [postponeDialogOpen, setPostponeDialogOpen] = useState(false);
+  const [postponeData, setPostponeData] = useState({
+    newDate: '',
+    newStartTime: '',
+    newEndTime: '',
+    reason: '',
+  });
+  const [postponing, setPostponing] = useState(false);
+
   useEffect(() => {
     if (open && lesson) {
       loadLessonDetails();
@@ -629,6 +639,60 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       onDeleted();
     } catch (error) {
       alert('Ders silinirken hata oluştu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Postpone handlers
+  const handleOpenPostponeDialog = () => {
+    setPostponeData({
+      newDate: '',
+      newStartTime: lessonData?.startTime || '',
+      newEndTime: lessonData?.endTime || '',
+      reason: '',
+    });
+    setPostponeDialogOpen(true);
+  };
+
+  const handleClosePostponeDialog = () => {
+    setPostponeDialogOpen(false);
+  };
+
+  const handlePostpone = async () => {
+    if (!postponeData.newDate) {
+      alert('Lütfen yeni tarih girin');
+      return;
+    }
+    if (!postponeData.newStartTime || !postponeData.newEndTime) {
+      alert('Lütfen yeni başlangıç ve bitiş saati girin');
+      return;
+    }
+
+    setPostponing(true);
+
+    try {
+      await api.put(`/scheduled-lessons/${lesson._id}`, {
+        // Store original values
+        originalDate: lessonData.date,
+        originalStartTime: lessonData.startTime,
+        originalEndTime: lessonData.endTime,
+        // Set new values
+        date: postponeData.newDate,
+        startTime: postponeData.newStartTime,
+        endTime: postponeData.newEndTime,
+        postponeReason: postponeData.reason,
+        status: 'scheduled', // Reset to scheduled so it can be completed at new time
+        updatedBy: user?.username,
+      });
+
+      setPostponeDialogOpen(false);
+      setStatus('scheduled');
+      alert('Ders ertelendi! Yeni tarih: ' + new Date(postponeData.newDate).toLocaleDateString('tr-TR') + ' ' + postponeData.newStartTime);
+      loadLessonDetails();
+      onUpdated();
+    } catch (error) {
+      alert('Erteleme hatası: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setPostponing(false);
     }
   };
 
@@ -1268,7 +1332,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
                             variant="outlined"
                             color="warning"
                             fullWidth
-                            onClick={() => handleStatusChange('postponed')}
+                            onClick={handleOpenPostponeDialog}
                           >
                             Ertele
                           </Button>
@@ -1315,6 +1379,79 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
           onUpdated();
         }}
       />
+
+      {/* Postpone Dialog */}
+      <Dialog open={postponeDialogOpen} onClose={handleClosePostponeDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Dersi Ertele</DialogTitle>
+        <DialogContent>
+          {lessonData && (
+            <Box sx={{ mb: 2, mt: 1, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="subtitle1" fontWeight="bold">
+                {lessonData.course?.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Mevcut: {new Date(lessonData.date).toLocaleDateString('tr-TR')} - {lessonData.startTime} → {lessonData.endTime}
+              </Typography>
+              {lessonData.originalDate && (
+                <Typography variant="body2" color="warning.main">
+                  Daha önce ertelendi: {new Date(lessonData.originalDate).toLocaleDateString('tr-TR')} - {lessonData.originalStartTime}
+                </Typography>
+              )}
+            </Box>
+          )}
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Yeni Tarih"
+                type="date"
+                value={postponeData.newDate}
+                onChange={(e) => setPostponeData({ ...postponeData, newDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Başlangıç Saati"
+                type="time"
+                value={postponeData.newStartTime}
+                onChange={(e) => setPostponeData({ ...postponeData, newStartTime: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Bitiş Saati"
+                type="time"
+                value={postponeData.newEndTime}
+                onChange={(e) => setPostponeData({ ...postponeData, newEndTime: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Erteleme Nedeni (Opsiyonel)"
+                value={postponeData.reason}
+                onChange={(e) => setPostponeData({ ...postponeData, reason: e.target.value })}
+                multiline
+                rows={2}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClosePostponeDialog}>İptal</Button>
+          <Button variant="contained" color="warning" onClick={handlePostpone} disabled={postponing}>
+            {postponing ? 'Erteleniyor...' : 'Ertele'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };

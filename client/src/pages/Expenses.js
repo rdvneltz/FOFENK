@@ -564,9 +564,9 @@ const Expenses = () => {
     return { label: '6+ Ay', color: 'default' };
   };
 
-  const filteredExpenses = expenses.filter((expense) =>
-    filterCategory === 'all' ? true : expense.category === filterCategory
-  );
+  const filteredExpenses = expenses
+    .filter((expense) => filterCategory === 'all' ? true : expense.category === filterCategory)
+    .sort((a, b) => new Date(b.expenseDate) - new Date(a.expenseDate)); // Sort by date (newest first)
 
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
 

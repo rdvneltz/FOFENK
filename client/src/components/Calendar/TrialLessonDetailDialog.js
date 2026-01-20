@@ -33,6 +33,7 @@ import {
   Email,
   Schedule,
   WhatsApp,
+  Update,
 } from '@mui/icons-material';
 import { useApp } from '../../context/AppContext';
 import api from '../../api';
@@ -47,6 +48,13 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
+  // Postpone dialog state
+  const [postponeDialogOpen, setPostponeDialogOpen] = useState(false);
+  const [postponeData, setPostponeData] = useState({
+    newDate: '',
+    newTime: '',
+    reason: '',
+  });
   const [formData, setFormData] = useState({
     status: 'pending',
     attended: false,
@@ -157,6 +165,48 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
     setConvertDialogOpen(false);
     loadTrialLessonDetails();
     if (onUpdated) onUpdated();
+  };
+
+  // Postpone handlers
+  const handleOpenPostponeDialog = () => {
+    setPostponeData({
+      newDate: '',
+      newTime: '',
+      reason: '',
+    });
+    setPostponeDialogOpen(true);
+  };
+
+  const handleClosePostponeDialog = () => {
+    setPostponeDialogOpen(false);
+  };
+
+  const handlePostpone = async () => {
+    if (!postponeData.newDate || !postponeData.newTime) {
+      alert('Lütfen yeni tarih ve saat girin');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      await api.put(`/trial-lessons/${trialLesson._id}`, {
+        originalScheduledDate: trialData.scheduledDate,
+        originalScheduledTime: trialData.scheduledTime,
+        scheduledDate: postponeData.newDate,
+        scheduledTime: postponeData.newTime,
+        postponeReason: postponeData.reason,
+        status: 'pending', // Reset to pending so it can be completed at new time
+        updatedBy: user?.username,
+      });
+      setPostponeDialogOpen(false);
+      loadTrialLessonDetails();
+      if (onUpdated) onUpdated();
+      alert('Deneme dersi ertelendi!');
+    } catch (error) {
+      alert('Erteleme hatası: ' + (error.response?.data?.message || error.message));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSendWhatsAppReminder = () => {
@@ -430,6 +480,15 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
                             </Button>
                             <Button
                               variant="outlined"
+                              color="secondary"
+                              startIcon={<Update />}
+                              onClick={handleOpenPostponeDialog}
+                              disabled={saving}
+                            >
+                              Ertele
+                            </Button>
+                            <Button
+                              variant="outlined"
                               color="error"
                               startIcon={<Cancel />}
                               onClick={() => handleStatusChange('cancelled')}
@@ -626,6 +685,68 @@ const TrialLessonDetailDialog = ({ open, onClose, trialLesson, onUpdated, onDele
         trialLesson={trialData}
         onSuccess={handleConvertSuccess}
       />
+
+      {/* Postpone Dialog */}
+      <Dialog open={postponeDialogOpen} onClose={handleClosePostponeDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>Deneme Dersi Ertele</DialogTitle>
+        <DialogContent>
+          {trialData && (
+            <Box sx={{ mb: 2, mt: 1, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="subtitle1" fontWeight="bold">
+                {trialData.firstName} {trialData.lastName}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Mevcut: {new Date(trialData.scheduledDate).toLocaleDateString('tr-TR')} - {trialData.scheduledTime}
+              </Typography>
+              {trialData.originalScheduledDate && (
+                <Typography variant="body2" color="warning.main">
+                  Daha önce ertelendi: {new Date(trialData.originalScheduledDate).toLocaleDateString('tr-TR')} - {trialData.originalScheduledTime}
+                </Typography>
+              )}
+            </Box>
+          )}
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Yeni Tarih"
+                type="date"
+                value={postponeData.newDate}
+                onChange={(e) => setPostponeData({ ...postponeData, newDate: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Yeni Saat"
+                type="time"
+                value={postponeData.newTime}
+                onChange={(e) => setPostponeData({ ...postponeData, newTime: e.target.value })}
+                InputLabelProps={{ shrink: true }}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Erteleme Nedeni (Opsiyonel)"
+                value={postponeData.reason}
+                onChange={(e) => setPostponeData({ ...postponeData, reason: e.target.value })}
+                multiline
+                rows={2}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleClosePostponeDialog}>İptal</Button>
+          <Button variant="contained" color="secondary" onClick={handlePostpone} disabled={saving}>
+            {saving ? 'Erteleniyor...' : 'Ertele'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 };

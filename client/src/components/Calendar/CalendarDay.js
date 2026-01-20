@@ -74,7 +74,11 @@ const CalendarDay = ({
   // Sort by time
   allEvents.sort((a, b) => (a.sortTime || '').localeCompare(b.sortTime || ''));
 
-  const getTrialLessonColor = (status) => {
+  const getTrialLessonColor = (status, trial) => {
+    // Check if trial was postponed (has original date)
+    if (trial?.originalScheduledDate && status === 'pending') {
+      return '#9c27b0'; // Purple for rescheduled
+    }
     switch (status) {
       case 'completed':
         return '#4caf50'; // Green
@@ -87,7 +91,11 @@ const CalendarDay = ({
     }
   };
 
-  const getLessonColor = (status) => {
+  const getLessonColor = (status, lesson) => {
+    // Check if lesson was rescheduled (has original date) - show in purple
+    if (lesson?.originalDate && status !== 'completed' && status !== 'cancelled') {
+      return '#9c27b0'; // Purple for rescheduled
+    }
     switch (status) {
       case 'completed':
         return 'success.light';
@@ -185,7 +193,7 @@ const CalendarDay = ({
                 fontSize: '0.75rem',
                 p: 0.75,
                 borderRadius: 1,
-                backgroundColor: getTrialLessonColor(event.status),
+                backgroundColor: getTrialLessonColor(event.status, event),
                 color: 'white',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -200,7 +208,7 @@ const CalendarDay = ({
                 },
                 transition: 'all 0.2s',
               }}
-              title={`DENEME: ${event.scheduledTime} - ${event.firstName} ${event.lastName} (${event.course?.name || 'Ders'})`}
+              title={`DENEME: ${event.scheduledTime} - ${event.firstName} ${event.lastName} (${event.course?.name || 'Ders'})${event.originalScheduledDate ? ` [Ertelendi: ${new Date(event.originalScheduledDate).toLocaleDateString('tr-TR')} ${event.originalScheduledTime || ''}]` : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (onTrialLessonClick) onTrialLessonClick(event);
@@ -209,6 +217,9 @@ const CalendarDay = ({
               <Box sx={{ fontSize: '0.7rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <span>&#9733;</span> {/* Star icon for trial */}
                 {event.scheduledTime}
+                {event.originalScheduledDate && (
+                  <span style={{ fontSize: '0.6rem', marginLeft: 4, opacity: 0.9 }}>↻</span>
+                )}
               </Box>
               <Box sx={{ fontSize: '0.65rem', mt: 0.3 }}>
                 {event.firstName} {event.lastName?.charAt(0)}.
@@ -222,7 +233,7 @@ const CalendarDay = ({
                 fontSize: '0.75rem',
                 p: 0.75,
                 borderRadius: 1,
-                backgroundColor: getLessonColor(event.status),
+                backgroundColor: getLessonColor(event.status, event),
                 color: 'white',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -236,14 +247,17 @@ const CalendarDay = ({
                 },
                 transition: 'all 0.2s',
               }}
-              title={`${event.startTime}-${event.endTime} ${event.course?.name || 'Ders'}${event.notes ? ` - ${event.notes}` : ''}`}
+              title={`${event.startTime}-${event.endTime} ${event.course?.name || 'Ders'}${event.notes ? ` - ${event.notes}` : ''}${event.originalDate ? ` [Ertelendi: ${new Date(event.originalDate).toLocaleDateString('tr-TR')} ${event.originalStartTime || ''}]` : ''}`}
               onClick={(e) => {
                 e.stopPropagation();
                 if (onLessonClick) onLessonClick(event);
               }}
             >
-              <Box sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+              <Box sx={{ fontSize: '0.7rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {event.startTime}-{event.endTime}
+                {event.originalDate && (
+                  <span style={{ fontSize: '0.6rem', marginLeft: 4, opacity: 0.9 }}>↻</span>
+                )}
               </Box>
               <Box sx={{ fontSize: '0.65rem', mt: 0.3 }}>
                 {event.student

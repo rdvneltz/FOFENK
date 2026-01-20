@@ -36,6 +36,10 @@ const getDurationHeight = (durationMinutes) => {
 // Event colors based on type and status
 const getEventStyle = (event, isTrialLesson) => {
   if (isTrialLesson) {
+    // Check if trial was rescheduled
+    if (event.originalScheduledDate && event.status === 'pending') {
+      return { bgcolor: '#9c27b0', color: 'white', borderColor: '#7b1fa2' }; // Purple for rescheduled
+    }
     switch (event.status) {
       case 'completed':
         return { bgcolor: '#4caf50', color: 'white', borderColor: '#388e3c' };
@@ -47,8 +51,21 @@ const getEventStyle = (event, isTrialLesson) => {
         return { bgcolor: '#ff9800', color: 'white', borderColor: '#f57c00' };
     }
   }
-  // Regular lesson
-  return { bgcolor: '#2196f3', color: 'white', borderColor: '#1976d2' };
+  // Check if regular lesson was rescheduled
+  if (event.originalDate && event.status !== 'completed' && event.status !== 'cancelled') {
+    return { bgcolor: '#9c27b0', color: 'white', borderColor: '#7b1fa2' }; // Purple for rescheduled
+  }
+  // Regular lesson - check status
+  switch (event.status) {
+    case 'completed':
+      return { bgcolor: '#4caf50', color: 'white', borderColor: '#388e3c' };
+    case 'cancelled':
+      return { bgcolor: '#f44336', color: 'white', borderColor: '#d32f2f' };
+    case 'postponed':
+      return { bgcolor: '#ff9800', color: 'white', borderColor: '#f57c00' };
+    default:
+      return { bgcolor: '#2196f3', color: 'white', borderColor: '#1976d2' };
+  }
 };
 
 // Group overlapping events
@@ -167,6 +184,7 @@ const DayScheduleView = ({
             {event.isTrialLesson && (
               <Chip
                 label={
+                  event.originalScheduledDate && event.status === 'pending' ? 'Ertelendi ↻' :
                   event.status === 'pending' ? 'Bekliyor' :
                   event.status === 'completed' ? 'Tamamlandı' :
                   event.status === 'converted' ? 'Kayıt Oldu' : 'İptal'
@@ -174,6 +192,16 @@ const DayScheduleView = ({
                 size="small"
                 sx={{ mt: 0.5 }}
               />
+            )}
+            {!event.isTrialLesson && event.originalDate && (
+              <Typography variant="caption" display="block" color="warning.main">
+                ↻ Ertelendi: {new Date(event.originalDate).toLocaleDateString('tr-TR')} {event.originalStartTime || ''}
+              </Typography>
+            )}
+            {event.isTrialLesson && event.originalScheduledDate && (
+              <Typography variant="caption" display="block" color="warning.main">
+                ↻ Eski: {new Date(event.originalScheduledDate).toLocaleDateString('tr-TR')} {event.originalScheduledTime || ''}
+              </Typography>
             )}
           </Box>
         }
@@ -218,7 +246,9 @@ const DayScheduleView = ({
               whiteSpace: 'nowrap',
             }}
           >
-            {event.isTrialLesson && '★ '}{eventName}
+            {event.isTrialLesson && '★ '}
+            {(event.originalDate || event.originalScheduledDate) && '↻ '}
+            {eventName}
           </Typography>
           {lessonDescription && !compact && height > 40 && (
             <Typography
