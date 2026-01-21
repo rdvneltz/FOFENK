@@ -133,13 +133,20 @@ const Calendar = () => {
       setLessonsArray(response.data);
 
       // Group lessons by date for monthly view
+      // Use UTC date extraction for consistent timezone handling
       const grouped = {};
       response.data.forEach((lesson) => {
-        const date = new Date(lesson.date).toDateString();
-        if (!grouped[date]) {
-          grouped[date] = [];
+        // Extract date part from UTC to avoid timezone shifts
+        const lessonDate = new Date(lesson.date);
+        const dateKey = new Date(
+          lessonDate.getUTCFullYear(),
+          lessonDate.getUTCMonth(),
+          lessonDate.getUTCDate()
+        ).toDateString();
+        if (!grouped[dateKey]) {
+          grouped[dateKey] = [];
         }
-        grouped[date].push(lesson);
+        grouped[dateKey].push(lesson);
       });
       setLessons(grouped);
     } catch (error) {
@@ -162,13 +169,19 @@ const Calendar = () => {
       setTrialLessonsArray(response.data);
 
       // Group trial lessons by date for monthly view
+      // Use UTC date extraction for consistent timezone handling
       const grouped = {};
       response.data.forEach((trial) => {
-        const date = new Date(trial.scheduledDate).toDateString();
-        if (!grouped[date]) {
-          grouped[date] = [];
+        const trialDate = new Date(trial.scheduledDate);
+        const dateKey = new Date(
+          trialDate.getUTCFullYear(),
+          trialDate.getUTCMonth(),
+          trialDate.getUTCDate()
+        ).toDateString();
+        if (!grouped[dateKey]) {
+          grouped[dateKey] = [];
         }
-        grouped[date].push(trial);
+        grouped[dateKey].push(trial);
       });
       setTrialLessons(grouped);
     } catch (error) {
@@ -201,14 +214,20 @@ const Calendar = () => {
       setPendingExpensesArray(allExpenses);
 
       // Group by due date for monthly view
+      // Use UTC date extraction for consistent timezone handling
       const grouped = {};
       allExpenses.forEach((expense) => {
         if (expense.dueDate) {
-          const date = new Date(expense.dueDate).toDateString();
-          if (!grouped[date]) {
-            grouped[date] = [];
+          const expenseDate = new Date(expense.dueDate);
+          const dateKey = new Date(
+            expenseDate.getUTCFullYear(),
+            expenseDate.getUTCMonth(),
+            expenseDate.getUTCDate()
+          ).toDateString();
+          if (!grouped[dateKey]) {
+            grouped[dateKey] = [];
           }
-          grouped[date].push(expense);
+          grouped[dateKey].push(expense);
         }
       });
       setPendingExpenses(grouped);

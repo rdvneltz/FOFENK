@@ -26,8 +26,13 @@ import {
   TableHead,
   TableRow,
   Chip,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Divider,
+  LinearProgress,
 } from '@mui/material';
-import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz, Receipt, Delete, Download } from '@mui/icons-material';
+import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz, Receipt, Delete, Download, ExpandMore, TrendingUp, TrendingDown, Wallet, AttachMoney } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -79,11 +84,30 @@ const CashRegisters = () => {
     password: ''
   });
 
+  // Expanded cash register for accordion
+  const [expandedCashRegister, setExpandedCashRegister] = useState(null);
+
+  // Summary data
+  const [summaryData, setSummaryData] = useState({
+    totalIncome: 0,
+    totalExpense: 0,
+    incomeByCategory: [],
+    expenseByCategory: []
+  });
+
+  // Summary dialog
+  const [summaryDialog, setSummaryDialog] = useState({
+    open: false,
+    type: null, // 'income' or 'expense'
+    data: []
+  });
+
   useEffect(() => {
     if (institution) {
       loadCashRegisters();
+      loadSummaryData();
     }
-  }, [institution]);
+  }, [institution, season]);
 
   const loadCashRegisters = async () => {
     try {
@@ -94,6 +118,96 @@ const CashRegisters = () => {
       setCashRegisters(response.data);
     } catch (error) {
       console.error('Error loading cash registers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadSummaryData = async () => {
+    try {
+      // Load payments (income)
+      const paymentsRes = await api.get('/payments', {
+        params: { institutionId: institution._id, seasonId: season?._id }
+      });
+      const payments = paymentsRes.data || [];
+      const totalIncome = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+      // Group income by payment type
+      const incomeByCategory = {};
+      payments.forEach(p => {
+        const cat = p.paymentType === 'creditCard' ? 'Kredi Kartı' : 'Nakit';
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + (p.amount || 0);
+      });
+
+      // Load expenses
+      const expensesRes = await api.get('/expenses', {
+        params: { institutionId: institution._id, seasonId: season?._id }
+      });
+      const expenses = expensesRes.data || [];
+      // Exclude transfer and manual income entries from total expense
+      const realExpenses = expenses.filter(e =>
+        !e.isManualIncome &&
+        e.category !== 'Kasa Giriş (Manuel)' &&
+        e.category !== 'Virman (Giriş)' &&
+        e.category !== 'Virman (Çıkış)'
+      );
+      const totalExpense = realExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+      // Group expense by category
+      const expenseByCategory = {};
+      realExpenses.forEach(e => {
+        const cat = e.category || 'Diğer';
+        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + (e.amount || 0);
+      });
+
+      setSummaryData({
+        totalIncome,
+        totalExpense,
+        incomeByCategory: Object.entries(incomeByCategory)
+          .map(([name, amount]) => ({ name, amount }))
+          .sort((a, b) => b.amount - a.amount),
+        expenseByCategory: Object.entries(expenseByCategory)
+          .map(([name, amount]) => ({ name, amount }))
+          .sort((a, b) => b.amount - a.amount)
+      });
+    } catch (error) {
+      console.error('Error loading summary data:', error);
+    }
+  };
+
+  // Handle accordion expansion
+  const handleAccordionChange = (registerId) => (event, isExpanded) => {
+    setExpandedCashRegister(isExpanded ? registerId : null);
+  };
+
+  // Show summary details
+  const handleShowSummaryDetails = (type) => {
+    setSummaryDialog({
+      open: true,
+      type,
+      data: type === 'income' ? summaryData.incomeByCategory : summaryData.expenseByCategory
+    });
+  };
+
+  // Migrate old transfers
+  const handleMigrateOldTransfers = async () => {
+    const oldTransfers = [
+      { date: '2026-01-18T21:27:31', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'Gökçe Şahsi', amount: 8500, description: 'Açıklama yok' },
+      { date: '2026-01-18T21:23:45', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'Gökçe Şahsi', amount: 13250, description: 'SERMAYE GERİ ÖDEMESİ' },
+      { date: '2026-01-18T19:15:38', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'Gökçe Şahsi', amount: 12713.38, description: 'SERMAYE ÖDEMESİ' },
+      { date: '2026-01-18T19:09:38', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'ZEHRA KURT KREDİ KARTI', amount: 8442.5, description: 'KREDİ KARTI ÖDEMESİ' },
+      { date: '2026-01-02T00:27:31', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'ZEHRA KURT KREDİ KARTI', amount: 36700, description: 'KREDİ KARTI ÖDEMESİ' },
+    ];
+
+    try {
+      setLoading(true);
+      const response = await api.post('/cash-registers/migrate-old-transfers', { transfers: oldTransfers });
+      setSuccess(`Eski virmanlar aktarıldı: ${response.data.message}`);
+      if (response.data.errors?.length > 0) {
+        setError(`Bazı hatalar: ${response.data.errors.join(', ')}`);
+      }
+    } catch (error) {
+      setError(error.response?.data?.message || 'Migration hatası');
     } finally {
       setLoading(false);
     }
@@ -333,132 +447,178 @@ const CashRegisters = () => {
         </Alert>
       )}
 
-      {/* Summary Card */}
-      {cashRegisters.length > 0 && (
-        <Paper
-          sx={{
-            p: 3,
-            mb: 3,
-            background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
-            color: 'white',
-            borderRadius: 2
-          }}
-        >
-          <Grid container spacing={3} alignItems="center">
-            <Grid item xs={12} md={4}>
-              <Typography variant="subtitle2" sx={{ opacity: 0.9 }}>
-                Toplam Bakiye
-              </Typography>
-              <Typography variant="h3" sx={{ fontWeight: 'bold' }}>
-                ₺{cashRegisters.reduce((sum, r) => sum + (r.balance || 0), 0).toLocaleString('tr-TR')}
-              </Typography>
-            </Grid>
-            <Grid item xs={12} md={8}>
-              <Grid container spacing={2}>
-                {cashRegisters.slice(0, 4).map((register) => (
-                  <Grid item xs={6} sm={3} key={register._id}>
-                    <Box sx={{ textAlign: 'center', p: 1, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 1 }}>
-                      <Typography variant="caption" sx={{ opacity: 0.9, display: 'block' }}>
-                        {register.name}
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                        ₺{(register.balance || 0).toLocaleString('tr-TR')}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                ))}
-              </Grid>
-            </Grid>
-          </Grid>
-        </Paper>
-      )}
+      {/* Financial Summary Cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        {/* Total Balance Card */}
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 2,
+              background: 'linear-gradient(135deg, #1976d2 0%, #42a5f5 100%)',
+              color: 'white',
+              borderRadius: 2,
+              cursor: 'default'
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <Wallet />
+              <Typography variant="subtitle2" sx={{ opacity: 0.9 }}>Toplam Bakiye</Typography>
+            </Box>
+            <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+              ₺{cashRegisters.reduce((sum, r) => sum + (r.balance || 0), 0).toLocaleString('tr-TR')}
+            </Typography>
+          </Paper>
+        </Grid>
 
-      <Grid container spacing={3}>
+        {/* Total Income Card */}
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 2,
+              bgcolor: 'success.50',
+              borderLeft: 4,
+              borderColor: 'success.main',
+              cursor: 'pointer',
+              '&:hover': { bgcolor: 'success.100' }
+            }}
+            onClick={() => handleShowSummaryDetails('income')}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <TrendingUp color="success" />
+              <Typography variant="subtitle2" color="text.secondary">Toplam Gelir</Typography>
+            </Box>
+            <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+              ₺{summaryData.totalIncome.toLocaleString('tr-TR')}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">Detaylar için tıklayın</Typography>
+          </Paper>
+        </Grid>
+
+        {/* Total Expense Card */}
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 2,
+              bgcolor: 'error.50',
+              borderLeft: 4,
+              borderColor: 'error.main',
+              cursor: 'pointer',
+              '&:hover': { bgcolor: 'error.100' }
+            }}
+            onClick={() => handleShowSummaryDetails('expense')}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <TrendingDown color="error" />
+              <Typography variant="subtitle2" color="text.secondary">Toplam Gider</Typography>
+            </Box>
+            <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'error.main' }}>
+              ₺{summaryData.totalExpense.toLocaleString('tr-TR')}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">Detaylar için tıklayın</Typography>
+          </Paper>
+        </Grid>
+
+        {/* Net Balance Card */}
+        <Grid item xs={12} sm={6} md={3}>
+          <Paper
+            sx={{
+              p: 2,
+              bgcolor: (summaryData.totalIncome - summaryData.totalExpense) >= 0 ? 'info.50' : 'warning.50',
+              borderLeft: 4,
+              borderColor: (summaryData.totalIncome - summaryData.totalExpense) >= 0 ? 'info.main' : 'warning.main',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+              <AttachMoney color={(summaryData.totalIncome - summaryData.totalExpense) >= 0 ? 'info' : 'warning'} />
+              <Typography variant="subtitle2" color="text.secondary">Net Kar/Zarar</Typography>
+            </Box>
+            <Typography
+              variant="h4"
+              sx={{
+                fontWeight: 'bold',
+                color: (summaryData.totalIncome - summaryData.totalExpense) >= 0 ? 'info.main' : 'warning.main'
+              }}
+            >
+              {(summaryData.totalIncome - summaryData.totalExpense) >= 0 ? '+' : ''}
+              ₺{(summaryData.totalIncome - summaryData.totalExpense).toLocaleString('tr-TR')}
+            </Typography>
+          </Paper>
+        </Grid>
+      </Grid>
+
+      {/* Cash Registers Section */}
+      <Paper sx={{ mb: 2 }}>
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+          <Typography variant="h6">
+            <AccountBalance sx={{ mr: 1, verticalAlign: 'middle' }} />
+            Kasalar ({cashRegisters.length})
+          </Typography>
+          <Button
+            size="small"
+            color="warning"
+            variant="outlined"
+            onClick={handleMigrateOldTransfers}
+          >
+            Eski Virmanları Aktar
+          </Button>
+        </Box>
+
         {cashRegisters.length === 0 ? (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 4, textAlign: 'center' }}>
-              <AccountBalance sx={{ fontSize: 60, color: 'text.disabled', mb: 2 }} />
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                Henüz kasa eklenmedi
-              </Typography>
-              <Typography variant="body2" color="text.disabled" sx={{ mb: 2 }}>
-                Yeni bir kasa ekleyerek başlayın
-              </Typography>
-              <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
-                Yeni Kasa Ekle
-              </Button>
-            </Paper>
-          </Grid>
+          <Box sx={{ p: 4, textAlign: 'center' }}>
+            <AccountBalance sx={{ fontSize: 60, color: 'text.disabled', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              Henüz kasa eklenmedi
+            </Typography>
+            <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
+              Yeni Kasa Ekle
+            </Button>
+          </Box>
         ) : (
           cashRegisters
             .sort((a, b) => (b.balance || 0) - (a.balance || 0))
             .map((register, index) => (
-            <Grid item xs={12} sm={6} md={4} key={register._id}>
-              <Card
-                elevation={3}
+              <Accordion
+                key={register._id}
+                expanded={expandedCashRegister === register._id}
+                onChange={handleAccordionChange(register._id)}
+                disableGutters
                 sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderTop: 4,
-                  borderColor: register.balance >= 0 ? 'primary.main' : 'error.main',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: 6
-                  }
+                  '&:before': { display: 'none' },
+                  borderBottom: 1,
+                  borderColor: 'divider'
                 }}
               >
-                <CardContent sx={{ flexGrow: 1 }}>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      mb: 2,
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <AccountBalance color="primary" sx={{ fontSize: 28 }} />
-                      <Box>
-                        <Typography variant="h6" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
-                          {register.name}
-                        </Typography>
-                        {index === 0 && (
-                          <Chip label="En Yüksek" size="small" color="primary" sx={{ mt: 0.5 }} />
-                        )}
+                <AccordionSummary
+                  expandIcon={<ExpandMore />}
+                  sx={{
+                    px: 2,
+                    '&:hover': { bgcolor: 'action.hover' },
+                    borderLeft: 4,
+                    borderColor: register.balance >= 0 ? 'success.main' : 'error.main'
+                  }}
+                >
+                  <Grid container alignItems="center" spacing={2}>
+                    <Grid item xs={12} sm={4}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <AccountBalance color={register.balance >= 0 ? 'success' : 'error'} />
+                        <Box>
+                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                            {register.name}
+                          </Typography>
+                          {register.description && (
+                            <Typography variant="caption" color="text.secondary">
+                              {register.description}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
-                    </Box>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpenDialog(register)}
-                      color="primary"
-                    >
-                      <Edit />
-                    </IconButton>
-                  </Box>
-
-                  {register.description && (
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, minHeight: 40 }}>
-                      {register.description}
-                    </Typography>
-                  )}
-
-                  <Box
-                    sx={{
-                      mt: 2,
-                      p: 2,
-                      bgcolor: register.balance >= 0 ? 'success.50' : 'error.50',
-                      borderRadius: 2,
-                      textAlign: 'center'
-                    }}
-                  >
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      Mevcut Bakiye
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mt: 0.5 }}>
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Mevcut Bakiye
+                      </Typography>
                       <Typography
-                        variant="h4"
+                        variant="h6"
                         sx={{
                           fontWeight: 'bold',
                           color: register.balance >= 0 ? 'success.main' : 'error.main'
@@ -466,42 +626,17 @@ const CashRegisters = () => {
                       >
                         ₺{(register.balance || 0).toLocaleString('tr-TR')}
                       </Typography>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                        <Tooltip title="Bakiye Artır">
-                          <IconButton
-                            size="small"
-                            color="success"
-                            onClick={() => handleAdjustBalance(register, 'add')}
-                            sx={{ p: 0.5 }}
-                          >
-                            <AddCircle fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Bakiye Azalt">
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => handleAdjustBalance(register, 'subtract')}
-                            sx={{ p: 0.5 }}
-                          >
-                            <RemoveCircle fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </Box>
-                  </Box>
-
-                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">
-                        Başlangıç Bakiyesi
+                    </Grid>
+                    <Grid item xs={6} sm={3}>
+                      <Typography variant="caption" color="text.secondary" display="block">
+                        Başlangıç
                       </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                      <Typography variant="body2">
                         ₺{(register.initialBalance || 0).toLocaleString('tr-TR')}
                       </Typography>
-                    </Box>
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="caption" color="text.secondary">
+                    </Grid>
+                    <Grid item xs={12} sm={2} sx={{ textAlign: 'right' }}>
+                      <Typography variant="caption" color="text.secondary" display="block">
                         Değişim
                       </Typography>
                       <Typography
@@ -514,26 +649,51 @@ const CashRegisters = () => {
                         {(register.balance || 0) - (register.initialBalance || 0) >= 0 ? '+' : ''}
                         ₺{((register.balance || 0) - (register.initialBalance || 0)).toLocaleString('tr-TR')}
                       </Typography>
-                    </Box>
-                  </Box>
-
-                  <Box sx={{ mt: 3 }}>
+                    </Grid>
+                  </Grid>
+                </AccordionSummary>
+                <AccordionDetails sx={{ bgcolor: 'grey.50', p: 2 }}>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button
-                      fullWidth
                       variant="contained"
+                      size="small"
                       startIcon={<Receipt />}
                       onClick={() => loadTransactions(register)}
-                      sx={{ borderRadius: 2 }}
                     >
                       Hareketler
                     </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      color="success"
+                      startIcon={<AddCircle />}
+                      onClick={() => handleAdjustBalance(register, 'add')}
+                    >
+                      Bakiye Ekle
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      color="error"
+                      startIcon={<RemoveCircle />}
+                      onClick={() => handleAdjustBalance(register, 'subtract')}
+                    >
+                      Bakiye Çıkar
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<Edit />}
+                      onClick={() => handleOpenDialog(register)}
+                    >
+                      Düzenle
+                    </Button>
                   </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))
+                </AccordionDetails>
+              </Accordion>
+            ))
         )}
-      </Grid>
+      </Paper>
 
       {/* Add/Edit Cash Register Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
@@ -883,6 +1043,111 @@ const CashRegisters = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setTransactionsDialog({ open: false, cashRegister: null, transactions: [], loading: false })}>
+            Kapat
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Summary Details Dialog */}
+      <Dialog
+        open={summaryDialog.open}
+        onClose={() => setSummaryDialog({ open: false, type: null, data: [] })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {summaryDialog.type === 'income' ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TrendingUp color="success" />
+              Gelir Detayları
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TrendingDown color="error" />
+              Gider Detayları
+            </Box>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          {summaryDialog.data.length === 0 ? (
+            <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+              Veri bulunamadı
+            </Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Kategori</TableCell>
+                    <TableCell align="right">Tutar</TableCell>
+                    <TableCell align="right">Oran</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {summaryDialog.data.map((item, index) => {
+                    const total = summaryDialog.type === 'income' ? summaryData.totalIncome : summaryData.totalExpense;
+                    const percentage = total > 0 ? ((item.amount / total) * 100).toFixed(1) : 0;
+                    return (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <Typography variant="body2">{item.name}</Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              fontWeight: 600,
+                              color: summaryDialog.type === 'income' ? 'success.main' : 'error.main'
+                            }}
+                          >
+                            ₺{item.amount.toLocaleString('tr-TR')}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <LinearProgress
+                              variant="determinate"
+                              value={parseFloat(percentage)}
+                              sx={{
+                                width: 60,
+                                height: 6,
+                                borderRadius: 3,
+                                bgcolor: 'grey.200',
+                                '& .MuiLinearProgress-bar': {
+                                  bgcolor: summaryDialog.type === 'income' ? 'success.main' : 'error.main'
+                                }
+                              }}
+                            />
+                            <Typography variant="caption" color="text.secondary">
+                              %{percentage}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+          <Divider sx={{ my: 2 }} />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+              Toplam
+            </Typography>
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 'bold',
+                color: summaryDialog.type === 'income' ? 'success.main' : 'error.main'
+              }}
+            >
+              ₺{(summaryDialog.type === 'income' ? summaryData.totalIncome : summaryData.totalExpense).toLocaleString('tr-TR')}
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSummaryDialog({ open: false, type: null, data: [] })}>
             Kapat
           </Button>
         </DialogActions>
