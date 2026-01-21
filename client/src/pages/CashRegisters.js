@@ -556,8 +556,8 @@ const CashRegisters = () => {
           <Button
             size="small"
             color="warning"
+            variant="outlined"
             onClick={handleMigrateOldTransfers}
-            sx={{ display: 'none' }} // Hidden by default, remove this line to show migration button
           >
             Eski Virmanları Aktar
           </Button>
