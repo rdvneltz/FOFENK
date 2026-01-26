@@ -1221,7 +1221,6 @@ const CashRegisters = () => {
               </Box>
             </>
           )}
-          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSummaryDialog({ open: false, type: null, data: [] })}>
