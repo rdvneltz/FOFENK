@@ -215,8 +215,13 @@ const Expenses = () => {
         }),
       ]);
 
-      // Filter only paid expenses for history
-      setExpenses(expensesRes.data.filter(e => e.status === 'paid'));
+      // Filter only paid expenses for history (exclude transfers - they are not real expenses)
+      setExpenses(expensesRes.data.filter(e =>
+        e.status === 'paid' &&
+        !e.isTransfer &&
+        e.category !== 'Virman (Giriş)' &&
+        e.category !== 'Virman (Çıkış)'
+      ));
       setPendingExpenses(pendingRes.data);
       setRecurringExpenses(recurringRes.data);
       setCashRegisters(cashRes.data);
