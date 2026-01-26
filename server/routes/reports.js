@@ -710,6 +710,61 @@ router.get('/collection-rate', async (req, res) => {
   }
 });
 
+// Get detailed collection data (payments by month/student)
+router.get('/collection-details', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.query;
+    const filter = { status: 'completed' };
+
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    // Get all completed payments with student and course info
+    const payments = await Payment.find(filter)
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name')
+      .sort({ paymentDate: -1 });
+
+    // Group by month
+    const byMonth = {};
+    payments.forEach(p => {
+      const monthKey = new Date(p.paymentDate).toISOString().substring(0, 7);
+      if (!byMonth[monthKey]) {
+        byMonth[monthKey] = {
+          period: monthKey,
+          total: 0,
+          count: 0,
+          payments: []
+        };
+      }
+      byMonth[monthKey].total += p.amount || 0;
+      byMonth[monthKey].count += 1;
+      byMonth[monthKey].payments.push({
+        _id: p._id,
+        date: p.paymentDate,
+        amount: p.amount,
+        studentName: p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Bilinmiyor',
+        courseName: p.course?.name || 'Bilinmiyor',
+        paymentType: p.paymentType,
+        notes: p.notes
+      });
+    });
+
+    // Convert to array and sort by month (newest first)
+    const monthlyDetails = Object.values(byMonth)
+      .sort((a, b) => b.period.localeCompare(a.period));
+
+    res.json({
+      totalPayments: payments.length,
+      totalAmount: payments.reduce((sum, p) => sum + (p.amount || 0), 0),
+      monthlyDetails
+    });
+  } catch (error) {
+    console.error('Error loading collection details:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get comprehensive financial report
 router.get('/financial-comprehensive', async (req, res) => {
   try {
@@ -850,7 +905,7 @@ router.get('/student-comprehensive', async (req, res) => {
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
 
-    // Student counts by status
+    // Student counts by status (all students)
     const statusCounts = await Student.aggregate([
       { $match: filter },
       {
@@ -860,6 +915,13 @@ router.get('/student-comprehensive', async (req, res) => {
         }
       }
     ]);
+
+    // Calculate totals
+    const totalAll = statusCounts.reduce((sum, s) => sum + s.count, 0);
+    const activeCount = statusCounts.find(s => s._id === 'active')?.count || 0;
+    const trialCount = statusCounts.find(s => s._id === 'trial')?.count || 0;
+    const inactiveCount = statusCounts.find(s => s._id === 'inactive')?.count || 0;
+    const archivedCount = statusCounts.find(s => s._id === 'archived')?.count || 0;
 
     // Enrollment statistics
     const enrollmentStats = await StudentCourseEnrollment.aggregate([
@@ -931,10 +993,13 @@ router.get('/student-comprehensive', async (req, res) => {
       }
     ]);
 
-    const totalStudents = await Student.countDocuments(filter);
-
     res.json({
-      totalStudents,
+      totalStudents: activeCount + trialCount, // Sadece aktif ve deneme öğrencileri
+      totalAll, // Tüm öğrenciler (arşivlenmiş dahil)
+      activeCount,
+      trialCount,
+      inactiveCount,
+      archivedCount,
       statusCounts,
       enrollmentStats,
       registrationData,

@@ -27,6 +27,14 @@ import {
   IconButton,
   Collapse,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  CircularProgress,
 } from '@mui/material';
 import {
   PictureAsPdf,
@@ -92,33 +100,66 @@ const Reports = () => {
   const [attendanceData, setAttendanceData] = useState(null);
   const [collectionData, setCollectionData] = useState(null);
 
+  // Collection Details Dialog
+  const [collectionDialog, setCollectionDialog] = useState({
+    open: false,
+    loading: false,
+    data: null
+  });
+
   useEffect(() => {
     if (institution && season) {
       loadAllReports();
     }
   }, [institution, season]);
 
+  // Error state
+  const [error, setError] = useState(null);
+
   const loadAllReports = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = {
         institutionId: institution._id,
         seasonId: season._id,
       };
 
-      const [financial, student, attendance, collection] = await Promise.all([
-        api.get('/reports/financial-comprehensive', { params }),
-        api.get('/reports/student-comprehensive', { params }),
-        api.get('/reports/attendance-comprehensive', { params }),
-        api.get('/reports/collection-rate', { params }),
-      ]);
+      // Load each report separately to handle individual errors
+      try {
+        const financial = await api.get('/reports/financial-comprehensive', { params });
+        setFinancialData(financial.data);
+      } catch (err) {
+        console.error('Error loading financial report:', err);
+        setFinancialData(null);
+      }
 
-      setFinancialData(financial.data);
-      setStudentData(student.data);
-      setAttendanceData(attendance.data);
-      setCollectionData(collection.data);
+      try {
+        const student = await api.get('/reports/student-comprehensive', { params });
+        setStudentData(student.data);
+      } catch (err) {
+        console.error('Error loading student report:', err);
+        setStudentData(null);
+      }
+
+      try {
+        const attendance = await api.get('/reports/attendance-comprehensive', { params });
+        setAttendanceData(attendance.data);
+      } catch (err) {
+        console.error('Error loading attendance report:', err);
+        setAttendanceData(null);
+      }
+
+      try {
+        const collection = await api.get('/reports/collection-rate', { params });
+        setCollectionData(collection.data);
+      } catch (err) {
+        console.error('Error loading collection report:', err);
+        setCollectionData(null);
+      }
     } catch (error) {
       console.error('Error loading reports:', error);
+      setError('Raporlar yüklenirken bir hata oluştu');
     } finally {
       setLoading(false);
     }
@@ -135,6 +176,20 @@ const Reports = () => {
         console.error('Error exporting report:', error);
         alert('Excel dosyası oluşturulurken bir hata oluştu.');
       }
+    }
+  };
+
+  // Load collection details
+  const loadCollectionDetails = async () => {
+    setCollectionDialog(prev => ({ ...prev, open: true, loading: true }));
+    try {
+      const response = await api.get('/reports/collection-details', {
+        params: { institutionId: institution._id, seasonId: season._id }
+      });
+      setCollectionDialog({ open: true, loading: false, data: response.data });
+    } catch (error) {
+      console.error('Error loading collection details:', error);
+      setCollectionDialog({ open: true, loading: false, data: null });
     }
   };
 
@@ -255,7 +310,19 @@ const Reports = () => {
         </Tabs>
       </Paper>
 
+      {/* Error Display */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>
+      )}
+
       {/* Tab 0: Financial Report */}
+      {activeTab === 0 && !financialData && (
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            Finansal rapor verisi yüklenemedi. Lütfen sayfayı yenileyin.
+          </Typography>
+        </Paper>
+      )}
       {activeTab === 0 && financialData && (
         <Box>
           {/* Summary Cards */}
@@ -512,6 +579,13 @@ const Reports = () => {
       )}
 
       {/* Tab 1: Collection Rate Report */}
+      {activeTab === 1 && !collectionData && (
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            Tahsilat raporu verisi yüklenemedi. Lütfen sayfayı yenileyin.
+          </Typography>
+        </Paper>
+      )}
       {activeTab === 1 && collectionData && (
         <Box>
           {/* Collection Summary */}
@@ -533,12 +607,21 @@ const Reports = () => {
               </Card>
             </Grid>
             <Grid item xs={6} md={3}>
-              <Card sx={{ bgcolor: 'success.light' }}>
+              <Card
+                sx={{
+                  bgcolor: 'success.light',
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: 'success.200', transform: 'scale(1.02)' },
+                  transition: 'all 0.2s'
+                }}
+                onClick={loadCollectionDetails}
+              >
                 <CardContent sx={{ py: { xs: 1.5, md: 2 }, px: { xs: 1.5, md: 2 } }}>
                   <Typography variant="body2" color="success.dark">Tahsil Edilen</Typography>
                   <Typography variant={isMobile ? 'h6' : 'h4'} color="success.dark" fontWeight="bold">
                     {formatCurrency(collectionData.totalCollected)}
                   </Typography>
+                  <Typography variant="caption" color="success.dark">Detay için tıklayın</Typography>
                 </CardContent>
               </Card>
             </Grid>
@@ -677,34 +760,67 @@ const Reports = () => {
       )}
 
       {/* Tab 2: Student Report */}
+      {activeTab === 2 && !studentData && (
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            Öğrenci raporu verisi yüklenemedi. Lütfen sayfayı yenileyin.
+          </Typography>
+        </Paper>
+      )}
       {activeTab === 2 && studentData && (
         <Box>
           {/* Student Summary */}
           <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={6} md={3}>
-              <Card sx={{ bgcolor: 'primary.light' }}>
+            <Grid item xs={6} md={2.4}>
+              <Card sx={{ bgcolor: 'success.light' }}>
                 <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
-                  <Typography variant="body2" color="primary.dark">Toplam Öğrenci</Typography>
-                  <Typography variant={isMobile ? 'h4' : 'h3'} color="primary.dark" fontWeight="bold">
-                    {studentData.totalStudents}
+                  <Typography variant="body2" color="success.dark">Aktif</Typography>
+                  <Typography variant={isMobile ? 'h5' : 'h4'} color="success.dark" fontWeight="bold">
+                    {studentData.activeCount || 0}
                   </Typography>
                 </CardContent>
               </Card>
             </Grid>
-            {studentData.statusCounts?.map((status, idx) => (
-              <Grid item xs={6} md={3} key={idx}>
-                <Card>
-                  <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary">
-                      {getStatusLabel(status._id)}
-                    </Typography>
-                    <Typography variant={isMobile ? 'h5' : 'h4'} fontWeight="bold">
-                      {status.count}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
+            <Grid item xs={6} md={2.4}>
+              <Card sx={{ bgcolor: 'info.light' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
+                  <Typography variant="body2" color="info.dark">Deneme</Typography>
+                  <Typography variant={isMobile ? 'h5' : 'h4'} color="info.dark" fontWeight="bold">
+                    {studentData.trialCount || 0}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={2.4}>
+              <Card sx={{ bgcolor: 'warning.light' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
+                  <Typography variant="body2" color="warning.dark">Pasif</Typography>
+                  <Typography variant={isMobile ? 'h5' : 'h4'} color="warning.dark" fontWeight="bold">
+                    {studentData.inactiveCount || 0}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={2.4}>
+              <Card sx={{ bgcolor: 'grey.300' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">Arşiv</Typography>
+                  <Typography variant={isMobile ? 'h5' : 'h4'} fontWeight="bold">
+                    {studentData.archivedCount || 0}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={2.4}>
+              <Card sx={{ bgcolor: 'primary.light' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
+                  <Typography variant="body2" color="primary.dark">Toplam (Aktif+Deneme)</Typography>
+                  <Typography variant={isMobile ? 'h5' : 'h4'} color="primary.dark" fontWeight="bold">
+                    {studentData.totalStudents || 0}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
           </Grid>
 
           {/* Charts */}
@@ -822,6 +938,13 @@ const Reports = () => {
       )}
 
       {/* Tab 3: Attendance Report */}
+      {activeTab === 3 && !attendanceData && (
+        <Paper sx={{ p: 4, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            Yoklama raporu verisi yüklenemedi veya henüz yoklama kaydı yok.
+          </Typography>
+        </Paper>
+      )}
       {activeTab === 3 && attendanceData && (
         <Box>
           {/* Attendance Summary */}
@@ -981,6 +1104,98 @@ const Reports = () => {
           </Grid>
         </Box>
       )}
+
+      {/* Collection Details Dialog */}
+      <Dialog
+        open={collectionDialog.open}
+        onClose={() => setCollectionDialog({ open: false, loading: false, data: null })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TrendingUp color="success" />
+            Tahsilat Detayları
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {collectionDialog.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : collectionDialog.data ? (
+            <Box>
+              {/* Summary */}
+              <Box sx={{ mb: 3, p: 2, bgcolor: 'success.50', borderRadius: 1 }}>
+                <Typography variant="h6" color="success.main">
+                  Toplam: {formatCurrency(collectionDialog.data.totalAmount)} ({collectionDialog.data.totalPayments} ödeme)
+                </Typography>
+              </Box>
+
+              {/* Monthly Details */}
+              {collectionDialog.data.monthlyDetails?.length > 0 ? (
+                collectionDialog.data.monthlyDetails.map((month, idx) => (
+                  <Accordion key={idx} defaultExpanded={idx === 0}>
+                    <AccordionSummary expandIcon={<ExpandMore />}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', pr: 2 }}>
+                        <Typography fontWeight="bold">
+                          {new Date(month.period + '-01').toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' })}
+                        </Typography>
+                        <Typography color="success.main" fontWeight="bold">
+                          {formatCurrency(month.total)} ({month.count} ödeme)
+                        </Typography>
+                      </Box>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Tarih</TableCell>
+                              <TableCell>Öğrenci</TableCell>
+                              <TableCell>Kurs</TableCell>
+                              <TableCell align="right">Tutar</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {month.payments.map((payment, pIdx) => (
+                              <TableRow key={pIdx}>
+                                <TableCell>
+                                  {new Date(payment.date).toLocaleDateString('tr-TR')}
+                                </TableCell>
+                                <TableCell>{payment.studentName}</TableCell>
+                                <TableCell>{payment.courseName}</TableCell>
+                                <TableCell align="right">
+                                  <Typography color="success.main" fontWeight="bold">
+                                    {formatCurrency(payment.amount)}
+                                  </Typography>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </AccordionDetails>
+                  </Accordion>
+                ))
+              ) : (
+                <Typography color="text.secondary" textAlign="center" py={2}>
+                  Henüz tahsilat kaydı yok
+                </Typography>
+              )}
+            </Box>
+          ) : (
+            <Typography color="text.secondary" textAlign="center" py={2}>
+              Veri yüklenemedi
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCollectionDialog({ open: false, loading: false, data: null })}>
+            Kapat
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
