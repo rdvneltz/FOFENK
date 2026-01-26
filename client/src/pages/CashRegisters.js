@@ -90,9 +90,12 @@ const CashRegisters = () => {
   // Summary data
   const [summaryData, setSummaryData] = useState({
     totalIncome: 0,
-    totalExpense: 0,
+    totalExpense: 0, // Sadece ödenmiş (gerçekleşen) giderler
+    totalExpectedExpense: 0, // Beklenen (planlanmış ama ödenmemiş) giderler
+    expectedExpenseEndDate: null, // Beklenen giderlerin son tarihi
     incomeByCategory: [],
-    expenseByCategory: []
+    expenseByCategory: [], // Ödenmiş giderler
+    expectedExpenseByCategory: [] // Beklenen giderler
   });
 
   // Summary dialog
@@ -125,11 +128,11 @@ const CashRegisters = () => {
 
   const loadSummaryData = async () => {
     try {
-      // Load payments (income)
+      // Load payments (income) - only completed payments
       const paymentsRes = await api.get('/payments', {
         params: { institutionId: institution._id, seasonId: season?._id }
       });
-      const payments = paymentsRes.data || [];
+      const payments = (paymentsRes.data || []).filter(p => p.status === 'completed');
       const totalIncome = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
       // Group income by payment type
@@ -143,10 +146,10 @@ const CashRegisters = () => {
       const expensesRes = await api.get('/expenses', {
         params: { institutionId: institution._id, seasonId: season?._id }
       });
-      const expenses = expensesRes.data || [];
-      // Exclude transfers and manual cash register adjustments from total expense
-      // These are internal accounting entries, not real business expenses
-      const realExpenses = expenses.filter(e =>
+      const allExpenses = expensesRes.data || [];
+
+      // Filter out internal accounting entries (transfers, manual adjustments)
+      const realExpenses = allExpenses.filter(e =>
         !e.isManualIncome &&
         !e.isTransfer &&
         e.category !== 'Kasa Giriş (Manuel)' &&
@@ -154,22 +157,51 @@ const CashRegisters = () => {
         e.category !== 'Virman (Giriş)' &&
         e.category !== 'Virman (Çıkış)'
       );
-      const totalExpense = realExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
-      // Group expense by category
+      // PAID expenses - only expenses that are actually paid (kasadan çıkmış)
+      const paidExpenses = realExpenses.filter(e => e.status === 'paid');
+      const totalExpense = paidExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+      // Group paid expenses by category
       const expenseByCategory = {};
-      realExpenses.forEach(e => {
+      paidExpenses.forEach(e => {
         const cat = e.category || 'Diğer';
         expenseByCategory[cat] = (expenseByCategory[cat] || 0) + (e.amount || 0);
+      });
+
+      // PENDING/EXPECTED expenses - not yet paid
+      const pendingExpenses = realExpenses.filter(e => e.status === 'pending' || e.status === 'overdue');
+      const totalExpectedExpense = pendingExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+
+      // Find the latest due date for expected expenses
+      let expectedExpenseEndDate = null;
+      if (pendingExpenses.length > 0) {
+        const latestDate = pendingExpenses.reduce((latest, e) => {
+          const dueDate = new Date(e.dueDate);
+          return dueDate > latest ? dueDate : latest;
+        }, new Date(0));
+        expectedExpenseEndDate = latestDate;
+      }
+
+      // Group pending expenses by category
+      const expectedExpenseByCategory = {};
+      pendingExpenses.forEach(e => {
+        const cat = e.category || 'Diğer';
+        expectedExpenseByCategory[cat] = (expectedExpenseByCategory[cat] || 0) + (e.amount || 0);
       });
 
       setSummaryData({
         totalIncome,
         totalExpense,
+        totalExpectedExpense,
+        expectedExpenseEndDate,
         incomeByCategory: Object.entries(incomeByCategory)
           .map(([name, amount]) => ({ name, amount }))
           .sort((a, b) => b.amount - a.amount),
         expenseByCategory: Object.entries(expenseByCategory)
+          .map(([name, amount]) => ({ name, amount }))
+          .sort((a, b) => b.amount - a.amount),
+        expectedExpenseByCategory: Object.entries(expectedExpenseByCategory)
           .map(([name, amount]) => ({ name, amount }))
           .sort((a, b) => b.amount - a.amount)
       });
@@ -512,12 +544,15 @@ const CashRegisters = () => {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
               <TrendingDown color="error" />
-              <Typography variant="subtitle2" color="text.secondary">Toplam Gider</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Gerçekleşen Gider</Typography>
             </Box>
             <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'error.main' }}>
               ₺{summaryData.totalExpense.toLocaleString('tr-TR')}
             </Typography>
-            <Typography variant="caption" color="text.secondary">Detaylar için tıklayın</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {summaryData.totalExpectedExpense > 0 && `+₺${summaryData.totalExpectedExpense.toLocaleString('tr-TR')} beklenen | `}
+              Detaylar için tıklayın
+            </Typography>
           </Paper>
         </Grid>
 
@@ -533,7 +568,7 @@ const CashRegisters = () => {
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
               <AttachMoney color={(summaryData.totalIncome - summaryData.totalExpense) >= 0 ? 'info' : 'warning'} />
-              <Typography variant="subtitle2" color="text.secondary">Net Kar/Zarar</Typography>
+              <Typography variant="subtitle2" color="text.secondary">Net Kar/Zarar (Gerçekleşen)</Typography>
             </Box>
             <Typography
               variant="h4"
@@ -1062,7 +1097,7 @@ const CashRegisters = () => {
           {summaryDialog.type === 'income' ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <TrendingUp color="success" />
-              Gelir Detayları
+              Gelir Detayları (Gerçekleşen)
             </Box>
           ) : (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -1072,6 +1107,12 @@ const CashRegisters = () => {
           )}
         </DialogTitle>
         <DialogContent>
+          {/* PAID EXPENSES SECTION */}
+          {summaryDialog.type === 'expense' && (
+            <Typography variant="subtitle2" sx={{ mb: 1, color: 'error.main', fontWeight: 'bold' }}>
+              Gerçekleşen Giderler (Kasadan Çıkan)
+            </Typography>
+          )}
           {summaryDialog.data.length === 0 ? (
             <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
               Veri bulunamadı
@@ -1136,7 +1177,7 @@ const CashRegisters = () => {
           <Divider sx={{ my: 2 }} />
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-              Toplam
+              {summaryDialog.type === 'expense' ? 'Toplam Gerçekleşen' : 'Toplam'}
             </Typography>
             <Typography
               variant="h6"
@@ -1147,6 +1188,71 @@ const CashRegisters = () => {
             >
               ₺{(summaryDialog.type === 'income' ? summaryData.totalIncome : summaryData.totalExpense).toLocaleString('tr-TR')}
             </Typography>
+          </Box>
+
+          {/* EXPECTED EXPENSES SECTION - Only for expense type */}
+          {summaryDialog.type === 'expense' && summaryData.expectedExpenseByCategory.length > 0 && (
+            <>
+              <Divider sx={{ my: 3 }} />
+              <Typography variant="subtitle2" sx={{ mb: 1, color: 'warning.main', fontWeight: 'bold' }}>
+                Beklenen Giderler (Henüz Ödenmemiş)
+                {summaryData.expectedExpenseEndDate && (
+                  <Typography variant="caption" display="block" color="text.secondary">
+                    Son vade: {new Date(summaryData.expectedExpenseEndDate).toLocaleDateString('tr-TR')}
+                  </Typography>
+                )}
+              </Typography>
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Kategori</TableCell>
+                      <TableCell align="right">Tutar</TableCell>
+                      <TableCell align="right">Oran</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {summaryData.expectedExpenseByCategory.map((item, index) => {
+                      const percentage = summaryData.totalExpectedExpense > 0
+                        ? ((item.amount / summaryData.totalExpectedExpense) * 100).toFixed(1) : 0;
+                      return (
+                        <TableRow key={index}>
+                          <TableCell>
+                            <Typography variant="body2">{item.name}</Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Typography variant="body2" sx={{ fontWeight: 600, color: 'warning.main' }}>
+                              ₺{item.amount.toLocaleString('tr-TR')}
+                            </Typography>
+                          </TableCell>
+                          <TableCell align="right">
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <LinearProgress
+                                variant="determinate"
+                                value={parseFloat(percentage)}
+                                sx={{
+                                  width: 60, height: 6, borderRadius: 3, bgcolor: 'grey.200',
+                                  '& .MuiLinearProgress-bar': { bgcolor: 'warning.main' }
+                                }}
+                              />
+                              <Typography variant="caption" color="text.secondary">%{percentage}</Typography>
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Divider sx={{ my: 2 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>Toplam Beklenen</Typography>
+                <Typography variant="h6" sx={{ fontWeight: 'bold', color: 'warning.main' }}>
+                  ₺{summaryData.totalExpectedExpense.toLocaleString('tr-TR')}
+                </Typography>
+              </Box>
+            </>
+          )}
           </Box>
         </DialogContent>
         <DialogActions>

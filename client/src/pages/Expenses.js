@@ -120,8 +120,13 @@ const Expenses = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Filter
+  // Filters
   const [filterCategory, setFilterCategory] = useState('all');
+  const [filterCashRegister, setFilterCashRegister] = useState('all');
+  const [filterDateStart, setFilterDateStart] = useState('');
+  const [filterDateEnd, setFilterDateEnd] = useState('');
+  const [filterAmountMin, setFilterAmountMin] = useState('');
+  const [filterAmountMax, setFilterAmountMax] = useState('');
 
   // Dialog states
   const [openDialog, setOpenDialog] = useState(false);
@@ -574,7 +579,28 @@ const Expenses = () => {
   };
 
   const filteredExpenses = expenses
-    .filter((expense) => filterCategory === 'all' ? true : expense.category === filterCategory)
+    .filter((expense) => {
+      // Category filter
+      if (filterCategory !== 'all' && expense.category !== filterCategory) return false;
+      // Cash register filter
+      if (filterCashRegister !== 'all' && expense.cashRegister?._id !== filterCashRegister) return false;
+      // Date range filter
+      if (filterDateStart) {
+        const expenseDate = new Date(expense.expenseDate);
+        const startDate = new Date(filterDateStart);
+        if (expenseDate < startDate) return false;
+      }
+      if (filterDateEnd) {
+        const expenseDate = new Date(expense.expenseDate);
+        const endDate = new Date(filterDateEnd);
+        endDate.setHours(23, 59, 59, 999);
+        if (expenseDate > endDate) return false;
+      }
+      // Amount filter
+      if (filterAmountMin && expense.amount < parseFloat(filterAmountMin)) return false;
+      if (filterAmountMax && expense.amount > parseFloat(filterAmountMax)) return false;
+      return true;
+    })
     .sort((a, b) => new Date(b.expenseDate) - new Date(a.expenseDate)); // Sort by date (newest first)
 
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
@@ -787,13 +813,14 @@ const Expenses = () => {
         <Box>
           <Paper sx={{ p: 2, mb: 2 }}>
             <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} md={4}>
+              {/* Row 1: Category, Cash Register, Amount Range */}
+              <Grid item xs={12} sm={6} md={3}>
                 <FormControl fullWidth size="small">
-                  <InputLabel>Kategori Filtrele</InputLabel>
+                  <InputLabel>Kategori</InputLabel>
                   <Select
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
-                    label="Kategori Filtrele"
+                    label="Kategori"
                   >
                     <MenuItem value="all">Tümü</MenuItem>
                     {EXPENSE_CATEGORIES.map((cat) => (
@@ -802,14 +829,90 @@ const Expenses = () => {
                   </Select>
                 </FormControl>
               </Grid>
-              <Grid item xs={12} md={4}>
-                <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
-                  Yeni Gider
-                </Button>
+              <Grid item xs={12} sm={6} md={3}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Kasa</InputLabel>
+                  <Select
+                    value={filterCashRegister}
+                    onChange={(e) => setFilterCashRegister(e.target.value)}
+                    label="Kasa"
+                  >
+                    <MenuItem value="all">Tümü</MenuItem>
+                    {cashRegisters.map((cr) => (
+                      <MenuItem key={cr._id} value={cr._id}>{cr.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </Grid>
-              <Grid item xs={12} md={4}>
+              <Grid item xs={6} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Min Tutar"
+                  type="number"
+                  value={filterAmountMin}
+                  onChange={(e) => setFilterAmountMin(e.target.value)}
+                  InputProps={{ inputProps: { min: 0 } }}
+                />
+              </Grid>
+              <Grid item xs={6} sm={6} md={3}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Max Tutar"
+                  type="number"
+                  value={filterAmountMax}
+                  onChange={(e) => setFilterAmountMax(e.target.value)}
+                  InputProps={{ inputProps: { min: 0 } }}
+                />
+              </Grid>
+              {/* Row 2: Date Range, Action Buttons, Total */}
+              <Grid item xs={6} sm={6} md={2}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Başlangıç"
+                  type="date"
+                  value={filterDateStart}
+                  onChange={(e) => setFilterDateStart(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid item xs={6} sm={6} md={2}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Bitiş"
+                  type="date"
+                  value={filterDateEnd}
+                  onChange={(e) => setFilterDateEnd(e.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      setFilterCategory('all');
+                      setFilterCashRegister('all');
+                      setFilterDateStart('');
+                      setFilterDateEnd('');
+                      setFilterAmountMin('');
+                      setFilterAmountMax('');
+                    }}
+                  >
+                    Temizle
+                  </Button>
+                  <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>
+                    Yeni Gider
+                  </Button>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={4}>
                 <Typography variant="h6" color="error.main" textAlign="right">
-                  Toplam: {totalExpenses.toLocaleString('tr-TR')} TL
+                  Toplam: {totalExpenses.toLocaleString('tr-TR')} TL ({filteredExpenses.length} kayıt)
                 </Typography>
               </Grid>
             </Grid>
