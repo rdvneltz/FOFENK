@@ -56,7 +56,14 @@ router.get('/dashboard', async (req, res) => {
     ]);
 
     // Total expenses - only PAID expenses (not pending/overdue)
-    const expensesFilter = { ...aggregateFilter, status: 'paid' };
+    // Exclude transfers and manual income entries from expense totals
+    const expensesFilter = {
+      ...aggregateFilter,
+      status: 'paid',
+      isTransfer: { $ne: true },
+      isManualIncome: { $ne: true },
+      category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)'] }
+    };
     if (startDate && endDate) {
       expensesFilter.expenseDate = {
         $gte: new Date(startDate),
@@ -738,7 +745,13 @@ router.get('/financial-comprehensive', async (req, res) => {
     const totalIncome = paymentsByMethod.reduce((sum, p) => sum + p.total, 0);
 
     // Expense statistics by category
-    const expenseFilter = { ...filter };
+    // Exclude transfers and manual income entries
+    const expenseFilter = {
+      ...filter,
+      isTransfer: { $ne: true },
+      isManualIncome: { $ne: true },
+      category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)'] }
+    };
     if (Object.keys(dateFilter).length > 0) {
       expenseFilter.expenseDate = dateFilter;
     }
@@ -780,7 +793,11 @@ router.get('/financial-comprehensive', async (req, res) => {
       {
         $match: {
           ...filter,
-          expenseDate: { $gte: start, $lte: end }
+          expenseDate: { $gte: start, $lte: end },
+          // Exclude transfers and manual income entries
+          isTransfer: { $ne: true },
+          isManualIncome: { $ne: true },
+          category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)'] }
         }
       },
       {
