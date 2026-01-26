@@ -144,10 +144,13 @@ const CashRegisters = () => {
         params: { institutionId: institution._id, seasonId: season?._id }
       });
       const expenses = expensesRes.data || [];
-      // Exclude transfer and manual income entries from total expense
+      // Exclude transfers and manual cash register adjustments from total expense
+      // These are internal accounting entries, not real business expenses
       const realExpenses = expenses.filter(e =>
         !e.isManualIncome &&
+        !e.isTransfer &&
         e.category !== 'Kasa Giriş (Manuel)' &&
+        e.category !== 'Kasa Çıkış (Manuel)' &&
         e.category !== 'Virman (Giriş)' &&
         e.category !== 'Virman (Çıkış)'
       );

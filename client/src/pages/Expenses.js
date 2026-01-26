@@ -215,12 +215,16 @@ const Expenses = () => {
         }),
       ]);
 
-      // Filter only paid expenses for history (exclude transfers - they are not real expenses)
+      // Filter only paid expenses for history
+      // Exclude: transfers, manual cash register adjustments (these are internal accounting, not real expenses)
       setExpenses(expensesRes.data.filter(e =>
         e.status === 'paid' &&
         !e.isTransfer &&
+        !e.isManualIncome &&
         e.category !== 'Virman (Giriş)' &&
-        e.category !== 'Virman (Çıkış)'
+        e.category !== 'Virman (Çıkış)' &&
+        e.category !== 'Kasa Giriş (Manuel)' &&
+        e.category !== 'Kasa Çıkış (Manuel)'
       ));
       setPendingExpenses(pendingRes.data);
       setRecurringExpenses(recurringRes.data);

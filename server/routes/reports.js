@@ -56,13 +56,14 @@ router.get('/dashboard', async (req, res) => {
     ]);
 
     // Total expenses - only PAID expenses (not pending/overdue)
-    // Exclude transfers and manual income entries from expense totals
+    // Exclude transfers and manual cash register adjustments from expense totals
+    // These are internal accounting entries, not real business expenses
     const expensesFilter = {
       ...aggregateFilter,
       status: 'paid',
       isTransfer: { $ne: true },
       isManualIncome: { $ne: true },
-      category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)'] }
+      category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)', 'Kasa Çıkış (Manuel)'] }
     };
     if (startDate && endDate) {
       expensesFilter.expenseDate = {
@@ -750,7 +751,7 @@ router.get('/financial-comprehensive', async (req, res) => {
       ...filter,
       isTransfer: { $ne: true },
       isManualIncome: { $ne: true },
-      category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)'] }
+      category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)', 'Kasa Çıkış (Manuel)'] }
     };
     if (Object.keys(dateFilter).length > 0) {
       expenseFilter.expenseDate = dateFilter;
@@ -797,7 +798,7 @@ router.get('/financial-comprehensive', async (req, res) => {
           // Exclude transfers and manual income entries
           isTransfer: { $ne: true },
           isManualIncome: { $ne: true },
-          category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)'] }
+          category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)', 'Kasa Çıkış (Manuel)'] }
         }
       },
       {
