@@ -100,6 +100,7 @@ app.use('/api/pdf', require('./routes/pdf'));
 app.use('/api/export', require('./routes/export'));
 app.use('/api/email', require('./routes/email'));
 app.use('/api/backup', require('./routes/backup'));
+app.use('/api/notes', require('./routes/notes'));
 
 // Root path - for Render health check
 app.get('/', (req, res) => {
