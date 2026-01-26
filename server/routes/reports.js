@@ -765,6 +765,95 @@ router.get('/collection-details', async (req, res) => {
   }
 });
 
+// DIAGNOSTIC: Analyze payment discrepancy between Payment collection and PaymentPlan installments
+router.get('/payment-discrepancy-analysis', async (req, res) => {
+  try {
+    const { institutionId, seasonId } = req.query;
+    const filter = {};
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    // 1. Get all completed payments from Payment collection
+    const allPayments = await Payment.find({ ...filter, status: 'completed' })
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name')
+      .populate('cashRegister', 'name')
+      .populate('paymentPlan')
+      .sort({ paymentDate: -1 });
+
+    const totalFromPayments = allPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    // 2. Get all payment plans and calculate paid installments
+    const paymentPlans = await PaymentPlan.find(filter)
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name');
+
+    let totalFromInstallments = 0;
+    const paidInstallmentsList = [];
+
+    paymentPlans.forEach(plan => {
+      (plan.installments || []).forEach((inst, idx) => {
+        if (inst.isPaid) {
+          const amount = inst.paidAmount || inst.amount || 0;
+          totalFromInstallments += amount;
+          paidInstallmentsList.push({
+            planId: plan._id,
+            student: plan.student ? `${plan.student.firstName} ${plan.student.lastName}` : 'Bilinmiyor',
+            course: plan.course?.name || 'Bilinmiyor',
+            installmentNumber: inst.installmentNumber || (idx + 1),
+            amount: amount,
+            paidDate: inst.paidDate
+          });
+        }
+      });
+    });
+
+    // 3. Find payments WITHOUT paymentPlan reference (orphan payments)
+    const orphanPayments = allPayments.filter(p => !p.paymentPlan);
+    const orphanTotal = orphanPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    // 4. Find payments WITH paymentPlan reference
+    const linkedPayments = allPayments.filter(p => p.paymentPlan);
+    const linkedTotal = linkedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+
+    // 5. Categorize orphan payments
+    const orphanDetails = orphanPayments.map(p => ({
+      _id: p._id,
+      student: p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Bilinmiyor',
+      course: p.course?.name || 'Kurs yok',
+      amount: p.amount,
+      paymentDate: p.paymentDate,
+      paymentType: p.paymentType,
+      cashRegister: p.cashRegister?.name || 'Bilinmiyor',
+      notes: p.notes || '',
+      createdAt: p.createdAt
+    }));
+
+    res.json({
+      summary: {
+        totalFromPayments,
+        totalFromInstallments,
+        difference: totalFromPayments - totalFromInstallments,
+        paymentCount: allPayments.length,
+        paidInstallmentCount: paidInstallmentsList.length
+      },
+      breakdown: {
+        linkedPaymentsTotal: linkedTotal,
+        linkedPaymentsCount: linkedPayments.length,
+        orphanPaymentsTotal: orphanTotal,
+        orphanPaymentsCount: orphanPayments.length
+      },
+      orphanPayments: orphanDetails,
+      message: orphanTotal === (totalFromPayments - totalFromInstallments)
+        ? 'FARK BULUNDU: Ödeme planına bağlı olmayan (orphan) ödemelerden kaynaklanıyor'
+        : 'Fark karmaşık - hem orphan ödemeler hem de senkronizasyon sorunu olabilir'
+    });
+  } catch (error) {
+    console.error('Error analyzing payment discrepancy:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get comprehensive financial report
 router.get('/financial-comprehensive', async (req, res) => {
   try {
