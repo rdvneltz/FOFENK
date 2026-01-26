@@ -224,30 +224,6 @@ const CashRegisters = () => {
     });
   };
 
-  // Migrate old transfers
-  const handleMigrateOldTransfers = async () => {
-    const oldTransfers = [
-      { date: '2026-01-18T21:27:31', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'Gökçe Şahsi', amount: 8500, description: 'Açıklama yok' },
-      { date: '2026-01-18T21:23:45', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'Gökçe Şahsi', amount: 13250, description: 'SERMAYE GERİ ÖDEMESİ' },
-      { date: '2026-01-18T19:15:38', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'Gökçe Şahsi', amount: 12713.38, description: 'SERMAYE ÖDEMESİ' },
-      { date: '2026-01-18T19:09:38', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'ZEHRA KURT KREDİ KARTI', amount: 8442.5, description: 'KREDİ KARTI ÖDEMESİ' },
-      { date: '2026-01-02T00:27:31', fromCashRegisterName: 'Gökçe Fofora', toCashRegisterName: 'ZEHRA KURT KREDİ KARTI', amount: 36700, description: 'KREDİ KARTI ÖDEMESİ' },
-    ];
-
-    try {
-      setLoading(true);
-      const response = await api.post('/cash-registers/migrate-old-transfers', { transfers: oldTransfers });
-      setSuccess(`Eski virmanlar aktarıldı: ${response.data.message}`);
-      if (response.data.errors?.length > 0) {
-        setError(`Bazı hatalar: ${response.data.errors.join(', ')}`);
-      }
-    } catch (error) {
-      setError(error.response?.data?.message || 'Migration hatası');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleOpenDialog = (register = null) => {
     if (register) {
       setSelectedRegister(register);
@@ -586,19 +562,11 @@ const CashRegisters = () => {
 
       {/* Cash Registers Section */}
       <Paper sx={{ mb: 2 }}>
-        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
           <Typography variant="h6">
             <AccountBalance sx={{ mr: 1, verticalAlign: 'middle' }} />
             Kasalar ({cashRegisters.length})
           </Typography>
-          <Button
-            size="small"
-            color="warning"
-            variant="outlined"
-            onClick={handleMigrateOldTransfers}
-          >
-            Eski Virmanları Aktar
-          </Button>
         </Box>
 
         {cashRegisters.length === 0 ? (
