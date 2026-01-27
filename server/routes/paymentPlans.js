@@ -1338,6 +1338,7 @@ router.put('/:id/installment/:installmentNumber/payment-dates', async (req, res)
     }
 
     // Update the payments array with new dates
+    let newPaidDate = null;
     if (payments && Array.isArray(payments)) {
       installment.payments = payments.map(p => ({
         amount: p.amount,
@@ -1350,11 +1351,26 @@ router.put('/:id/installment/:installmentNumber/payment-dates', async (req, res)
       // Update paidDate to the last payment date if fully paid
       if (installment.isPaid && payments.length > 0) {
         const sortedPayments = [...payments].sort((a, b) => new Date(b.paidDate) - new Date(a.paidDate));
-        installment.paidDate = new Date(sortedPayments[0].paidDate);
+        newPaidDate = new Date(sortedPayments[0].paidDate);
+        installment.paidDate = newPaidDate;
       }
     }
 
     await paymentPlan.save();
+
+    // Sync: Update corresponding Payment record's paymentDate
+    // Find the Payment record linked to this plan and installment number
+    if (newPaidDate) {
+      const paymentRecord = await Payment.findOne({
+        paymentPlan: paymentPlan._id,
+        installmentNumber: installmentNumber
+      });
+
+      if (paymentRecord) {
+        paymentRecord.paymentDate = newPaidDate;
+        await paymentRecord.save();
+      }
+    }
 
     // Log activity
     await ActivityLog.create({
