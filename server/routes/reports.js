@@ -996,6 +996,50 @@ router.post('/fix-installment-sync', async (req, res) => {
   }
 });
 
+// Find payments in a specific month (diagnostic)
+router.get('/payments-by-month', async (req, res) => {
+  try {
+    const { institutionId, seasonId, year, month } = req.query;
+    const filter = { status: 'completed' };
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    if (year && month) {
+      const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+      const endDate = new Date(parseInt(year), parseInt(month), 0, 23, 59, 59);
+      filter.paymentDate = { $gte: startDate, $lte: endDate };
+    }
+
+    const payments = await Payment.find(filter)
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name')
+      .populate('cashRegister', 'name')
+      .sort({ paymentDate: -1 });
+
+    const result = payments.map(p => ({
+      _id: p._id,
+      student: p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Bilinmiyor',
+      course: p.course?.name || '-',
+      amount: p.amount,
+      paymentDate: p.paymentDate,
+      paymentType: p.paymentType,
+      cashRegister: p.cashRegister?.name || '-',
+      installmentNumber: p.installmentNumber,
+      paymentPlanId: p.paymentPlan,
+      notes: p.notes,
+      createdAt: p.createdAt
+    }));
+
+    res.json({
+      count: result.length,
+      total: result.reduce((sum, p) => sum + p.amount, 0),
+      payments: result
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get comprehensive financial report
 router.get('/financial-comprehensive', async (req, res) => {
   try {
