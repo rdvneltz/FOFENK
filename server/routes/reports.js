@@ -778,20 +778,25 @@ router.get('/payment-discrepancy-analysis', async (req, res) => {
       .populate('student', 'firstName lastName')
       .populate('course', 'name')
       .populate('cashRegister', 'name')
-      .populate('paymentPlan')
       .sort({ paymentDate: -1 });
 
     const totalFromPayments = allPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-    // 2. Get all payment plans and calculate paid installments
+    // 2. Get all payment plans with installments
     const paymentPlans = await PaymentPlan.find(filter)
       .populate('student', 'firstName lastName')
       .populate('course', 'name');
 
     let totalFromInstallments = 0;
     const paidInstallmentsList = [];
+    const allInstallmentsMap = {}; // planId -> installments
 
     paymentPlans.forEach(plan => {
+      allInstallmentsMap[plan._id.toString()] = {
+        student: plan.student ? `${plan.student.firstName} ${plan.student.lastName}` : 'Bilinmiyor',
+        course: plan.course?.name || 'Bilinmiyor',
+        installments: plan.installments || []
+      };
       (plan.installments || []).forEach((inst, idx) => {
         if (inst.isPaid) {
           const amount = inst.paidAmount || inst.amount || 0;
@@ -801,33 +806,83 @@ router.get('/payment-discrepancy-analysis', async (req, res) => {
             student: plan.student ? `${plan.student.firstName} ${plan.student.lastName}` : 'Bilinmiyor',
             course: plan.course?.name || 'Bilinmiyor',
             installmentNumber: inst.installmentNumber || (idx + 1),
-            amount: amount,
-            paidDate: inst.paidDate
+            installmentAmount: inst.amount || 0,
+            paidAmount: inst.paidAmount || 0,
+            usedField: inst.paidAmount ? 'paidAmount' : 'amount',
+            paidDate: inst.paidDate,
+            paymentRecordsCount: (inst.payments || []).length
           });
         }
       });
     });
 
-    // 3. Find payments WITHOUT paymentPlan reference (orphan payments)
-    const orphanPayments = allPayments.filter(p => !p.paymentPlan);
-    const orphanTotal = orphanPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    // 3. Compare: Group payments by paymentPlan and compare with installment data
+    const paymentsByPlan = {};
+    allPayments.forEach(p => {
+      const planId = p.paymentPlan?.toString();
+      if (planId) {
+        if (!paymentsByPlan[planId]) paymentsByPlan[planId] = [];
+        paymentsByPlan[planId].push({
+          _id: p._id,
+          amount: p.amount,
+          paymentDate: p.paymentDate,
+          paymentType: p.paymentType,
+          installmentNumber: p.installmentNumber,
+          cashRegister: p.cashRegister?.name || 'Bilinmiyor',
+          student: p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Bilinmiyor'
+        });
+      }
+    });
 
-    // 4. Find payments WITH paymentPlan reference
-    const linkedPayments = allPayments.filter(p => p.paymentPlan);
-    const linkedTotal = linkedPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    // 4. Find plans where Payment total != Installment paidAmount total
+    const mismatchedPlans = [];
+    const allPlanIds = new Set([
+      ...Object.keys(paymentsByPlan),
+      ...Object.keys(allInstallmentsMap)
+    ]);
 
-    // 5. Categorize orphan payments
-    const orphanDetails = orphanPayments.map(p => ({
-      _id: p._id,
-      student: p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Bilinmiyor',
-      course: p.course?.name || 'Kurs yok',
-      amount: p.amount,
-      paymentDate: p.paymentDate,
-      paymentType: p.paymentType,
-      cashRegister: p.cashRegister?.name || 'Bilinmiyor',
-      notes: p.notes || '',
-      createdAt: p.createdAt
-    }));
+    allPlanIds.forEach(planId => {
+      const payments = paymentsByPlan[planId] || [];
+      const planInfo = allInstallmentsMap[planId];
+      const installments = planInfo?.installments || [];
+
+      const paymentTotal = payments.reduce((sum, p) => sum + (p.amount || 0), 0);
+      const paidInstTotal = installments
+        .filter(i => i.isPaid)
+        .reduce((sum, i) => sum + (i.paidAmount || i.amount || 0), 0);
+
+      if (paymentTotal !== paidInstTotal) {
+        mismatchedPlans.push({
+          planId,
+          student: planInfo?.student || payments[0]?.student || 'Bilinmiyor',
+          course: planInfo?.course || 'Bilinmiyor',
+          paymentCollectionTotal: paymentTotal,
+          installmentPaidTotal: paidInstTotal,
+          difference: paymentTotal - paidInstTotal,
+          paymentCount: payments.length,
+          paidInstallmentCount: installments.filter(i => i.isPaid).length,
+          payments: payments.map(p => ({
+            amount: p.amount,
+            date: p.paymentDate,
+            type: p.paymentType,
+            installmentNo: p.installmentNumber,
+            cashRegister: p.cashRegister
+          })),
+          installments: installments.map((inst, idx) => ({
+            number: inst.installmentNumber || (idx + 1),
+            amount: inst.amount,
+            paidAmount: inst.paidAmount || 0,
+            isPaid: inst.isPaid,
+            paidDate: inst.paidDate
+          }))
+        });
+      }
+    });
+
+    // Sort by biggest difference
+    mismatchedPlans.sort((a, b) => Math.abs(b.difference) - Math.abs(a.difference));
+
+    const totalMismatch = mismatchedPlans.reduce((sum, m) => sum + m.difference, 0);
 
     res.json({
       summary: {
@@ -837,16 +892,12 @@ router.get('/payment-discrepancy-analysis', async (req, res) => {
         paymentCount: allPayments.length,
         paidInstallmentCount: paidInstallmentsList.length
       },
-      breakdown: {
-        linkedPaymentsTotal: linkedTotal,
-        linkedPaymentsCount: linkedPayments.length,
-        orphanPaymentsTotal: orphanTotal,
-        orphanPaymentsCount: orphanPayments.length
+      analysis: {
+        mismatchedPlanCount: mismatchedPlans.length,
+        totalMismatchAmount: totalMismatch,
+        explanation: 'Aşağıdaki ödeme planlarında Payment kaydı toplamı ile taksit paidAmount toplamı tutmuyor'
       },
-      orphanPayments: orphanDetails,
-      message: orphanTotal === (totalFromPayments - totalFromInstallments)
-        ? 'FARK BULUNDU: Ödeme planına bağlı olmayan (orphan) ödemelerden kaynaklanıyor'
-        : 'Fark karmaşık - hem orphan ödemeler hem de senkronizasyon sorunu olabilir'
+      mismatchedPlans
     });
   } catch (error) {
     console.error('Error analyzing payment discrepancy:', error);
