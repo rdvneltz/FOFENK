@@ -770,7 +770,7 @@ router.post('/:id/pay-installment', async (req, res) => {
           const applyAmount = Math.min(remainingExcess, nextRemaining);
 
           nextInstallment.paidAmount = (nextInstallment.paidAmount || 0) + applyAmount;
-          if (nextInstallment.paidAmount >= nextInstallment.amount) {
+          if (nextInstallment.paidAmount >= nextInstallment.amount || Math.abs(nextInstallment.paidAmount - nextInstallment.amount) < 0.01) {
             nextInstallment.isPaid = true;
             nextInstallment.paidDate = paymentDate || new Date();
           }
@@ -785,7 +785,7 @@ router.post('/:id/pay-installment', async (req, res) => {
             const applyAmount = Math.min(remainingExcess, instRemaining);
 
             inst.paidAmount = (inst.paidAmount || 0) + applyAmount;
-            if (inst.paidAmount >= inst.amount) {
+            if (inst.paidAmount >= inst.amount || Math.abs(inst.paidAmount - inst.amount) < 0.01) {
               inst.isPaid = true;
               inst.paidDate = paymentDate || new Date();
             }
@@ -903,7 +903,8 @@ router.post('/:id/pay-installment', async (req, res) => {
     const installmentAmount = installment.amount || 0;
 
     // Check if this completes the installment
-    const isFullyPaid = newTotalPaidAmount >= installmentAmount;
+    // Use 0.01 tolerance for floating point comparison (e.g. 40500 vs 40500.00020871)
+    const isFullyPaid = newTotalPaidAmount >= installmentAmount || Math.abs(newTotalPaidAmount - installmentAmount) < 0.01;
 
     // Calculate excess amount for this installment
     const thisInstallmentExcess = isFullyPaid ? (newTotalPaidAmount - installmentAmount) : 0;
@@ -946,7 +947,7 @@ router.post('/:id/pay-installment', async (req, res) => {
         if (futureRemaining > 0) {
           const applyAmount = Math.min(remainingExcess, futureRemaining);
           futureInst.paidAmount = (futureInst.paidAmount || 0) + applyAmount;
-          futureInst.isPaid = futureInst.paidAmount >= futureInstAmount;
+          futureInst.isPaid = futureInst.paidAmount >= futureInstAmount || Math.abs(futureInst.paidAmount - futureInstAmount) < 0.01;
           if (futureInst.isPaid) {
             futureInst.paidDate = paymentDate || new Date();
           }

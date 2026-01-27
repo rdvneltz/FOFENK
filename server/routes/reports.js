@@ -650,32 +650,41 @@ router.get('/collection-rate', async (req, res) => {
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
 
-    // Get all payment plans
+    // Get actual collected amount from Payment collection (source of truth for actual money)
+    const aggregateFilter = {};
+    if (institutionId) aggregateFilter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) aggregateFilter.season = new mongoose.Types.ObjectId(seasonId);
+
+    const paymentAgg = await Payment.aggregate([
+      { $match: { ...aggregateFilter, status: 'completed' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } }
+    ]);
+    const totalCollected = paymentAgg.length > 0 ? paymentAgg[0].total : 0;
+
+    // Get expected amounts and overdue info from PaymentPlans
     const paymentPlans = await PaymentPlan.find(filter);
 
     let totalExpected = 0;
-    let totalCollected = 0;
     let overdueAmount = 0;
     const now = new Date();
 
-    // Monthly collection data for chart
-    const monthlyData = {};
+    // Monthly collection data for chart - expected from plans, collected from payments
+    const monthlyExpected = {};
 
     paymentPlans.forEach(plan => {
       plan.installments?.forEach(inst => {
         const dueDate = new Date(inst.dueDate);
         const monthKey = dueDate.toISOString().substring(0, 7);
 
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { expected: 0, collected: 0 };
+        if (!monthlyExpected[monthKey]) {
+          monthlyExpected[monthKey] = { expected: 0, collected: 0 };
         }
 
         totalExpected += inst.amount || 0;
-        monthlyData[monthKey].expected += inst.amount || 0;
+        monthlyExpected[monthKey].expected += inst.amount || 0;
 
         if (inst.isPaid) {
-          totalCollected += inst.paidAmount || inst.amount || 0;
-          monthlyData[monthKey].collected += inst.paidAmount || inst.amount || 0;
+          monthlyExpected[monthKey].collected += inst.paidAmount || inst.amount || 0;
         } else if (dueDate < now) {
           overdueAmount += (inst.amount || 0) - (inst.paidAmount || 0);
         }
@@ -687,7 +696,7 @@ router.get('/collection-rate', async (req, res) => {
       : 0;
 
     // Convert monthly data to array and sort
-    const chartData = Object.entries(monthlyData)
+    const chartData = Object.entries(monthlyExpected)
       .map(([period, data]) => ({
         period,
         expected: data.expected,
@@ -719,10 +728,11 @@ router.get('/collection-details', async (req, res) => {
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
 
-    // Get all completed payments with student and course info
+    // Get all completed payments with student, course and cash register info
     const payments = await Payment.find(filter)
       .populate('student', 'firstName lastName')
       .populate('course', 'name')
+      .populate('cashRegister', 'name')
       .sort({ paymentDate: -1 });
 
     // Group by month
@@ -746,6 +756,7 @@ router.get('/collection-details', async (req, res) => {
         studentName: p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Bilinmiyor',
         courseName: p.course?.name || 'Bilinmiyor',
         paymentType: p.paymentType,
+        cashRegister: p.cashRegister?.name || '-',
         notes: p.notes
       });
     });
@@ -901,6 +912,86 @@ router.get('/payment-discrepancy-analysis', async (req, res) => {
     });
   } catch (error) {
     console.error('Error analyzing payment discrepancy:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Fix installments with floating point issues: paidAmount matches but isPaid is false
+router.post('/fix-installment-sync', async (req, res) => {
+  try {
+    const paymentPlans = await PaymentPlan.find({})
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name');
+
+    const fixed = [];
+
+    for (const plan of paymentPlans) {
+      let planModified = false;
+
+      for (const inst of plan.installments) {
+        // Case 1: paidAmount is close to amount but isPaid is false (floating point bug)
+        if (!inst.isPaid && inst.paidAmount > 0 && inst.amount > 0) {
+          const diff = Math.abs(inst.paidAmount - inst.amount);
+          if (diff < 0.01 || inst.paidAmount >= inst.amount) {
+            inst.isPaid = true;
+            inst.paidDate = inst.paidDate || new Date();
+            inst.paidAmount = Math.round(inst.paidAmount * 100) / 100;
+            planModified = true;
+
+            fixed.push({
+              planId: plan._id,
+              student: plan.student ? `${plan.student.firstName} ${plan.student.lastName}` : 'Bilinmiyor',
+              course: plan.course?.name || 'Bilinmiyor',
+              installmentNumber: inst.installmentNumber,
+              amount: inst.amount,
+              paidAmount: inst.paidAmount,
+              fix: 'isPaid set to true (floating point mismatch)'
+            });
+          }
+        }
+
+        // Case 2: Round installment amounts that have floating point noise
+        if (inst.amount && Math.abs(inst.amount - Math.round(inst.amount * 100) / 100) > 0.0001) {
+          const oldAmount = inst.amount;
+          inst.amount = Math.round(inst.amount * 100) / 100;
+          planModified = true;
+
+          fixed.push({
+            planId: plan._id,
+            student: plan.student ? `${plan.student.firstName} ${plan.student.lastName}` : 'Bilinmiyor',
+            course: plan.course?.name || 'Bilinmiyor',
+            installmentNumber: inst.installmentNumber,
+            oldAmount: oldAmount,
+            newAmount: inst.amount,
+            fix: 'Amount rounded to 2 decimals'
+          });
+        }
+      }
+
+      // Recalculate plan totals if modified
+      if (planModified) {
+        const totalPaid = plan.installments
+          .filter(i => i.isPaid)
+          .reduce((sum, i) => sum + (i.paidAmount || i.amount || 0), 0);
+        plan.paidAmount = Math.round(totalPaid * 100) / 100;
+        plan.remainingAmount = Math.max(0, plan.discountedAmount - plan.paidAmount);
+
+        const allPaid = plan.installments.every(inst => inst.isPaid || inst.amount <= 0);
+        if (allPaid || plan.remainingAmount <= 0) {
+          plan.isCompleted = true;
+        }
+
+        await plan.save();
+      }
+    }
+
+    res.json({
+      message: `${fixed.length} düzeltme yapıldı`,
+      fixCount: fixed.length,
+      fixes: fixed
+    });
+  } catch (error) {
+    console.error('Error fixing installment sync:', error);
     res.status(500).json({ message: error.message });
   }
 });

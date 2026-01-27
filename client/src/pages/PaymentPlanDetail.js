@@ -295,15 +295,15 @@ const PaymentPlanDetail = () => {
 
     if (formData.paymentMethod === 'creditCard') {
       commissionRate = getCreditCardCommissionRate(formData.creditCardInstallments);
-      commission = (amount * commissionRate) / 100;
+      commission = Math.round((amount * commissionRate) / 100 * 100) / 100;
     }
 
     // Total that student pays = base amount + commission (VAT is NOT added to student's payment)
-    const total = amount + commission;
+    const total = Math.round((amount + commission) * 100) / 100;
 
     // VAT is calculated for expense tracking only, not added to student's payment
     const vatRate = getVatRate();
-    const vat = formData.isInvoiced ? (total * vatRate) / 100 : 0;
+    const vat = formData.isInvoiced ? Math.round((total * vatRate) / 100 * 100) / 100 : 0;
 
     return { commission, commissionRate, vat, vatRate, total };
   };
