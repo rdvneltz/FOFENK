@@ -1154,6 +1154,8 @@ const Reports = () => {
                               <TableCell>Tarih</TableCell>
                               <TableCell>Öğrenci</TableCell>
                               <TableCell>Kurs</TableCell>
+                              <TableCell>Kasa</TableCell>
+                              <TableCell>Ödeme Tipi</TableCell>
                               <TableCell align="right">Tutar</TableCell>
                             </TableRow>
                           </TableHead>
@@ -1165,6 +1167,15 @@ const Reports = () => {
                                 </TableCell>
                                 <TableCell>{payment.studentName}</TableCell>
                                 <TableCell>{payment.courseName}</TableCell>
+                                <TableCell>{payment.cashRegister || '-'}</TableCell>
+                                <TableCell>
+                                  <Chip
+                                    size="small"
+                                    label={payment.paymentType === 'creditCard' ? 'Kredi Kartı' : 'Nakit'}
+                                    color={payment.paymentType === 'creditCard' ? 'info' : 'success'}
+                                    variant="outlined"
+                                  />
+                                </TableCell>
                                 <TableCell align="right">
                                   <Typography color="success.main" fontWeight="bold">
                                     {formatCurrency(payment.amount)}

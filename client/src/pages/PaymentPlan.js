@@ -423,7 +423,7 @@ const PaymentPlan = () => {
         return;
       }
 
-      const perInstallment = baseAmount / count;
+      const perInstallment = Math.round(baseAmount / count * 100) / 100;
       const newDetails = [];
 
       for (let i = 0; i < count; i++) {
@@ -559,16 +559,16 @@ const PaymentPlan = () => {
         commissionRate = inst.customCommissionRate !== undefined
           ? inst.customCommissionRate
           : getCreditCardCommissionRate(inst.creditCardInstallments);
-        commission = (inst.amount * commissionRate) / 100;
+        commission = Math.round((inst.amount * commissionRate) / 100 * 100) / 100;
       }
 
       // Total that student pays = base amount + commission (VAT is NOT added)
-      const total = inst.amount + commission;
+      const total = Math.round((inst.amount + commission) * 100) / 100;
 
       // VAT is calculated for expense tracking only, not added to student's payment
       // Use custom VAT rate if set, otherwise use settings rate
       const vatRate = inst.customVatRate !== undefined ? inst.customVatRate : getVatRate();
-      const vat = inst.isInvoiced ? (total * vatRate) / 100 : 0;
+      const vat = inst.isInvoiced ? Math.round((total * vatRate) / 100 * 100) / 100 : 0;
 
       return {
         ...inst,
@@ -618,14 +618,14 @@ const PaymentPlan = () => {
         return;
       }
 
-      // Build installments for backend
+      // Build installments for backend (round all monetary values to 2 decimals)
       const installments = calculatedInstallments.map((inst, index) => ({
         installmentNumber: index + 1,
-        amount: inst.total, // Total including commission and VAT
-        baseAmount: inst.amount,
-        commission: inst.commission,
+        amount: Math.round(inst.total * 100) / 100,
+        baseAmount: Math.round(inst.amount * 100) / 100,
+        commission: Math.round(inst.commission * 100) / 100,
         commissionRate: inst.commissionRate,
-        vat: inst.vat,
+        vat: Math.round(inst.vat * 100) / 100,
         vatRate: inst.vatRate,
         dueDate: inst.dueDate,
         isPaid: false,
