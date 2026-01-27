@@ -50,6 +50,7 @@ import {
   ExpandMore,
   ExpandLess,
   Refresh,
+  Close,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -106,6 +107,28 @@ const Reports = () => {
     loading: false,
     data: null
   });
+
+  // Chart bar click detail dialog
+  const [chartDetailDialog, setChartDetailDialog] = useState({
+    open: false,
+    loading: false,
+    data: null,
+    period: '',
+    type: '' // 'expected' or 'collected'
+  });
+
+  const loadChartDetail = async (period, type) => {
+    setChartDetailDialog({ open: true, loading: true, data: null, period, type });
+    try {
+      const response = await api.get('/reports/installments-by-month', {
+        params: { institutionId: institution._id, seasonId: season._id, period }
+      });
+      setChartDetailDialog(prev => ({ ...prev, loading: false, data: response.data }));
+    } catch (error) {
+      console.error('Error loading chart detail:', error);
+      setChartDetailDialog(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   useEffect(() => {
     if (institution && season) {
@@ -682,11 +705,20 @@ const Reports = () => {
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
+                        onClick: (event, elements) => {
+                          if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const datasetIdx = elements[0].datasetIndex;
+                            const period = collectionData.chartData[idx].period;
+                            const type = datasetIdx === 0 ? 'expected' : 'collected';
+                            loadChartDetail(period, type);
+                          }
+                        },
                         plugins: {
                           legend: { position: 'top' },
                           tooltip: {
                             callbacks: {
-                              label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`
+                              label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)} (tıkla detay için)`
                             }
                           }
                         },
@@ -698,6 +730,9 @@ const Reports = () => {
                               maxTicksLimit: 6
                             }
                           }
+                        },
+                        onHover: (event, chartElement) => {
+                          event.native.target.style.cursor = chartElement.length > 0 ? 'pointer' : 'default';
                         }
                       }}
                     />
@@ -1104,6 +1139,127 @@ const Reports = () => {
           </Grid>
         </Box>
       )}
+
+      {/* Chart Bar Detail Dialog */}
+      <Dialog
+        open={chartDetailDialog.open}
+        onClose={() => setChartDetailDialog({ open: false, loading: false, data: null, period: '', type: '' })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">
+              {(() => {
+                if (!chartDetailDialog.period) return '';
+                const [y, m] = chartDetailDialog.period.split('-');
+                const monthNames = ['', 'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+                return `${monthNames[parseInt(m)]} ${y} - ${chartDetailDialog.type === 'expected' ? 'Beklenen Taksitler' : 'Tahsil Edilen'}`;
+              })()}
+            </Typography>
+            <IconButton onClick={() => setChartDetailDialog({ open: false, loading: false, data: null, period: '', type: '' })}>
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {chartDetailDialog.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress />
+            </Box>
+          ) : chartDetailDialog.data ? (
+            <Box>
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <Paper sx={{ p: 1.5, flex: 1, textAlign: 'center', bgcolor: 'primary.light' }}>
+                  <Typography variant="caption" color="primary.dark">Beklenen</Typography>
+                  <Typography variant="h6" color="primary.dark" fontWeight="bold">
+                    {formatCurrency(chartDetailDialog.data.expectedTotal)} ({chartDetailDialog.data.expectedCount})
+                  </Typography>
+                </Paper>
+                <Paper sx={{ p: 1.5, flex: 1, textAlign: 'center', bgcolor: 'success.light' }}>
+                  <Typography variant="caption" color="success.dark">Tahsil Edilen</Typography>
+                  <Typography variant="h6" color="success.dark" fontWeight="bold">
+                    {formatCurrency(chartDetailDialog.data.collectedTotal)} ({chartDetailDialog.data.collectedCount})
+                  </Typography>
+                </Paper>
+              </Box>
+              {(() => {
+                const items = chartDetailDialog.type === 'expected'
+                  ? chartDetailDialog.data.expected
+                  : chartDetailDialog.data.collected;
+                if (!items || items.length === 0) {
+                  return <Typography color="text.secondary" textAlign="center" py={2}>Bu dönemde kayıt bulunamadı</Typography>;
+                }
+                return (
+                  <TableContainer sx={{ maxHeight: 400 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Öğrenci</TableCell>
+                          <TableCell>Kurs</TableCell>
+                          <TableCell>Taksit No</TableCell>
+                          <TableCell>Vade</TableCell>
+                          <TableCell align="right">Tutar</TableCell>
+                          <TableCell align="right">Ödenen</TableCell>
+                          <TableCell>Durum</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {items.map((item, idx) => (
+                          <TableRow key={idx} hover>
+                            <TableCell>{item.student}</TableCell>
+                            <TableCell>{item.course}</TableCell>
+                            <TableCell>{item.installmentNumber}. taksit</TableCell>
+                            <TableCell>{new Date(item.dueDate).toLocaleDateString('tr-TR')}</TableCell>
+                            <TableCell align="right">{formatCurrency(item.amount)}</TableCell>
+                            <TableCell align="right">
+                              <Typography color={item.paidAmount > 0 ? 'success.main' : 'text.secondary'} fontWeight={item.paidAmount > 0 ? 'bold' : 'normal'}>
+                                {formatCurrency(item.paidAmount)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={item.isPaid ? 'Ödendi' : item.paidAmount > 0 ? 'Kısmi' : 'Bekliyor'}
+                                color={item.isPaid ? 'success' : item.paidAmount > 0 ? 'warning' : 'default'}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                );
+              })()}
+            </Box>
+          ) : (
+            <Typography color="text.secondary" textAlign="center" py={2}>Veri yüklenemedi</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {chartDetailDialog.data && chartDetailDialog.type === 'collected' && (
+            <Button
+              size="small"
+              onClick={() => {
+                setChartDetailDialog(prev => ({ ...prev, type: 'expected' }));
+              }}
+            >
+              Beklenen Taksitleri Göster
+            </Button>
+          )}
+          {chartDetailDialog.data && chartDetailDialog.type === 'expected' && (
+            <Button
+              size="small"
+              onClick={() => {
+                setChartDetailDialog(prev => ({ ...prev, type: 'collected' }));
+              }}
+            >
+              Tahsil Edilenleri Göster
+            </Button>
+          )}
+          <Button onClick={() => setChartDetailDialog({ open: false, loading: false, data: null, period: '', type: '' })}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Collection Details Dialog */}
       <Dialog

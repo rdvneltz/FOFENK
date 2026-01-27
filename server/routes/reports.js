@@ -284,8 +284,8 @@ router.get('/income-expense-chart', async (req, res) => {
     const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     // Set default date range if not provided (last 12 months)
     const end = endDate ? new Date(endDate) : new Date();
@@ -374,9 +374,9 @@ router.get('/attendance-stats', async (req, res) => {
     const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
-    if (courseId) filter.course = courseId;
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
+    if (courseId) filter.course = new mongoose.Types.ObjectId(courseId);
 
     if (startDate && endDate) {
       filter.date = {
@@ -429,8 +429,8 @@ router.get('/course-enrollment-stats', async (req, res) => {
     const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     const enrollmentStats = await StudentCourseEnrollment.aggregate([
       { $match: filter },
@@ -471,8 +471,8 @@ router.get('/payment-method-stats', async (req, res) => {
     const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     if (startDate && endDate) {
       filter.paymentDate = {
@@ -508,8 +508,8 @@ router.get('/expense-category-stats', async (req, res) => {
     const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     if (startDate && endDate) {
       filter.expenseDate = {
@@ -555,8 +555,8 @@ router.get('/chart/student-growth', async (req, res) => {
     const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     // Get last 12 months
     const end = new Date();
@@ -608,8 +608,8 @@ router.get('/chart/payment-methods', async (req, res) => {
     const seasonId = req.query.season || req.query.seasonId;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     // Set default to last 30 days if no date range
     if (startDate && endDate) {
@@ -1040,14 +1040,77 @@ router.get('/payments-by-month', async (req, res) => {
   }
 });
 
+// Get installments by due-date month (for chart click detail)
+router.get('/installments-by-month', async (req, res) => {
+  try {
+    const { institutionId, seasonId, period } = req.query;
+    const filter = {};
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    if (!period) {
+      return res.status(400).json({ message: 'period parametresi gerekli (YYYY-MM)' });
+    }
+
+    const [year, month] = period.split('-').map(Number);
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    const paymentPlans = await PaymentPlan.find(filter)
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name');
+
+    const expected = [];
+    const collected = [];
+
+    paymentPlans.forEach(plan => {
+      (plan.installments || []).forEach((inst, idx) => {
+        const dueDate = new Date(inst.dueDate);
+        if (dueDate >= startDate && dueDate <= endDate) {
+          const item = {
+            student: plan.student ? `${plan.student.firstName} ${plan.student.lastName}` : 'Bilinmiyor',
+            course: plan.course?.name || '-',
+            installmentNumber: inst.installmentNumber || (idx + 1),
+            dueDate: inst.dueDate,
+            amount: inst.amount || 0,
+            paidAmount: inst.paidAmount || 0,
+            isPaid: inst.isPaid,
+            paidDate: inst.paidDate,
+            paymentMethod: inst.paymentMethod || '-',
+            planId: plan._id
+          };
+
+          expected.push(item);
+          if (inst.isPaid || inst.paidAmount > 0) {
+            collected.push(item);
+          }
+        }
+      });
+    });
+
+    res.json({
+      period,
+      expectedTotal: expected.reduce((sum, i) => sum + i.amount, 0),
+      expectedCount: expected.length,
+      collectedTotal: collected.reduce((sum, i) => sum + (i.paidAmount || i.amount), 0),
+      collectedCount: collected.length,
+      expected: expected.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate)),
+      collected: collected.sort((a, b) => (b.paidAmount || b.amount) - (a.paidAmount || a.amount))
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get comprehensive financial report
 router.get('/financial-comprehensive', async (req, res) => {
   try {
     const { institutionId, seasonId, startDate, endDate } = req.query;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    // Use ObjectId for aggregate queries (Mongoose .find() auto-casts, but .aggregate() does not)
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     const dateFilter = {};
     if (startDate && endDate) {
@@ -1177,8 +1240,9 @@ router.get('/student-comprehensive', async (req, res) => {
     const { institutionId, seasonId } = req.query;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    // Use ObjectId for aggregate queries
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     // Student counts by status (all students)
     const statusCounts = await Student.aggregate([
@@ -1291,8 +1355,9 @@ router.get('/attendance-comprehensive', async (req, res) => {
     const { institutionId, seasonId, startDate, endDate } = req.query;
     const filter = {};
 
-    if (institutionId) filter.institution = institutionId;
-    if (seasonId) filter.season = seasonId;
+    // Use ObjectId for aggregate queries
+    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
     const dateFilter = {};
     if (startDate && endDate) {
