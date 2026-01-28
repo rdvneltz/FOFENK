@@ -668,7 +668,7 @@ router.get('/collection-rate', async (req, res) => {
     let overdueAmount = 0;
     const now = new Date();
 
-    // Monthly collection data for chart - expected from plans, collected from payments
+    // Monthly EXPECTED data from PaymentPlan installments (grouped by dueDate)
     const monthlyExpected = {};
 
     paymentPlans.forEach(plan => {
@@ -683,12 +683,31 @@ router.get('/collection-rate', async (req, res) => {
         totalExpected += inst.amount || 0;
         monthlyExpected[monthKey].expected += inst.amount || 0;
 
-        if (inst.isPaid) {
-          monthlyExpected[monthKey].collected += inst.paidAmount || inst.amount || 0;
-        } else if (dueDate < now) {
+        if (!inst.isPaid && dueDate < now) {
           overdueAmount += (inst.amount || 0) - (inst.paidAmount || 0);
         }
       });
+    });
+
+    // Monthly COLLECTED data from Payment collection (grouped by paymentDate)
+    // This ensures consistency with the Financial tab's income chart
+    const monthlyPayments = await Payment.aggregate([
+      { $match: { ...aggregateFilter, status: 'completed' } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$paymentDate' } },
+          total: { $sum: '$amount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Merge collected data into monthly map
+    monthlyPayments.forEach(mp => {
+      if (!monthlyExpected[mp._id]) {
+        monthlyExpected[mp._id] = { expected: 0, collected: 0 };
+      }
+      monthlyExpected[mp._id].collected = mp.total;
     });
 
     const collectionRate = totalExpected > 0
