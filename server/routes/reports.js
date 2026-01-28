@@ -10,6 +10,7 @@ const PaymentPlan = require('../models/PaymentPlan');
 const Instructor = require('../models/Instructor');
 const Course = require('../models/Course');
 const Attendance = require('../models/Attendance');
+const ScheduledLesson = require('../models/ScheduledLesson');
 
 // Get dashboard overview
 router.get('/dashboard', async (req, res) => {
@@ -366,53 +367,61 @@ router.get('/income-expense-chart', async (req, res) => {
 });
 
 // Get attendance statistics
+// Attendance model: scheduledLesson (ref), student (ref), attended (boolean)
+// Must $lookup ScheduledLesson to filter by institution/season/course/date
 router.get('/attendance-stats', async (req, res) => {
   try {
     const { courseId, startDate, endDate } = req.query;
-    // Accept both 'institution' and 'institutionId' parameters for compatibility
     const institutionId = req.query.institution || req.query.institutionId;
     const seasonId = req.query.season || req.query.seasonId;
-    const filter = {};
 
-    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
-    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
-    if (courseId) filter.course = new mongoose.Types.ObjectId(courseId);
-
+    // Build filter for ScheduledLesson fields
+    const lessonMatch = {};
+    if (institutionId) lessonMatch['lesson.institution'] = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) lessonMatch['lesson.season'] = new mongoose.Types.ObjectId(seasonId);
+    if (courseId) lessonMatch['lesson.course'] = new mongoose.Types.ObjectId(courseId);
     if (startDate && endDate) {
-      filter.date = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate)
-      };
+      lessonMatch['lesson.date'] = { $gte: new Date(startDate), $lte: new Date(endDate) };
     }
 
-    // Count by status
-    const stats = await Attendance.aggregate([
-      { $match: filter },
+    const pipeline = [
+      {
+        $lookup: {
+          from: 'scheduledlessons',
+          localField: 'scheduledLesson',
+          foreignField: '_id',
+          as: 'lesson'
+        }
+      },
+      { $unwind: '$lesson' },
+      ...(Object.keys(lessonMatch).length > 0 ? [{ $match: lessonMatch }] : []),
       {
         $group: {
-          _id: '$status',
+          _id: '$attended',
           count: { $sum: 1 }
         }
       }
-    ]);
+    ];
 
-    // Format response
+    const stats = await Attendance.aggregate(pipeline);
+
     const result = {
       present: 0,
       absent: 0,
-      excused: 0,
-      late: 0,
       total: 0
     };
 
     stats.forEach(item => {
-      result[item._id] = item.count;
+      if (item._id === true) {
+        result.present = item.count;
+      } else {
+        result.absent = item.count;
+      }
       result.total += item.count;
     });
 
-    // Calculate attendance rate
     result.attendanceRate = result.total > 0
-      ? ((result.present + result.late) / result.total * 100).toFixed(2)
+      ? ((result.present / result.total) * 100).toFixed(2)
       : 0;
 
     res.json(result);
@@ -562,17 +571,17 @@ router.get('/chart/student-growth', async (req, res) => {
     const end = new Date();
     const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
 
-    // Aggregate students by registration month
+    // Aggregate students by registration month (Student model uses createdAt)
     const studentGrowth = await Student.aggregate([
       {
         $match: {
           ...filter,
-          registrationDate: { $gte: start, $lte: end }
+          createdAt: { $gte: start, $lte: end }
         }
       },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$registrationDate' } },
+          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
           count: { $sum: 1 }
         }
       },
@@ -1415,9 +1424,9 @@ router.get('/student-comprehensive', async (req, res) => {
     if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
     if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
 
-    // Student counts by status (all students)
+    // Student counts by status (non-archived)
     const statusCounts = await Student.aggregate([
-      { $match: filter },
+      { $match: { ...filter, isArchived: { $ne: true } } },
       {
         $group: {
           _id: '$status',
@@ -1426,14 +1435,21 @@ router.get('/student-comprehensive', async (req, res) => {
       }
     ]);
 
-    // Calculate totals
-    const totalAll = statusCounts.reduce((sum, s) => sum + s.count, 0);
+    // Archived count separately (isArchived is a boolean flag, not a status value)
+    const archivedCount = await Student.countDocuments({
+      ...(institutionId ? { institution: institutionId } : {}),
+      ...(seasonId ? { season: seasonId } : {}),
+      isArchived: true
+    });
+
+    // Calculate totals - Student model uses: 'trial', 'active', 'passive'
     const activeCount = statusCounts.find(s => s._id === 'active')?.count || 0;
     const trialCount = statusCounts.find(s => s._id === 'trial')?.count || 0;
-    const inactiveCount = statusCounts.find(s => s._id === 'inactive')?.count || 0;
-    const archivedCount = statusCounts.find(s => s._id === 'archived')?.count || 0;
+    const passiveCount = statusCounts.find(s => s._id === 'passive')?.count || 0;
+    const totalNonArchived = statusCounts.reduce((sum, s) => sum + s.count, 0);
+    const totalAll = totalNonArchived + archivedCount;
 
-    // Enrollment statistics
+    // Enrollment statistics - StudentCourseEnrollment uses isActive (boolean), not status
     const enrollmentStats = await StudentCourseEnrollment.aggregate([
       { $match: filter },
       {
@@ -1451,14 +1467,14 @@ router.get('/student-comprehensive', async (req, res) => {
           courseName: { $first: '$courseInfo.name' },
           totalEnrollments: { $sum: 1 },
           activeEnrollments: {
-            $sum: { $cond: [{ $eq: ['$status', 'active'] }, 1, 0] }
+            $sum: { $cond: [{ $eq: ['$isActive', true] }, 1, 0] }
           }
         }
       },
       { $sort: { totalEnrollments: -1 } }
     ]);
 
-    // Registration trend (last 12 months)
+    // Registration trend (last 12 months) - Student model uses createdAt, not registrationDate
     const end = new Date();
     const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
 
@@ -1466,12 +1482,12 @@ router.get('/student-comprehensive', async (req, res) => {
       {
         $match: {
           ...filter,
-          registrationDate: { $gte: start, $lte: end }
+          createdAt: { $gte: start, $lte: end }
         }
       },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$registrationDate' } },
+          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
           count: { $sum: 1 }
         }
       },
@@ -1493,7 +1509,7 @@ router.get('/student-comprehensive', async (req, res) => {
 
     // Discount statistics
     const discountStats = await StudentCourseEnrollment.aggregate([
-      { $match: { ...filter, 'discount.type': { $exists: true } } },
+      { $match: { ...filter, 'discount.type': { $exists: true, $ne: 'none' } } },
       {
         $group: {
           _id: '$discount.type',
@@ -1508,7 +1524,7 @@ router.get('/student-comprehensive', async (req, res) => {
       totalAll, // Tüm öğrenciler (arşivlenmiş dahil)
       activeCount,
       trialCount,
-      inactiveCount,
+      passiveCount,
       archivedCount,
       statusCounts,
       enrollmentStats,
@@ -1521,43 +1537,70 @@ router.get('/student-comprehensive', async (req, res) => {
 });
 
 // Get attendance comprehensive report
+// Attendance model only has: scheduledLesson (ref), student (ref), attended (boolean)
+// Must $lookup through ScheduledLesson to get institution, season, course, date
 router.get('/attendance-comprehensive', async (req, res) => {
   try {
     const { institutionId, seasonId, startDate, endDate } = req.query;
-    const filter = {};
 
-    // Use ObjectId for aggregate queries
-    if (institutionId) filter.institution = new mongoose.Types.ObjectId(institutionId);
-    if (seasonId) filter.season = new mongoose.Types.ObjectId(seasonId);
-
-    const dateFilter = {};
+    // Build the match filter for ScheduledLesson fields (joined via $lookup)
+    const lessonMatch = {};
+    if (institutionId) lessonMatch['lesson.institution'] = new mongoose.Types.ObjectId(institutionId);
+    if (seasonId) lessonMatch['lesson.season'] = new mongoose.Types.ObjectId(seasonId);
     if (startDate && endDate) {
-      dateFilter.$gte = new Date(startDate);
-      dateFilter.$lte = new Date(endDate);
+      lessonMatch['lesson.date'] = { $gte: new Date(startDate), $lte: new Date(endDate) };
     }
 
-    if (Object.keys(dateFilter).length > 0) {
-      filter.date = dateFilter;
-    }
+    // Base pipeline: join Attendance → ScheduledLesson
+    const basePipeline = [
+      {
+        $lookup: {
+          from: 'scheduledlessons',
+          localField: 'scheduledLesson',
+          foreignField: '_id',
+          as: 'lesson'
+        }
+      },
+      { $unwind: '$lesson' },
+      // Filter by institution/season/date from the lesson
+      ...(Object.keys(lessonMatch).length > 0 ? [{ $match: lessonMatch }] : [])
+    ];
 
-    // Overall statistics
+    // Overall statistics: attended=true → present, attended=false → absent
     const overallStats = await Attendance.aggregate([
-      { $match: filter },
+      ...basePipeline,
       {
         $group: {
-          _id: '$status',
+          _id: '$attended',
           count: { $sum: 1 }
         }
       }
     ]);
 
-    // By course
+    const stats = {
+      present: 0,
+      absent: 0,
+      total: 0
+    };
+    overallStats.forEach(s => {
+      if (s._id === true) {
+        stats.present = s.count;
+      } else {
+        stats.absent = s.count;
+      }
+      stats.total += s.count;
+    });
+    stats.attendanceRate = stats.total > 0
+      ? ((stats.present / stats.total) * 100).toFixed(1)
+      : 0;
+
+    // By course: join to courses collection via lesson.course
     const byCourse = await Attendance.aggregate([
-      { $match: filter },
+      ...basePipeline,
       {
         $lookup: {
           from: 'courses',
-          localField: 'course',
+          localField: 'lesson.course',
           foreignField: '_id',
           as: 'courseInfo'
         }
@@ -1565,33 +1608,28 @@ router.get('/attendance-comprehensive', async (req, res) => {
       { $unwind: '$courseInfo' },
       {
         $group: {
-          _id: '$course',
+          _id: '$lesson.course',
           courseName: { $first: '$courseInfo.name' },
-          present: { $sum: { $cond: [{ $eq: ['$status', 'present'] }, 1, 0] } },
-          absent: { $sum: { $cond: [{ $eq: ['$status', 'absent'] }, 1, 0] } },
-          late: { $sum: { $cond: [{ $eq: ['$status', 'late'] }, 1, 0] } },
-          excused: { $sum: { $cond: [{ $eq: ['$status', 'excused'] }, 1, 0] } },
+          present: { $sum: { $cond: [{ $eq: ['$attended', true] }, 1, 0] } },
+          absent: { $sum: { $cond: [{ $eq: ['$attended', false] }, 1, 0] } },
           total: { $sum: 1 }
         }
-      }
+      },
+      { $sort: { total: -1 } }
     ]);
 
-    // Monthly trend
+    // Monthly trend (last 6 months)
     const end = new Date();
     const start = new Date(end.getFullYear(), end.getMonth() - 5, 1);
 
     const monthlyTrend = await Attendance.aggregate([
-      {
-        $match: {
-          ...filter,
-          date: { $gte: start, $lte: end }
-        }
-      },
+      ...basePipeline,
+      { $match: { 'lesson.date': { $gte: start, $lte: end } } },
       {
         $group: {
           _id: {
-            month: { $dateToString: { format: '%Y-%m', date: '$date' } },
-            status: '$status'
+            month: { $dateToString: { format: '%Y-%m', date: '$lesson.date' } },
+            attended: '$attended'
           },
           count: { $sum: 1 }
         }
@@ -1599,26 +1637,60 @@ router.get('/attendance-comprehensive', async (req, res) => {
       { $sort: { '_id.month': 1 } }
     ]);
 
-    // Process overall stats
-    const stats = {
-      present: 0,
-      absent: 0,
-      late: 0,
-      excused: 0,
-      total: 0
-    };
-    overallStats.forEach(s => {
-      stats[s._id] = s.count;
-      stats.total += s.count;
+    // Process monthly trend into structured data
+    const monthlyMap = {};
+    monthlyTrend.forEach(item => {
+      const month = item._id.month;
+      if (!monthlyMap[month]) {
+        monthlyMap[month] = { period: month, present: 0, absent: 0, total: 0 };
+      }
+      if (item._id.attended === true) {
+        monthlyMap[month].present = item.count;
+      } else {
+        monthlyMap[month].absent = item.count;
+      }
+      monthlyMap[month].total += item.count;
     });
-    stats.attendanceRate = stats.total > 0
-      ? (((stats.present + stats.late) / stats.total) * 100).toFixed(1)
-      : 0;
+
+    // Fill missing months
+    const monthlyData = [];
+    for (let i = 0; i < 6; i++) {
+      const date = new Date(start);
+      date.setMonth(start.getMonth() + i);
+      const monthKey = date.toISOString().substring(0, 7);
+      const found = monthlyMap[monthKey];
+      monthlyData.push(found || { period: monthKey, present: 0, absent: 0, total: 0 });
+    }
+
+    // Top absent students (most absences)
+    const topAbsent = await Attendance.aggregate([
+      ...basePipeline,
+      { $match: { attended: false } },
+      {
+        $lookup: {
+          from: 'students',
+          localField: 'student',
+          foreignField: '_id',
+          as: 'studentInfo'
+        }
+      },
+      { $unwind: '$studentInfo' },
+      {
+        $group: {
+          _id: '$student',
+          studentName: { $first: { $concat: ['$studentInfo.firstName', ' ', '$studentInfo.lastName'] } },
+          absentCount: { $sum: 1 }
+        }
+      },
+      { $sort: { absentCount: -1 } },
+      { $limit: 10 }
+    ]);
 
     res.json({
       stats,
       byCourse,
-      monthlyTrend
+      monthlyTrend: monthlyData,
+      topAbsent
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
