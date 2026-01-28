@@ -263,6 +263,7 @@ const Reports = () => {
   const getStatusLabel = (status) => {
     const labels = {
       active: 'Aktif',
+      passive: 'Pasif',
       inactive: 'Pasif',
       trial: 'Deneme',
       archived: 'Arşiv'
@@ -940,7 +941,7 @@ const Reports = () => {
                 <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
                   <Typography variant="body2" color="warning.dark">Pasif</Typography>
                   <Typography variant={isMobile ? 'h5' : 'h4'} color="warning.dark" fontWeight="bold">
-                    {studentData.inactiveCount || 0}
+                    {studentData.passiveCount || 0}
                   </Typography>
                 </CardContent>
               </Card>
@@ -1093,9 +1094,9 @@ const Reports = () => {
         <Box>
           {/* Attendance Summary */}
           <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={6} md={2.4}>
+            <Grid item xs={6} md={3}>
               <Card sx={{ bgcolor: 'success.light' }}>
-                <CardContent sx={{ py: { xs: 1, md: 2 }, textAlign: 'center' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
                   <Typography variant="body2" color="success.dark">Katıldı</Typography>
                   <Typography variant={isMobile ? 'h5' : 'h4'} color="success.dark" fontWeight="bold">
                     {attendanceData.stats?.present || 0}
@@ -1103,9 +1104,9 @@ const Reports = () => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={6} md={2.4}>
+            <Grid item xs={6} md={3}>
               <Card sx={{ bgcolor: 'error.light' }}>
-                <CardContent sx={{ py: { xs: 1, md: 2 }, textAlign: 'center' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
                   <Typography variant="body2" color="error.dark">Gelmedi</Typography>
                   <Typography variant={isMobile ? 'h5' : 'h4'} color="error.dark" fontWeight="bold">
                     {attendanceData.stats?.absent || 0}
@@ -1113,29 +1114,19 @@ const Reports = () => {
                 </CardContent>
               </Card>
             </Grid>
-            <Grid item xs={6} md={2.4}>
-              <Card sx={{ bgcolor: 'warning.light' }}>
-                <CardContent sx={{ py: { xs: 1, md: 2 }, textAlign: 'center' }}>
-                  <Typography variant="body2" color="warning.dark">Geç Geldi</Typography>
-                  <Typography variant={isMobile ? 'h5' : 'h4'} color="warning.dark" fontWeight="bold">
-                    {attendanceData.stats?.late || 0}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={6} md={2.4}>
-              <Card sx={{ bgcolor: 'info.light' }}>
-                <CardContent sx={{ py: { xs: 1, md: 2 }, textAlign: 'center' }}>
-                  <Typography variant="body2" color="info.dark">İzinli</Typography>
-                  <Typography variant={isMobile ? 'h5' : 'h4'} color="info.dark" fontWeight="bold">
-                    {attendanceData.stats?.excused || 0}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={2.4}>
+            <Grid item xs={6} md={3}>
               <Card>
-                <CardContent sx={{ py: { xs: 1, md: 2 }, textAlign: 'center' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
+                  <Typography variant="body2" color="text.secondary">Toplam Kayıt</Typography>
+                  <Typography variant={isMobile ? 'h5' : 'h4'} fontWeight="bold">
+                    {attendanceData.stats?.total || 0}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Card sx={{ bgcolor: attendanceData.stats?.attendanceRate >= 80 ? 'success.light' : 'warning.light' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, textAlign: 'center' }}>
                   <Typography variant="body2" color="text.secondary">Katılım Oranı</Typography>
                   <Typography variant={isMobile ? 'h5' : 'h4'} color="primary.main" fontWeight="bold">
                     %{attendanceData.stats?.attendanceRate || 0}
@@ -1153,7 +1144,7 @@ const Reports = () => {
 
           {/* Charts */}
           <Grid container spacing={2}>
-            {/* Attendance Distribution */}
+            {/* Attendance Distribution Pie */}
             <Grid item xs={12} sm={6} lg={4}>
               <Paper sx={{ p: { xs: 2, md: 3 } }}>
                 <Typography variant="h6" gutterBottom>
@@ -1163,19 +1154,15 @@ const Reports = () => {
                   <Box sx={{ height: { xs: 200, md: 250 } }}>
                     <Pie
                       data={{
-                        labels: ['Katıldı', 'Gelmedi', 'Geç', 'İzinli'],
+                        labels: ['Katıldı', 'Gelmedi'],
                         datasets: [{
                           data: [
                             attendanceData.stats.present,
-                            attendanceData.stats.absent,
-                            attendanceData.stats.late,
-                            attendanceData.stats.excused
+                            attendanceData.stats.absent
                           ],
                           backgroundColor: [
                             chartColors.success,
-                            chartColors.error,
-                            chartColors.warning,
-                            chartColors.info
+                            chartColors.error
                           ]
                         }]
                       }}
@@ -1196,53 +1183,151 @@ const Reports = () => {
               </Paper>
             </Grid>
 
+            {/* Monthly Attendance Trend */}
+            <Grid item xs={12} lg={8}>
+              <Paper sx={{ p: { xs: 2, md: 3 } }}>
+                <Typography variant="h6" gutterBottom>
+                  Aylık Yoklama Trendi (Son 6 Ay)
+                </Typography>
+                {attendanceData.monthlyTrend?.length > 0 &&
+                  attendanceData.monthlyTrend.some(d => d.total > 0) ? (
+                  <Box sx={{ height: { xs: 250, md: 300 } }}>
+                    <Bar
+                      data={{
+                        labels: attendanceData.monthlyTrend.map(d => {
+                          const [year, month] = d.period.split('-');
+                          return `${month}/${year.slice(2)}`;
+                        }),
+                        datasets: [
+                          {
+                            label: 'Katıldı',
+                            data: attendanceData.monthlyTrend.map(d => d.present),
+                            backgroundColor: chartColors.success,
+                            borderRadius: 4
+                          },
+                          {
+                            label: 'Gelmedi',
+                            data: attendanceData.monthlyTrend.map(d => d.absent),
+                            backgroundColor: chartColors.error,
+                            borderRadius: 4
+                          }
+                        ]
+                      }}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { position: 'top' }
+                        },
+                        scales: {
+                          x: { stacked: true },
+                          y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: { stepSize: 1 }
+                          }
+                        }
+                      }}
+                    />
+                  </Box>
+                ) : (
+                  <Typography color="text.secondary" textAlign="center" py={4}>
+                    Aylık yoklama verisi bulunamadı
+                  </Typography>
+                )}
+              </Paper>
+            </Grid>
+
             {/* Attendance by Course */}
-            <Grid item xs={12} sm={6} lg={8}>
+            <Grid item xs={12} lg={8}>
               <Paper sx={{ p: { xs: 2, md: 3 } }}>
                 <Typography variant="h6" gutterBottom>
                   Kurs Bazlı Yoklama
                 </Typography>
-                <TableContainer>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Kurs</TableCell>
-                        <TableCell align="center">Katıldı</TableCell>
-                        <TableCell align="center">Gelmedi</TableCell>
-                        <TableCell align="center">Geç</TableCell>
-                        <TableCell align="center">Oran</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {attendanceData.byCourse?.map((course, idx) => {
-                        const rate = course.total > 0
-                          ? (((course.present + course.late) / course.total) * 100).toFixed(0)
-                          : 0;
-                        return (
+                {attendanceData.byCourse?.length > 0 ? (
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Kurs</TableCell>
+                          <TableCell align="center">Katıldı</TableCell>
+                          <TableCell align="center">Gelmedi</TableCell>
+                          <TableCell align="center">Toplam</TableCell>
+                          <TableCell align="center">Oran</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {attendanceData.byCourse.map((course, idx) => {
+                          const rate = course.total > 0
+                            ? ((course.present / course.total) * 100).toFixed(0)
+                            : 0;
+                          return (
+                            <TableRow key={idx}>
+                              <TableCell>{course.courseName}</TableCell>
+                              <TableCell align="center">
+                                <Chip label={course.present} size="small" color="success" variant="outlined" />
+                              </TableCell>
+                              <TableCell align="center">
+                                <Chip label={course.absent} size="small" color="error" variant="outlined" />
+                              </TableCell>
+                              <TableCell align="center">{course.total}</TableCell>
+                              <TableCell align="center">
+                                <Chip
+                                  label={`%${rate}`}
+                                  size="small"
+                                  color={rate >= 80 ? 'success' : rate >= 60 ? 'warning' : 'error'}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                ) : (
+                  <Typography color="text.secondary" textAlign="center" py={4}>
+                    Kurs bazlı yoklama verisi bulunamadı
+                  </Typography>
+                )}
+              </Paper>
+            </Grid>
+
+            {/* Top Absent Students */}
+            <Grid item xs={12} sm={6} lg={4}>
+              <Paper sx={{ p: { xs: 2, md: 3 } }}>
+                <Typography variant="h6" gutterBottom>
+                  En Çok Devamsızlık
+                </Typography>
+                {attendanceData.topAbsent?.length > 0 ? (
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Öğrenci</TableCell>
+                          <TableCell align="center">Devamsızlık</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {attendanceData.topAbsent.map((student, idx) => (
                           <TableRow key={idx}>
-                            <TableCell>{course.courseName}</TableCell>
-                            <TableCell align="center">
-                              <Chip label={course.present} size="small" color="success" variant="outlined" />
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip label={course.absent} size="small" color="error" variant="outlined" />
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip label={course.late} size="small" color="warning" variant="outlined" />
-                            </TableCell>
+                            <TableCell>{student.studentName}</TableCell>
                             <TableCell align="center">
                               <Chip
-                                label={`%${rate}`}
+                                label={student.absentCount}
                                 size="small"
-                                color={rate >= 80 ? 'success' : rate >= 60 ? 'warning' : 'error'}
+                                color={student.absentCount >= 5 ? 'error' : student.absentCount >= 3 ? 'warning' : 'default'}
                               />
                             </TableCell>
                           </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                ) : (
+                  <Typography color="text.secondary" textAlign="center" py={4}>
+                    Devamsızlık kaydı bulunamadı
+                  </Typography>
+                )}
               </Paper>
             </Grid>
           </Grid>
