@@ -130,6 +130,28 @@ const Reports = () => {
     }
   };
 
+  // Financial month detail dialog (for clickable chart)
+  const [financialDetailDialog, setFinancialDetailDialog] = useState({
+    open: false,
+    loading: false,
+    data: null,
+    period: '',
+    type: '' // 'income' or 'expense'
+  });
+
+  const loadFinancialDetail = async (period, type) => {
+    setFinancialDetailDialog({ open: true, loading: true, data: null, period, type });
+    try {
+      const response = await api.get('/reports/financial-month-detail', {
+        params: { institutionId: institution._id, seasonId: season._id, period, type }
+      });
+      setFinancialDetailDialog(prev => ({ ...prev, loading: false, data: response.data }));
+    } catch (error) {
+      console.error('Error loading financial detail:', error);
+      setFinancialDetailDialog(prev => ({ ...prev, loading: false }));
+    }
+  };
+
   useEffect(() => {
     if (institution && season) {
       loadAllReports();
@@ -348,44 +370,42 @@ const Reports = () => {
       )}
       {activeTab === 0 && financialData && (
         <Box>
-          {/* Summary Cards */}
-          <Grid container spacing={2} sx={{ mb: 3 }}>
+          {/* Summary Cards - 2 rows: Income then Expenses */}
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            {/* Income Row */}
             <Grid item xs={6} md={3}>
               <Card sx={{ bgcolor: 'success.light' }}>
                 <CardContent sx={{ py: { xs: 1.5, md: 2 }, px: { xs: 1.5, md: 2 } }}>
                   <Typography variant="body2" color="success.dark" noWrap>
-                    Toplam Gelir
+                    Tahsil Edilen Gelir
                   </Typography>
                   <Typography variant={isMobile ? 'h6' : 'h4'} color="success.dark" fontWeight="bold">
-                    {formatCurrency(financialData.totalIncome)}
+                    {formatCurrency(financialData.realizedIncome)}
                   </Typography>
                 </CardContent>
               </Card>
             </Grid>
+            <Grid item xs={6} md={3}>
+              <Card sx={{ bgcolor: 'warning.light' }}>
+                <CardContent sx={{ py: { xs: 1.5, md: 2 }, px: { xs: 1.5, md: 2 } }}>
+                  <Typography variant="body2" color="warning.dark" noWrap>
+                    Bekleyen Gelir
+                  </Typography>
+                  <Typography variant={isMobile ? 'h6' : 'h4'} color="warning.dark" fontWeight="bold">
+                    {formatCurrency(financialData.pendingIncome)}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            {/* Expense Row */}
             <Grid item xs={6} md={3}>
               <Card sx={{ bgcolor: 'error.light' }}>
                 <CardContent sx={{ py: { xs: 1.5, md: 2 }, px: { xs: 1.5, md: 2 } }}>
                   <Typography variant="body2" color="error.dark" noWrap>
-                    Toplam Gider
+                    Ödenen Gider
                   </Typography>
                   <Typography variant={isMobile ? 'h6' : 'h4'} color="error.dark" fontWeight="bold">
-                    {formatCurrency(financialData.totalExpenses)}
-                  </Typography>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={6} md={3}>
-              <Card sx={{ bgcolor: financialData.netIncome >= 0 ? 'info.light' : 'warning.light' }}>
-                <CardContent sx={{ py: { xs: 1.5, md: 2 }, px: { xs: 1.5, md: 2 } }}>
-                  <Typography variant="body2" color={financialData.netIncome >= 0 ? 'info.dark' : 'warning.dark'} noWrap>
-                    Net Kar/Zarar
-                  </Typography>
-                  <Typography
-                    variant={isMobile ? 'h6' : 'h4'}
-                    color={financialData.netIncome >= 0 ? 'info.dark' : 'warning.dark'}
-                    fontWeight="bold"
-                  >
-                    {formatCurrency(financialData.netIncome)}
+                    {formatCurrency(financialData.paidExpenses)}
                   </Typography>
                 </CardContent>
               </Card>
@@ -394,13 +414,67 @@ const Reports = () => {
               <Card sx={{ bgcolor: 'grey.200' }}>
                 <CardContent sx={{ py: { xs: 1.5, md: 2 }, px: { xs: 1.5, md: 2 } }}>
                   <Typography variant="body2" color="text.secondary" noWrap>
-                    Kar Marjı
+                    Bekleyen Gider
                   </Typography>
                   <Typography variant={isMobile ? 'h6' : 'h4'} fontWeight="bold">
-                    %{financialData.totalIncome > 0
-                      ? ((financialData.netIncome / financialData.totalIncome) * 100).toFixed(1)
+                    {formatCurrency(financialData.pendingExpenses)}
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          {/* Net Summary Row */}
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={6} md={4}>
+              <Card sx={{ bgcolor: financialData.netIncome >= 0 ? 'info.light' : 'error.light' }}>
+                <CardContent sx={{ py: { xs: 1, md: 1.5 }, px: { xs: 1.5, md: 2 } }}>
+                  <Typography variant="body2" color={financialData.netIncome >= 0 ? 'info.dark' : 'error.dark'} noWrap>
+                    Net Kar/Zarar (Gerçekleşen)
+                  </Typography>
+                  <Typography variant={isMobile ? 'h6' : 'h5'} color={financialData.netIncome >= 0 ? 'info.dark' : 'error.dark'} fontWeight="bold">
+                    {formatCurrency(financialData.netIncome)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Tahsil edilen gelir - Ödenen gider
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={6} md={4}>
+              <Card sx={{ bgcolor: 'grey.100' }}>
+                <CardContent sx={{ py: { xs: 1, md: 1.5 }, px: { xs: 1.5, md: 2 } }}>
+                  <Typography variant="body2" color="text.secondary" noWrap>
+                    Kar Marjı
+                  </Typography>
+                  <Typography variant={isMobile ? 'h6' : 'h5'} fontWeight="bold">
+                    %{financialData.realizedIncome > 0
+                      ? ((financialData.netIncome / financialData.realizedIncome) * 100).toFixed(1)
                       : 0}
                   </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Card sx={{ bgcolor: 'primary.light' }}>
+                <CardContent sx={{ py: { xs: 1, md: 1.5 }, px: { xs: 1.5, md: 2 } }}>
+                  <Typography variant="body2" color="primary.dark" noWrap>
+                    Toplam (Gerçekleşen + Bekleyen)
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <Box>
+                      <Typography variant="caption" color="primary.dark">Gelir</Typography>
+                      <Typography variant="body1" color="primary.dark" fontWeight="bold">
+                        {formatCurrency(financialData.totalIncome)}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="primary.dark">Gider</Typography>
+                      <Typography variant="body1" color="primary.dark" fontWeight="bold">
+                        {formatCurrency(financialData.totalExpenses)}
+                      </Typography>
+                    </Box>
+                  </Box>
                 </CardContent>
               </Card>
             </Grid>
@@ -408,11 +482,14 @@ const Reports = () => {
 
           {/* Charts Row */}
           <Grid container spacing={2}>
-            {/* Income vs Expense Trend */}
+            {/* Income vs Expense Trend - Clickable */}
             <Grid item xs={12} lg={8}>
               <Paper sx={{ p: { xs: 2, md: 3 } }}>
                 <Typography variant="h6" gutterBottom>
                   Gelir & Gider Trendi (Son 12 Ay)
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  Noktalara tıklayarak aylık detay görüntüleyebilirsiniz
                 </Typography>
                 {financialData.monthlyTrend?.length > 0 && (
                   <Box sx={{ height: { xs: 250, md: 300 } }}>
@@ -424,20 +501,37 @@ const Reports = () => {
                         }),
                         datasets: [
                           {
-                            label: 'Gelir',
+                            label: 'Gelir (Tahsil Edilen)',
                             data: financialData.monthlyTrend.map(d => d.income),
                             borderColor: chartColors.success,
                             backgroundColor: 'rgba(46, 125, 50, 0.1)',
                             fill: true,
-                            tension: 0.3
+                            tension: 0.3,
+                            pointRadius: 5,
+                            pointHoverRadius: 8,
+                            pointBackgroundColor: chartColors.success
                           },
                           {
-                            label: 'Gider',
+                            label: 'Gider (Ödenen)',
                             data: financialData.monthlyTrend.map(d => d.expense),
                             borderColor: chartColors.error,
                             backgroundColor: 'rgba(211, 47, 47, 0.1)',
                             fill: true,
-                            tension: 0.3
+                            tension: 0.3,
+                            pointRadius: 5,
+                            pointHoverRadius: 8,
+                            pointBackgroundColor: chartColors.error
+                          },
+                          {
+                            label: 'Bekleyen Gider',
+                            data: financialData.monthlyTrend.map(d => d.pendingExpense || 0),
+                            borderColor: 'rgba(237, 108, 2, 0.6)',
+                            backgroundColor: 'transparent',
+                            borderDash: [4, 4],
+                            tension: 0.3,
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            pointBackgroundColor: chartColors.warning
                           },
                           {
                             label: 'Net',
@@ -445,18 +539,30 @@ const Reports = () => {
                             borderColor: chartColors.primary,
                             backgroundColor: 'transparent',
                             borderDash: [5, 5],
-                            tension: 0.3
+                            tension: 0.3,
+                            pointRadius: 4,
+                            pointHoverRadius: 7
                           }
                         ]
                       }}
                       options={{
                         responsive: true,
                         maintainAspectRatio: false,
+                        onClick: (event, elements) => {
+                          if (elements.length > 0) {
+                            const idx = elements[0].index;
+                            const datasetIdx = elements[0].datasetIndex;
+                            const period = financialData.monthlyTrend[idx].period;
+                            // 0 = income, 1 = paid expense, 2 = pending expense, 3 = net
+                            const type = datasetIdx === 0 ? 'income' : 'expense';
+                            loadFinancialDetail(period, type);
+                          }
+                        },
                         plugins: {
                           legend: { position: 'top' },
                           tooltip: {
                             callbacks: {
-                              label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)}`
+                              label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.parsed.y)} (detay icin tıkla)`
                             }
                           }
                         },
@@ -468,6 +574,9 @@ const Reports = () => {
                               maxTicksLimit: 6
                             }
                           }
+                        },
+                        onHover: (event, chartElement) => {
+                          event.native.target.style.cursor = chartElement.length > 0 ? 'pointer' : 'default';
                         }
                       }}
                     />
@@ -1139,6 +1248,108 @@ const Reports = () => {
           </Grid>
         </Box>
       )}
+
+      {/* Financial Month Detail Dialog */}
+      <Dialog
+        open={financialDetailDialog.open}
+        onClose={() => setFinancialDetailDialog({ open: false, loading: false, data: null, period: '', type: '' })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">
+              {(() => {
+                if (!financialDetailDialog.period) return '';
+                const [y, m] = financialDetailDialog.period.split('-');
+                const monthNames = ['', 'Ocak', 'Subat', 'Mart', 'Nisan', 'Mayis', 'Haziran', 'Temmuz', 'Agustos', 'Eylul', 'Ekim', 'Kasim', 'Aralik'];
+                return `${monthNames[parseInt(m)]} ${y} - ${financialDetailDialog.type === 'income' ? 'Gelir Detayi' : 'Gider Detayi'}`;
+              })()}
+            </Typography>
+            <IconButton onClick={() => setFinancialDetailDialog({ open: false, loading: false, data: null, period: '', type: '' })}>
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {financialDetailDialog.loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress />
+            </Box>
+          ) : financialDetailDialog.data ? (
+            <Box>
+              <Paper sx={{ p: 1.5, mb: 2, bgcolor: financialDetailDialog.type === 'income' ? 'success.50' : 'error.50' }}>
+                <Typography variant="h6" color={financialDetailDialog.type === 'income' ? 'success.main' : 'error.main'}>
+                  Toplam: {formatCurrency(financialDetailDialog.data.total)} ({financialDetailDialog.data.count} kayit)
+                </Typography>
+              </Paper>
+              {financialDetailDialog.data.items?.length > 0 ? (
+                <TableContainer sx={{ maxHeight: 400 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Tarih</TableCell>
+                        <TableCell>{financialDetailDialog.type === 'income' ? 'Ogrenci' : 'Aciklama'}</TableCell>
+                        <TableCell>Kategori</TableCell>
+                        {financialDetailDialog.type === 'income' && <TableCell>Kurs</TableCell>}
+                        <TableCell>Kasa</TableCell>
+                        {financialDetailDialog.type === 'expense' && <TableCell>Durum</TableCell>}
+                        <TableCell align="right">Tutar</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {financialDetailDialog.data.items.map((item, idx) => (
+                        <TableRow key={idx} hover>
+                          <TableCell>{new Date(item.date).toLocaleDateString('tr-TR')}</TableCell>
+                          <TableCell>{item.description}</TableCell>
+                          <TableCell>
+                            <Chip size="small" label={financialDetailDialog.type === 'income' ? getPaymentMethodLabel(item.category) : (item.category || 'Diger')} variant="outlined" />
+                          </TableCell>
+                          {financialDetailDialog.type === 'income' && <TableCell>{item.course}</TableCell>}
+                          <TableCell>{item.cashRegister}</TableCell>
+                          {financialDetailDialog.type === 'expense' && (
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={item.status === 'paid' ? 'Odendi' : item.status === 'overdue' ? 'Gecikti' : 'Bekliyor'}
+                                color={item.status === 'paid' ? 'success' : item.status === 'overdue' ? 'error' : 'warning'}
+                                variant="outlined"
+                              />
+                            </TableCell>
+                          )}
+                          <TableCell align="right">
+                            <Typography fontWeight="bold" color={financialDetailDialog.type === 'income' ? 'success.main' : 'error.main'}>
+                              {formatCurrency(item.amount)}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              ) : (
+                <Typography color="text.secondary" textAlign="center" py={2}>Bu donemde kayit bulunamadi</Typography>
+              )}
+            </Box>
+          ) : (
+            <Typography color="text.secondary" textAlign="center" py={2}>Veri yuklenemedi</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {financialDetailDialog.data && (
+            <Button
+              size="small"
+              onClick={() => {
+                const newType = financialDetailDialog.type === 'income' ? 'expense' : 'income';
+                loadFinancialDetail(financialDetailDialog.period, newType);
+              }}
+            >
+              {financialDetailDialog.type === 'income' ? 'Giderleri Goster' : 'Gelirleri Goster'}
+            </Button>
+          )}
+          <Button onClick={() => setFinancialDetailDialog({ open: false, loading: false, data: null, period: '', type: '' })}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Chart Bar Detail Dialog */}
       <Dialog

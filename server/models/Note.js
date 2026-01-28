@@ -36,6 +36,26 @@ const noteSchema = new mongoose.Schema({
   reminderDate: {
     type: Date
   },
+  // Son tamamlanma tarihi (deadline)
+  deadline: {
+    type: Date
+  },
+  // Tamamlandı mı
+  isCompleted: {
+    type: Boolean,
+    default: false
+  },
+  completedAt: {
+    type: Date
+  },
+  // Arşivlendi mi
+  isArchived: {
+    type: Boolean,
+    default: false
+  },
+  archivedAt: {
+    type: Date
+  },
   // Sabitlenmiş mi (üstte gösterilsin mi)
   isPinned: {
     type: Boolean,
@@ -57,17 +77,37 @@ noteSchema.pre('save', function(next) {
   next();
 });
 
-// Kullanıcının görebileceği notları getiren statik metod
-noteSchema.statics.getVisibleNotes = async function(userId) {
-  return this.find({
+// Kullanıcının görebileceği notları getiren statik metod (arşivlenmiş hariç)
+noteSchema.statics.getVisibleNotes = async function(userId, includeArchived = false) {
+  const query = {
     $or: [
       { owner: userId },
       { sharedWith: userId }
     ]
+  };
+
+  if (!includeArchived) {
+    query.isArchived = { $ne: true };
+  }
+
+  return this.find(query)
+    .populate('owner', 'fullName username avatarColor')
+    .populate('sharedWith', 'fullName username avatarColor')
+    .sort({ isPinned: -1, isCompleted: 1, updatedAt: -1 });
+};
+
+// Arşivlenmiş notları getir
+noteSchema.statics.getArchivedNotes = async function(userId) {
+  return this.find({
+    $or: [
+      { owner: userId },
+      { sharedWith: userId }
+    ],
+    isArchived: true
   })
   .populate('owner', 'fullName username avatarColor')
   .populate('sharedWith', 'fullName username avatarColor')
-  .sort({ isPinned: -1, updatedAt: -1 });
+  .sort({ archivedAt: -1 });
 };
 
 module.exports = mongoose.model('Note', noteSchema);

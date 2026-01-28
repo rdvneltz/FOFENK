@@ -29,6 +29,9 @@ import {
   ListItemIcon,
   Tooltip,
   Divider,
+  Checkbox,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Close,
@@ -50,6 +53,7 @@ import {
   Schedule,
   ArrowForward,
   CheckCircle,
+  CheckCircleOutline,
   PendingActions,
   Send,
   LocalOffer,
@@ -57,6 +61,10 @@ import {
   Edit,
   Share,
   PushPin,
+  Archive,
+  Unarchive,
+  Timer,
+  ViewList,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
@@ -186,11 +194,13 @@ const Dashboard = () => {
   // Notes state - stored in database
   const [notes, setNotes] = useState([]);
   const [notesDialog, setNotesDialog] = useState({ open: false, editingNote: null });
-  const [noteForm, setNoteForm] = useState({ title: '', content: '', priority: 'normal', color: '#ffffff' });
+  const [noteForm, setNoteForm] = useState({ title: '', content: '', priority: 'normal', color: '#ffffff', deadline: '' });
   const [selectedNoteDetail, setSelectedNoteDetail] = useState(null);
   const [shareDialog, setShareDialog] = useState({ open: false, note: null });
   const [availableUsers, setAvailableUsers] = useState([]);
   const [selectedShareUsers, setSelectedShareUsers] = useState([]);
+  const [allNotesDialog, setAllNotesDialog] = useState({ open: false, tab: 0 });
+  const [archivedNotes, setArchivedNotes] = useState([]);
 
   // Load notes from API
   const loadNotes = async () => {
@@ -226,20 +236,22 @@ const Dashboard = () => {
     if (!noteForm.title.trim() || !currentUser?._id) return;
 
     try {
+      const payload = {
+        ...noteForm,
+        deadline: noteForm.deadline || null,
+        userId: currentUser._id
+      };
       if (notesDialog.editingNote) {
-        await api.put(`/notes/${notesDialog.editingNote._id}`, {
-          ...noteForm,
-          userId: currentUser._id
-        });
+        await api.put(`/notes/${notesDialog.editingNote._id}`, payload);
       } else {
         await api.post('/notes', {
-          ...noteForm,
+          ...payload,
           owner: currentUser._id
         });
       }
       await loadNotes();
       setNotesDialog({ open: false, editingNote: null });
-      setNoteForm({ title: '', content: '', priority: 'normal', color: '#ffffff' });
+      setNoteForm({ title: '', content: '', priority: 'normal', color: '#ffffff', deadline: '' });
     } catch (error) {
       console.error('Error saving note:', error);
     }
@@ -255,6 +267,58 @@ const Dashboard = () => {
     } catch (error) {
       console.error('Error deleting note:', error);
     }
+  };
+
+  // Toggle complete status
+  const handleToggleComplete = async (note, e) => {
+    if (e) e.stopPropagation();
+    if (!currentUser?._id) return;
+    try {
+      await api.patch(`/notes/${note._id}/complete`, { userId: currentUser._id });
+      await loadNotes();
+      if (allNotesDialog.open) loadArchivedNotes();
+      if (selectedNoteDetail?._id === note._id) {
+        setSelectedNoteDetail(prev => ({ ...prev, isCompleted: !prev.isCompleted }));
+      }
+    } catch (error) {
+      console.error('Error toggling complete:', error);
+    }
+  };
+
+  // Archive note
+  const handleArchiveNote = async (noteId) => {
+    if (!currentUser?._id) return;
+    try {
+      await api.patch(`/notes/${noteId}/archive`, { userId: currentUser._id });
+      await loadNotes();
+      loadArchivedNotes();
+      setSelectedNoteDetail(null);
+    } catch (error) {
+      console.error('Error archiving note:', error);
+    }
+  };
+
+  // Load archived notes
+  const loadArchivedNotes = async () => {
+    if (!currentUser?._id) return;
+    try {
+      const response = await api.get(`/notes/archived?userId=${currentUser._id}`);
+      setArchivedNotes(response.data);
+    } catch (error) {
+      console.error('Error loading archived notes:', error);
+    }
+  };
+
+  // Helper: check if deadline is approaching (within 3 days)
+  const getDeadlineStatus = (deadline) => {
+    if (!deadline) return null;
+    const now = new Date();
+    const dl = new Date(deadline);
+    const diffMs = dl - now;
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays < 0) return 'overdue';
+    if (diffDays <= 3) return 'urgent';
+    return 'normal';
   };
 
   // Toggle pin status
@@ -296,7 +360,13 @@ const Dashboard = () => {
 
   // Open edit dialog
   const handleEditNote = (note) => {
-    setNoteForm({ title: note.title, content: note.content, priority: note.priority || 'normal', color: note.color || '#ffffff' });
+    setNoteForm({
+      title: note.title,
+      content: note.content,
+      priority: note.priority || 'normal',
+      color: note.color || '#ffffff',
+      deadline: note.deadline ? new Date(note.deadline).toISOString().split('T')[0] : ''
+    });
     setNotesDialog({ open: true, editingNote: note });
   };
 
@@ -1222,16 +1292,19 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                 <EventNote sx={{ mr: 0.5, verticalAlign: 'middle', fontSize: 18 }} />
                 Notlarım
               </Typography>
-              <IconButton
-                size="small"
-                color="primary"
-                onClick={() => {
-                  setNoteForm({ title: '', content: '', priority: 'normal', color: '#ffffff' });
-                  setNotesDialog({ open: true, editingNote: null });
-                }}
-              >
-                <Add fontSize="small" />
-              </IconButton>
+              <Box>
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => {
+                    setNoteForm({ title: '', content: '', priority: 'normal', color: '#ffffff', deadline: '' });
+                    setNotesDialog({ open: true, editingNote: null });
+                  }}
+                  title="Yeni Not"
+                >
+                  <Add fontSize="small" />
+                </IconButton>
+              </Box>
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto' }}>
               {notes.length === 0 ? (
@@ -1239,42 +1312,95 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
                   Henüz not eklenmedi
                 </Typography>
               ) : (
-                notes.slice(0, 5).map((note) => {
+                notes.filter(n => !n.isCompleted).slice(0, 5).map((note) => {
                   const isOwner = note.owner?._id === currentUser?._id;
                   const isShared = note.sharedWith?.length > 0;
+                  const dlStatus = getDeadlineStatus(note.deadline);
                   return (
                     <Box
                       key={note._id}
                       sx={{
                         p: 0.75,
                         mb: 0.5,
-                        bgcolor: note.isPinned ? 'warning.lighter' : (note.color !== '#ffffff' ? note.color : 'grey.100'),
+                        bgcolor: dlStatus === 'overdue' ? 'error.50' : dlStatus === 'urgent' ? 'warning.50' : note.isPinned ? 'warning.lighter' : (note.color !== '#ffffff' ? note.color : 'grey.100'),
                         borderRadius: 1,
                         cursor: 'pointer',
                         borderLeft: note.priority === 'high' ? '3px solid' : 'none',
                         borderLeftColor: 'error.main',
-                        '&:hover': { bgcolor: note.isPinned ? 'warning.light' : 'grey.200' }
+                        '&:hover': { bgcolor: note.isPinned ? 'warning.light' : 'grey.200' },
+                        ...(dlStatus === 'urgent' || dlStatus === 'overdue' ? {
+                          animation: 'deadlinePulse 2s ease-in-out infinite',
+                          '@keyframes deadlinePulse': {
+                            '0%': { borderRightColor: 'transparent' },
+                            '50%': { borderRightColor: '#d32f2f' },
+                            '100%': { borderRightColor: 'transparent' }
+                          },
+                          borderRight: '3px solid transparent'
+                        } : {})
                       }}
                       onClick={() => setSelectedNoteDetail(note)}
                     >
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Checkbox
+                          size="small"
+                          checked={!!note.isCompleted}
+                          onClick={(e) => handleToggleComplete(note, e)}
+                          sx={{ p: 0, mr: 0.25 }}
+                        />
                         {note.isPinned && <PushPin sx={{ fontSize: 12, color: 'warning.main' }} />}
-                        <Typography variant="body2" fontWeight="medium" noWrap sx={{ flex: 1 }}>
+                        <Typography
+                          variant="body2"
+                          fontWeight="medium"
+                          noWrap
+                          sx={{
+                            flex: 1,
+                            textDecoration: note.isCompleted ? 'line-through' : 'none',
+                            opacity: note.isCompleted ? 0.6 : 1
+                          }}
+                        >
                           {note.title}
                         </Typography>
                         {isShared && <Share sx={{ fontSize: 12, color: 'info.main' }} />}
+                        {(dlStatus === 'urgent' || dlStatus === 'overdue') && (
+                          <Tooltip title={dlStatus === 'overdue' ? 'Süresi doldu!' : 'Süre doluyor!'}>
+                            <Timer sx={{ fontSize: 14, color: 'error.main' }} />
+                          </Tooltip>
+                        )}
                       </Box>
-                      <Typography variant="caption" color="text.secondary">
-                        {!isOwner && note.owner?.fullName ? `${note.owner.fullName} · ` : ''}
-                        {new Date(note.updatedAt).toLocaleDateString('tr-TR')}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {!isOwner && note.owner?.fullName ? `${note.owner.fullName} · ` : ''}
+                          {new Date(note.createdAt).toLocaleDateString('tr-TR')}
+                        </Typography>
+                        {note.deadline && (
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: dlStatus === 'overdue' ? 'error.main' : dlStatus === 'urgent' ? 'warning.main' : 'text.secondary',
+                              fontWeight: dlStatus === 'urgent' || dlStatus === 'overdue' ? 'bold' : 'normal'
+                            }}
+                          >
+                            {dlStatus === 'overdue' ? ' · Gecikti!' : dlStatus === 'urgent' ? ' · Süre doluyor!' : ''}
+                            {' · Son: ' + new Date(note.deadline).toLocaleDateString('tr-TR')}
+                          </Typography>
+                        )}
+                      </Box>
                     </Box>
                   );
                 })
               )}
-              {notes.length > 5 && (
-                <Typography variant="caption" color="primary" sx={{ cursor: 'pointer', textAlign: 'center', display: 'block' }}>
-                  +{notes.length - 5} not daha
+              {(notes.filter(n => !n.isCompleted).length > 5 || notes.some(n => n.isCompleted)) && (
+                <Typography
+                  variant="caption"
+                  color="primary"
+                  sx={{ cursor: 'pointer', textAlign: 'center', display: 'block', mt: 0.5, '&:hover': { textDecoration: 'underline' } }}
+                  onClick={() => {
+                    loadArchivedNotes();
+                    setAllNotesDialog({ open: true, tab: 0 });
+                  }}
+                >
+                  <ViewList sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.5 }} />
+                  Tümünü Gör ({notes.length} not)
                 </Typography>
               )}
             </Box>
@@ -2138,7 +2264,7 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
       <Dialog open={notesDialog.open} onClose={() => setNotesDialog({ open: false, editingNote: null })} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">{notesDialog.editingNote ? 'Notu Düzenle' : 'Yeni Not'}</Typography>
+            <Typography variant="h6">{notesDialog.editingNote ? 'Notu Düzenle' : 'Yeni Not / Görev'}</Typography>
             <IconButton onClick={() => setNotesDialog({ open: false, editingNote: null })}><Close /></IconButton>
           </Box>
         </DialogTitle>
@@ -2160,18 +2286,59 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
             rows={4}
             sx={{ mb: 2 }}
           />
-          <FormControl fullWidth size="small">
-            <InputLabel>Öncelik</InputLabel>
-            <Select
-              value={noteForm.priority}
-              label="Öncelik"
-              onChange={(e) => setNoteForm({ ...noteForm, priority: e.target.value })}
-            >
-              <MenuItem value="low">Düşük</MenuItem>
-              <MenuItem value="normal">Normal</MenuItem>
-              <MenuItem value="high">Yüksek</MenuItem>
-            </Select>
-          </FormControl>
+          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+            <FormControl size="small" sx={{ flex: 1 }}>
+              <InputLabel>Öncelik</InputLabel>
+              <Select
+                value={noteForm.priority}
+                label="Öncelik"
+                onChange={(e) => setNoteForm({ ...noteForm, priority: e.target.value })}
+              >
+                <MenuItem value="low">Düşük</MenuItem>
+                <MenuItem value="normal">Normal</MenuItem>
+                <MenuItem value="high">Yüksek</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              type="date"
+              label="Son Tarih"
+              value={noteForm.deadline}
+              onChange={(e) => setNoteForm({ ...noteForm, deadline: e.target.value })}
+              size="small"
+              sx={{ flex: 1 }}
+              InputLabelProps={{ shrink: true }}
+            />
+          </Box>
+          {/* Quick deadline buttons */}
+          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5, lineHeight: '24px' }}>Hızlı:</Typography>
+            {[1, 2, 3, 5, 7, 10].map(days => {
+              const d = new Date();
+              d.setDate(d.getDate() + days);
+              const val = d.toISOString().split('T')[0];
+              return (
+                <Chip
+                  key={days}
+                  label={`${days} gün`}
+                  size="small"
+                  variant={noteForm.deadline === val ? 'filled' : 'outlined'}
+                  color={noteForm.deadline === val ? 'primary' : 'default'}
+                  onClick={() => setNoteForm({ ...noteForm, deadline: val })}
+                  sx={{ cursor: 'pointer' }}
+                />
+              );
+            })}
+            {noteForm.deadline && (
+              <Chip
+                label="Kaldır"
+                size="small"
+                color="error"
+                variant="outlined"
+                onDelete={() => setNoteForm({ ...noteForm, deadline: '' })}
+                sx={{ cursor: 'pointer' }}
+              />
+            )}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setNotesDialog({ open: false, editingNote: null })}>İptal</Button>
@@ -2183,61 +2350,73 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
       <Dialog open={!!selectedNoteDetail} onClose={() => setSelectedNoteDetail(null)} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
               {selectedNoteDetail?.isPinned && <PushPin color="warning" fontSize="small" />}
-              <Typography variant="h6">{selectedNoteDetail?.title}</Typography>
-              {selectedNoteDetail?.priority === 'high' && <Chip size="small" color="error" label="Yüksek Öncelik" />}
+              <Typography variant="h6" noWrap sx={{ textDecoration: selectedNoteDetail?.isCompleted ? 'line-through' : 'none' }}>
+                {selectedNoteDetail?.title}
+              </Typography>
+              {selectedNoteDetail?.priority === 'high' && <Chip size="small" color="error" label="Yüksek" />}
+              {selectedNoteDetail?.isCompleted && <Chip size="small" color="success" label="Tamamlandı" />}
             </Box>
-            {selectedNoteDetail?.owner?._id === currentUser?._id && (
-              <Box>
+            <Box sx={{ display: 'flex', flexShrink: 0 }}>
+              {/* Toggle complete - available to owner and shared users */}
+              <Tooltip title={selectedNoteDetail?.isCompleted ? 'Tamamlanmadı olarak işaretle' : 'Tamamlandı olarak işaretle'}>
                 <IconButton
                   size="small"
-                  onClick={() => handleTogglePin(selectedNoteDetail)}
-                  title={selectedNoteDetail?.isPinned ? 'Sabitlemeyi Kaldır' : 'Sabitle'}
-                  color={selectedNoteDetail?.isPinned ? 'warning' : 'default'}
+                  color={selectedNoteDetail?.isCompleted ? 'success' : 'default'}
+                  onClick={() => handleToggleComplete(selectedNoteDetail)}
                 >
-                  <PushPin />
+                  {selectedNoteDetail?.isCompleted ? <CheckCircle /> : <CheckCircleOutline />}
                 </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => handleOpenShareDialog(selectedNoteDetail)}
-                  title="Paylaş"
-                  color={selectedNoteDetail?.sharedWith?.length > 0 ? 'info' : 'default'}
-                >
-                  <Share />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    setNoteForm({
-                      title: selectedNoteDetail.title,
-                      content: selectedNoteDetail.content,
-                      priority: selectedNoteDetail.priority || 'normal',
-                      color: selectedNoteDetail.color || '#ffffff'
-                    });
-                    setNotesDialog({ open: true, editingNote: selectedNoteDetail });
-                    setSelectedNoteDetail(null);
-                  }}
-                  title="Düzenle"
-                >
-                  <Edit />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => {
-                    handleDeleteNote(selectedNoteDetail._id);
-                  }}
-                  title="Sil"
-                >
-                  <Delete />
-                </IconButton>
-                <IconButton onClick={() => setSelectedNoteDetail(null)}><Close /></IconButton>
-              </Box>
-            )}
-            {selectedNoteDetail?.owner?._id !== currentUser?._id && (
+              </Tooltip>
+              {selectedNoteDetail?.owner?._id === currentUser?._id && (
+                <>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleTogglePin(selectedNoteDetail)}
+                    title={selectedNoteDetail?.isPinned ? 'Sabitlemeyi Kaldır' : 'Sabitle'}
+                    color={selectedNoteDetail?.isPinned ? 'warning' : 'default'}
+                  >
+                    <PushPin />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleOpenShareDialog(selectedNoteDetail)}
+                    title="Paylaş"
+                    color={selectedNoteDetail?.sharedWith?.length > 0 ? 'info' : 'default'}
+                  >
+                    <Share />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      handleEditNote(selectedNoteDetail);
+                      setSelectedNoteDetail(null);
+                    }}
+                    title="Düzenle"
+                  >
+                    <Edit />
+                  </IconButton>
+                  <Tooltip title="Arşivle">
+                    <IconButton
+                      size="small"
+                      onClick={() => handleArchiveNote(selectedNoteDetail._id)}
+                    >
+                      <Archive />
+                    </IconButton>
+                  </Tooltip>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleDeleteNote(selectedNoteDetail._id)}
+                    title="Sil"
+                  >
+                    <Delete />
+                  </IconButton>
+                </>
+              )}
               <IconButton onClick={() => setSelectedNoteDetail(null)}><Close /></IconButton>
-            )}
+            </Box>
           </Box>
         </DialogTitle>
         <DialogContent>
@@ -2248,8 +2427,31 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
               </Typography>
             )}
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              Son güncelleme: {selectedNoteDetail && new Date(selectedNoteDetail.updatedAt).toLocaleString('tr-TR')}
+              Oluşturulma: {selectedNoteDetail && new Date(selectedNoteDetail.createdAt).toLocaleString('tr-TR')}
             </Typography>
+            {selectedNoteDetail?.deadline && (() => {
+              const dlStatus = getDeadlineStatus(selectedNoteDetail.deadline);
+              return (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    display: 'block', mt: 0.25,
+                    color: dlStatus === 'overdue' ? 'error.main' : dlStatus === 'urgent' ? 'warning.main' : 'text.secondary',
+                    fontWeight: dlStatus !== 'normal' ? 'bold' : 'normal'
+                  }}
+                >
+                  <Timer sx={{ fontSize: 14, verticalAlign: 'middle', mr: 0.5 }} />
+                  Son Tarih: {new Date(selectedNoteDetail.deadline).toLocaleDateString('tr-TR')}
+                  {dlStatus === 'overdue' && ' - Süresi doldu!'}
+                  {dlStatus === 'urgent' && ' - Süre doluyor!'}
+                </Typography>
+              );
+            })()}
+            {selectedNoteDetail?.isCompleted && selectedNoteDetail?.completedAt && (
+              <Typography variant="caption" color="success.main" sx={{ display: 'block', mt: 0.25 }}>
+                Tamamlanma: {new Date(selectedNoteDetail.completedAt).toLocaleString('tr-TR')}
+              </Typography>
+            )}
             {selectedNoteDetail?.sharedWith?.length > 0 && selectedNoteDetail?.owner?._id === currentUser?._id && (
               <Typography variant="caption" color="info.main" sx={{ display: 'block', mt: 0.5 }}>
                 Paylaşılan: {selectedNoteDetail.sharedWith.map(u => u.fullName).join(', ')}
@@ -2309,6 +2511,170 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
         <DialogActions>
           <Button onClick={() => setShareDialog({ open: false, note: null })}>İptal</Button>
           <Button variant="contained" onClick={handleSaveShare}>Kaydet</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* All Notes Dialog (Tümünü Gör) */}
+      <Dialog
+        open={allNotesDialog.open}
+        onClose={() => setAllNotesDialog({ open: false, tab: 0 })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">Tüm Notlar & Görevler</Typography>
+            <Box>
+              <IconButton
+                size="small"
+                color="primary"
+                onClick={() => {
+                  setNoteForm({ title: '', content: '', priority: 'normal', color: '#ffffff', deadline: '' });
+                  setNotesDialog({ open: true, editingNote: null });
+                }}
+                title="Yeni Not"
+              >
+                <Add />
+              </IconButton>
+              <IconButton onClick={() => setAllNotesDialog({ open: false, tab: 0 })}><Close /></IconButton>
+            </Box>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ px: 0 }}>
+          <Tabs
+            value={allNotesDialog.tab}
+            onChange={(e, v) => setAllNotesDialog(prev => ({ ...prev, tab: v }))}
+            variant="fullWidth"
+            sx={{ borderBottom: 1, borderColor: 'divider', mb: 2, px: 2 }}
+          >
+            <Tab label={`Aktif (${notes.filter(n => !n.isCompleted).length})`} />
+            <Tab label={`Tamamlanan (${notes.filter(n => n.isCompleted).length})`} />
+            <Tab label={`Arşiv (${archivedNotes.length})`} />
+          </Tabs>
+          <Box sx={{ px: 2, maxHeight: 500, overflow: 'auto' }}>
+            {(() => {
+              let displayNotes = [];
+              if (allNotesDialog.tab === 0) displayNotes = notes.filter(n => !n.isCompleted);
+              else if (allNotesDialog.tab === 1) displayNotes = notes.filter(n => n.isCompleted);
+              else displayNotes = archivedNotes;
+
+              if (displayNotes.length === 0) {
+                return (
+                  <Typography color="text.secondary" textAlign="center" py={4}>
+                    {allNotesDialog.tab === 0 ? 'Aktif not yok' : allNotesDialog.tab === 1 ? 'Tamamlanan not yok' : 'Arşivde not yok'}
+                  </Typography>
+                );
+              }
+
+              return displayNotes.map((note) => {
+                const isOwner = note.owner?._id === currentUser?._id;
+                const dlStatus = getDeadlineStatus(note.deadline);
+                return (
+                  <Box
+                    key={note._id}
+                    sx={{
+                      p: 1.5,
+                      mb: 1,
+                      bgcolor: note.isCompleted ? 'grey.50' : dlStatus === 'overdue' ? 'error.50' : dlStatus === 'urgent' ? 'warning.50' : note.isPinned ? 'warning.lighter' : 'grey.50',
+                      borderRadius: 1,
+                      borderLeft: note.priority === 'high' ? '4px solid' : '4px solid transparent',
+                      borderLeftColor: note.priority === 'high' ? 'error.main' : 'transparent',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 1,
+                      '&:hover': { bgcolor: 'grey.100' }
+                    }}
+                  >
+                    {allNotesDialog.tab !== 2 && (
+                      <Checkbox
+                        size="small"
+                        checked={!!note.isCompleted}
+                        onClick={(e) => handleToggleComplete(note, e)}
+                        sx={{ mt: -0.25 }}
+                      />
+                    )}
+                    <Box
+                      sx={{ flex: 1, cursor: 'pointer', minWidth: 0 }}
+                      onClick={() => {
+                        setSelectedNoteDetail(note);
+                        setAllNotesDialog({ open: false, tab: allNotesDialog.tab });
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                        {note.isPinned && <PushPin sx={{ fontSize: 14, color: 'warning.main' }} />}
+                        <Typography
+                          variant="body1"
+                          fontWeight="medium"
+                          sx={{
+                            textDecoration: note.isCompleted ? 'line-through' : 'none',
+                            opacity: note.isCompleted ? 0.6 : 1
+                          }}
+                        >
+                          {note.title}
+                        </Typography>
+                        {note.sharedWith?.length > 0 && <Share sx={{ fontSize: 14, color: 'info.main' }} />}
+                        {(dlStatus === 'urgent' || dlStatus === 'overdue') && !note.isCompleted && (
+                          <Chip
+                            size="small"
+                            icon={<Timer sx={{ fontSize: 14 }} />}
+                            label={dlStatus === 'overdue' ? 'Gecikti!' : 'Süre doluyor!'}
+                            color="error"
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 1, mt: 0.25, flexWrap: 'wrap' }}>
+                        <Typography variant="caption" color="text.secondary">
+                          {!isOwner && note.owner?.fullName ? `${note.owner.fullName} · ` : ''}
+                          {new Date(note.createdAt).toLocaleDateString('tr-TR')}
+                        </Typography>
+                        {note.deadline && (
+                          <Typography variant="caption" sx={{ color: dlStatus === 'overdue' ? 'error.main' : dlStatus === 'urgent' ? 'warning.main' : 'text.secondary' }}>
+                            Son: {new Date(note.deadline).toLocaleDateString('tr-TR')}
+                          </Typography>
+                        )}
+                        {note.isCompleted && note.completedAt && (
+                          <Typography variant="caption" color="success.main">
+                            Tamamlandı: {new Date(note.completedAt).toLocaleDateString('tr-TR')}
+                          </Typography>
+                        )}
+                      </Box>
+                      {note.content && (
+                        <Typography variant="body2" color="text.secondary" noWrap sx={{ mt: 0.5 }}>
+                          {note.content}
+                        </Typography>
+                      )}
+                    </Box>
+                    {isOwner && (
+                      <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                        {allNotesDialog.tab === 2 ? (
+                          <Tooltip title="Arşivden Çıkar">
+                            <IconButton size="small" onClick={() => handleArchiveNote(note._id)}>
+                              <Unarchive fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title="Arşivle">
+                            <IconButton size="small" onClick={() => handleArchiveNote(note._id)}>
+                              <Archive fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        <Tooltip title="Sil">
+                          <IconButton size="small" color="error" onClick={() => handleDeleteNote(note._id)}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    )}
+                  </Box>
+                );
+              });
+            })()}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAllNotesDialog({ open: false, tab: 0 })}>Kapat</Button>
         </DialogActions>
       </Dialog>
     </Box>

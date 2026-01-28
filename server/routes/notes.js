@@ -3,8 +3,24 @@ const router = express.Router();
 const Note = require('../models/Note');
 const User = require('../models/User');
 
-// Get all notes visible to the user (owned + shared)
+// Get all notes visible to the user (owned + shared, excluding archived)
 router.get('/', async (req, res) => {
+  try {
+    const { userId, includeArchived } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'userId gerekli' });
+    }
+
+    const notes = await Note.getVisibleNotes(userId, includeArchived === 'true');
+    res.json(notes);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get archived notes
+router.get('/archived', async (req, res) => {
   try {
     const { userId } = req.query;
 
@@ -12,8 +28,29 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ message: 'userId gerekli' });
     }
 
-    const notes = await Note.getVisibleNotes(userId);
+    const notes = await Note.getArchivedNotes(userId);
     res.json(notes);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get users available for sharing (for dropdown)
+// NOTE: This must come before /:id routes to avoid matching "users" as an id
+router.get('/users/available', async (req, res) => {
+  try {
+    const { excludeUserId } = req.query;
+
+    const query = { isActive: true };
+    if (excludeUserId) {
+      query._id = { $ne: excludeUserId };
+    }
+
+    const users = await User.find(query)
+      .select('fullName username avatarColor')
+      .sort({ fullName: 1 });
+
+    res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -39,7 +76,7 @@ router.get('/:id', async (req, res) => {
 // Create new note
 router.post('/', async (req, res) => {
   try {
-    const { title, content, owner, color, priority, reminderDate, isPinned } = req.body;
+    const { title, content, owner, color, priority, reminderDate, isPinned, deadline } = req.body;
 
     if (!title || !owner) {
       return res.status(400).json({ message: 'Başlık ve owner gerekli' });
@@ -52,7 +89,8 @@ router.post('/', async (req, res) => {
       color,
       priority,
       reminderDate,
-      isPinned
+      isPinned,
+      deadline: deadline || undefined
     });
 
     const savedNote = await note.save();
@@ -82,7 +120,7 @@ router.put('/:id', async (req, res) => {
       return res.status(403).json({ message: 'Bu notu düzenleme yetkiniz yok' });
     }
 
-    const { title, content, color, priority, reminderDate, isPinned } = req.body;
+    const { title, content, color, priority, reminderDate, isPinned, deadline } = req.body;
 
     note.title = title || note.title;
     note.content = content !== undefined ? content : note.content;
@@ -90,7 +128,68 @@ router.put('/:id', async (req, res) => {
     note.priority = priority || note.priority;
     note.reminderDate = reminderDate;
     note.isPinned = isPinned !== undefined ? isPinned : note.isPinned;
+    note.deadline = deadline !== undefined ? (deadline || undefined) : note.deadline;
 
+    const updatedNote = await note.save();
+
+    const populatedNote = await Note.findById(updatedNote._id)
+      .populate('owner', 'fullName username avatarColor')
+      .populate('sharedWith', 'fullName username avatarColor');
+
+    res.json(populatedNote);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Toggle complete status
+router.patch('/:id/complete', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const note = await Note.findById(req.params.id);
+
+    if (!note) {
+      return res.status(404).json({ message: 'Not bulunamadı' });
+    }
+
+    // Sahibi veya paylaşılan kullanıcı tamamlayabilir
+    const isOwner = note.owner.toString() === userId;
+    const isShared = note.sharedWith.some(id => id.toString() === userId);
+    if (!isOwner && !isShared) {
+      return res.status(403).json({ message: 'Bu işlem için yetkiniz yok' });
+    }
+
+    note.isCompleted = !note.isCompleted;
+    note.completedAt = note.isCompleted ? new Date() : undefined;
+    const updatedNote = await note.save();
+
+    const populatedNote = await Note.findById(updatedNote._id)
+      .populate('owner', 'fullName username avatarColor')
+      .populate('sharedWith', 'fullName username avatarColor');
+
+    res.json(populatedNote);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Toggle archive status
+router.patch('/:id/archive', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    const note = await Note.findById(req.params.id);
+
+    if (!note) {
+      return res.status(404).json({ message: 'Not bulunamadı' });
+    }
+
+    // Sadece not sahibi arşivleyebilir
+    if (note.owner.toString() !== userId) {
+      return res.status(403).json({ message: 'Bu işlem için yetkiniz yok' });
+    }
+
+    note.isArchived = !note.isArchived;
+    note.archivedAt = note.isArchived ? new Date() : undefined;
     const updatedNote = await note.save();
 
     const populatedNote = await Note.findById(updatedNote._id)
@@ -214,26 +313,6 @@ router.patch('/:id/pin', async (req, res) => {
     res.json(populatedNote);
   } catch (error) {
     res.status(400).json({ message: error.message });
-  }
-});
-
-// Get users available for sharing (for dropdown)
-router.get('/users/available', async (req, res) => {
-  try {
-    const { excludeUserId } = req.query;
-
-    const query = { isActive: true };
-    if (excludeUserId) {
-      query._id = { $ne: excludeUserId };
-    }
-
-    const users = await User.find(query)
-      .select('fullName username avatarColor')
-      .sort({ fullName: 1 });
-
-    res.json(users);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
   }
 });
 
