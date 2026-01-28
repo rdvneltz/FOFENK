@@ -1118,8 +1118,9 @@ router.get('/financial-comprehensive', async (req, res) => {
       dateFilter.$lte = new Date(endDate);
     }
 
-    // Payment statistics by method
-    const paymentFilter = { ...filter };
+    // --- INCOME (Gelir) ---
+    // Realized income: completed payments
+    const paymentFilter = { ...filter, status: 'completed' };
     if (Object.keys(dateFilter).length > 0) {
       paymentFilter.paymentDate = dateFilter;
     }
@@ -1135,35 +1136,68 @@ router.get('/financial-comprehensive', async (req, res) => {
       }
     ]);
 
-    // Total income
-    const totalIncome = paymentsByMethod.reduce((sum, p) => sum + p.total, 0);
+    // Realized income total
+    const realizedIncome = paymentsByMethod.reduce((sum, p) => sum + p.total, 0);
 
-    // Expense statistics by category
-    // Exclude transfers and manual income entries
-    const expenseFilter = {
+    // Expected (pending) income: unpaid installments from PaymentPlans
+    const findFilter = {};
+    if (institutionId) findFilter.institution = institutionId;
+    if (seasonId) findFilter.season = seasonId;
+
+    const paymentPlans = await PaymentPlan.find(findFilter);
+    let pendingIncome = 0;
+    paymentPlans.forEach(plan => {
+      (plan.installments || []).forEach(inst => {
+        if (!inst.isPaid) {
+          pendingIncome += (inst.amount || 0) - (inst.paidAmount || 0);
+        }
+      });
+    });
+
+    const totalIncome = realizedIncome + pendingIncome;
+
+    // --- EXPENSES (Gider) ---
+    const baseExpenseFilter = {
       ...filter,
       isTransfer: { $ne: true },
       isManualIncome: { $ne: true },
       category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)', 'Kasa Çıkış (Manuel)'] }
     };
+
+    // Paid expenses
+    const paidExpenseFilter = { ...baseExpenseFilter, status: 'paid' };
     if (Object.keys(dateFilter).length > 0) {
-      expenseFilter.expenseDate = dateFilter;
+      paidExpenseFilter.expenseDate = dateFilter;
     }
-
-    const expensesByCategory = await Expense.aggregate([
-      { $match: expenseFilter },
-      {
-        $group: {
-          _id: '$category',
-          total: { $sum: '$amount' },
-          count: { $sum: 1 }
-        }
-      }
+    const paidExpensesByCategory = await Expense.aggregate([
+      { $match: paidExpenseFilter },
+      { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } }
     ]);
+    const paidExpenses = paidExpensesByCategory.reduce((sum, e) => sum + e.total, 0);
 
-    const totalExpenses = expensesByCategory.reduce((sum, e) => sum + e.total, 0);
+    // Pending/upcoming expenses (status: pending or overdue)
+    const pendingExpenseFilter = { ...baseExpenseFilter, status: { $in: ['pending', 'overdue'] } };
+    if (Object.keys(dateFilter).length > 0) {
+      pendingExpenseFilter.expenseDate = dateFilter;
+    }
+    const pendingExpensesByCategory = await Expense.aggregate([
+      { $match: pendingExpenseFilter },
+      { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    const pendingExpensesTotal = pendingExpensesByCategory.reduce((sum, e) => sum + e.total, 0);
 
-    // Monthly trend (last 12 months)
+    // All expenses by category (for the pie chart)
+    const allExpenseFilter = { ...baseExpenseFilter };
+    if (Object.keys(dateFilter).length > 0) {
+      allExpenseFilter.expenseDate = dateFilter;
+    }
+    const expensesByCategory = await Expense.aggregate([
+      { $match: allExpenseFilter },
+      { $group: { _id: '$category', total: { $sum: '$amount' }, count: { $sum: 1 } } }
+    ]);
+    const totalExpenses = paidExpenses + pendingExpensesTotal;
+
+    // --- MONTHLY TREND (last 12 months) ---
     const end = new Date();
     const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
 
@@ -1171,6 +1205,7 @@ router.get('/financial-comprehensive', async (req, res) => {
       {
         $match: {
           ...filter,
+          status: 'completed',
           paymentDate: { $gte: start, $lte: end }
         }
       },
@@ -1183,12 +1218,34 @@ router.get('/financial-comprehensive', async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
-    const monthlyExpenses = await Expense.aggregate([
+    // Monthly paid expenses only
+    const monthlyPaidExpenses = await Expense.aggregate([
       {
         $match: {
           ...filter,
+          status: 'paid',
           expenseDate: { $gte: start, $lte: end },
-          // Exclude transfers and manual income entries
+          isTransfer: { $ne: true },
+          isManualIncome: { $ne: true },
+          category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)', 'Kasa Çıkış (Manuel)'] }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$expenseDate' } },
+          total: { $sum: '$amount' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Monthly pending expenses
+    const monthlyPendingExpenses = await Expense.aggregate([
+      {
+        $match: {
+          ...filter,
+          status: { $in: ['pending', 'overdue'] },
+          expenseDate: { $gte: start, $lte: end },
           isTransfer: { $ne: true },
           isManualIncome: { $ne: true },
           category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)', 'Kasa Çıkış (Manuel)'] }
@@ -1211,24 +1268,119 @@ router.get('/financial-comprehensive', async (req, res) => {
       const monthKey = date.toISOString().substring(0, 7);
 
       const income = monthlyIncome.find(m => m._id === monthKey)?.total || 0;
-      const expense = monthlyExpenses.find(m => m._id === monthKey)?.total || 0;
+      const paidExp = monthlyPaidExpenses.find(m => m._id === monthKey)?.total || 0;
+      const pendingExp = monthlyPendingExpenses.find(m => m._id === monthKey)?.total || 0;
 
       monthlyTrend.push({
         period: monthKey,
         income,
-        expense,
-        net: income - expense
+        expense: paidExp,
+        pendingExpense: pendingExp,
+        net: income - paidExp
       });
     }
 
     res.json({
+      // Gelir
+      realizedIncome,
+      pendingIncome,
       totalIncome,
+      // Gider
+      paidExpenses,
+      pendingExpenses: pendingExpensesTotal,
       totalExpenses,
-      netIncome: totalIncome - totalExpenses,
+      // Net (realized only)
+      netIncome: realizedIncome - paidExpenses,
+      // Detail
       paymentsByMethod,
       expensesByCategory,
+      paidExpensesByCategory,
+      pendingExpensesByCategory,
       monthlyTrend
     });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get monthly financial details (income or expense items for a specific month)
+router.get('/financial-month-detail', async (req, res) => {
+  try {
+    const { institutionId, seasonId, period, type } = req.query;
+    const filter = {};
+    if (institutionId) filter.institution = institutionId;
+    if (seasonId) filter.season = seasonId;
+
+    if (!period || !type) {
+      return res.status(400).json({ message: 'period (YYYY-MM) ve type (income/expense) parametreleri gerekli' });
+    }
+
+    const [year, month] = period.split('-').map(Number);
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    if (type === 'income') {
+      const payments = await Payment.find({
+        ...filter,
+        status: 'completed',
+        paymentDate: { $gte: startDate, $lte: endDate }
+      })
+        .populate('student', 'firstName lastName')
+        .populate('course', 'name')
+        .populate('cashRegister', 'name')
+        .sort({ paymentDate: -1 });
+
+      const items = payments.map(p => ({
+        _id: p._id,
+        date: p.paymentDate,
+        description: p.student ? `${p.student.firstName} ${p.student.lastName}` : 'Bilinmiyor',
+        category: p.paymentType,
+        course: p.course?.name || '-',
+        cashRegister: p.cashRegister?.name || '-',
+        amount: p.amount,
+        notes: p.notes
+      }));
+
+      res.json({
+        period,
+        type: 'income',
+        total: items.reduce((sum, i) => sum + i.amount, 0),
+        count: items.length,
+        items
+      });
+    } else {
+      // Expenses
+      const expenses = await Expense.find({
+        ...filter,
+        expenseDate: { $gte: startDate, $lte: endDate },
+        isTransfer: { $ne: true },
+        isManualIncome: { $ne: true },
+        category: { $nin: ['Virman (Giriş)', 'Virman (Çıkış)', 'Kasa Giriş (Manuel)', 'Kasa Çıkış (Manuel)'] }
+      })
+        .populate('cashRegister', 'name')
+        .populate('instructor', 'firstName lastName')
+        .sort({ expenseDate: -1 });
+
+      const items = expenses.map(e => ({
+        _id: e._id,
+        date: e.expenseDate,
+        description: e.description,
+        category: e.category,
+        status: e.status,
+        cashRegister: e.cashRegister?.name || '-',
+        instructor: e.instructor ? `${e.instructor.firstName} ${e.instructor.lastName}` : null,
+        amount: e.amount,
+        notes: e.notes
+      }));
+
+      res.json({
+        period,
+        type: 'expense',
+        total: items.reduce((sum, i) => sum + i.amount, 0),
+        count: items.length,
+        items
+      });
+    }
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
