@@ -571,17 +571,26 @@ router.get('/chart/student-growth', async (req, res) => {
     const end = new Date();
     const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
 
-    // Aggregate students by registration month (Student model uses createdAt)
-    const studentGrowth = await Student.aggregate([
+    // Aggregate students by enrollment month
+    // Use StudentCourseEnrollment.enrollmentDate (actual enrollment date)
+    // instead of Student.createdAt (system entry date)
+    // Group by each student's first enrollment to avoid double-counting
+    const studentGrowth = await StudentCourseEnrollment.aggregate([
       {
         $match: {
           ...filter,
-          createdAt: { $gte: start, $lte: end }
+          enrollmentDate: { $gte: start, $lte: end }
         }
       },
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+          _id: '$student',
+          firstEnrollment: { $min: '$enrollmentDate' }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$firstEnrollment' } },
           count: { $sum: 1 }
         }
       },
@@ -1474,20 +1483,31 @@ router.get('/student-comprehensive', async (req, res) => {
       { $sort: { totalEnrollments: -1 } }
     ]);
 
-    // Registration trend (last 12 months) - Student model uses createdAt, not registrationDate
+    // Registration trend (last 12 months)
+    // Use StudentCourseEnrollment.enrollmentDate (actual enrollment date set by user)
+    // instead of Student.createdAt (system entry date which can be bulk-import date)
+    // Group by each student's FIRST enrollment to avoid double-counting
     const end = new Date();
     const start = new Date(end.getFullYear(), end.getMonth() - 11, 1);
 
-    const registrationTrend = await Student.aggregate([
+    const registrationTrend = await StudentCourseEnrollment.aggregate([
       {
         $match: {
           ...filter,
-          createdAt: { $gte: start, $lte: end }
+          enrollmentDate: { $gte: start, $lte: end }
         }
       },
+      // For each student, take only their earliest enrollment date
       {
         $group: {
-          _id: { $dateToString: { format: '%Y-%m', date: '$createdAt' } },
+          _id: '$student',
+          firstEnrollment: { $min: '$enrollmentDate' }
+        }
+      },
+      // Now group by month
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m', date: '$firstEnrollment' } },
           count: { $sum: 1 }
         }
       },
