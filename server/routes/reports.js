@@ -307,11 +307,12 @@ router.get('/income-expense-chart', async (req, res) => {
         break;
     }
 
-    // Aggregate income by date
+    // Aggregate REALIZED income (only completed payments)
     const incomeData = await Payment.aggregate([
       {
         $match: {
           ...filter,
+          status: 'completed',
           paymentDate: { $gte: start, $lte: end }
         }
       },
@@ -324,11 +325,15 @@ router.get('/income-expense-chart', async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
-    // Aggregate expenses by date
+    // Aggregate PAID expenses only
+    // Exclude: manual income entries, transfers, auto-generated (KDV/commission)
     const expenseData = await Expense.aggregate([
       {
         $match: {
           ...filter,
+          status: 'paid',
+          isManualIncome: { $ne: true },
+          isTransfer: { $ne: true },
           expenseDate: { $gte: start, $lte: end }
         }
       },
@@ -341,7 +346,7 @@ router.get('/income-expense-chart', async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
-    // Combine data
+    // Combine data into a map
     const chartData = {};
     incomeData.forEach(item => {
       chartData[item._id] = { period: item._id, income: item.total, expense: 0 };
@@ -354,11 +359,23 @@ router.get('/income-expense-chart', async (req, res) => {
       }
     });
 
-    // Convert to array and add net
-    const result = Object.values(chartData).map(item => ({
-      ...item,
-      net: item.income - item.expense
-    }));
+    // Fill missing months so chart has no gaps
+    if (dateFormat === '%Y-%m') {
+      for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+        const key = d.toISOString().substring(0, 7);
+        if (!chartData[key]) {
+          chartData[key] = { period: key, income: 0, expense: 0 };
+        }
+      }
+    }
+
+    // Convert to sorted array and add net
+    const result = Object.values(chartData)
+      .sort((a, b) => a.period.localeCompare(b.period))
+      .map(item => ({
+        ...item,
+        net: item.income - item.expense
+      }));
 
     res.json(result);
   } catch (error) {

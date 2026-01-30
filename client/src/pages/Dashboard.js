@@ -1638,17 +1638,20 @@ ${institution?.name || 'FOFORA TİYATRO'}`;
         {canSeeFinancials && incomeExpenseData.length > 0 && (
           <Grid item xs={12}>
             <Paper sx={{ p: 2 }}>
-              <Typography variant="h6" gutterBottom>Gelir/Gider Trendi</Typography>
+              <Typography variant="h6" gutterBottom>Gelir/Gider Trendi (Gerçekleşen)</Typography>
               <Box sx={{ height: 250 }}>
                 <Line
                   data={{
-                    labels: incomeExpenseData.map(d => d.period),
+                    labels: incomeExpenseData.map(d => {
+                      const [year, month] = d.period.split('-');
+                      return `${month}/${year.slice(2)}`;
+                    }),
                     datasets: [
-                      { label: 'Gelir', data: incomeExpenseData.map(d => d.income), borderColor: '#4caf50', backgroundColor: 'rgba(76,175,80,0.1)', tension: 0.3 },
-                      { label: 'Gider', data: incomeExpenseData.map(d => d.expense), borderColor: '#f44336', backgroundColor: 'rgba(244,67,54,0.1)', tension: 0.3 }
+                      { label: 'Gelir', data: incomeExpenseData.map(d => d.income), borderColor: '#4caf50', backgroundColor: 'rgba(76,175,80,0.1)', fill: true, tension: 0.3 },
+                      { label: 'Gider', data: incomeExpenseData.map(d => d.expense), borderColor: '#f44336', backgroundColor: 'rgba(244,67,54,0.1)', fill: true, tension: 0.3 }
                     ]
                   }}
-                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('tr-TR') + ' TL' } } } }}
+                  options={{ responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${(ctx.parsed.y || 0).toLocaleString('tr-TR')} TL` } } }, scales: { y: { beginAtZero: true, ticks: { callback: v => v.toLocaleString('tr-TR') + ' TL' } } } }}
                 />
               </Box>
             </Paper>
