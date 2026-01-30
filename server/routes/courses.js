@@ -235,6 +235,9 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
     let hasSchedule = false;
     let firstMonthPartial = null;
 
+    // Calculate expected lessons early so we can use it in the first-month check
+    const expectedLessonsPerMonth = course.weeklyFrequency * 4;
+
     // First, determine if this is a birebir (one-on-one) course for this student
     // A birebir course has lessons assigned specifically to this student
     let isBirebir = false;
@@ -324,8 +327,13 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
           }
         }
 
-        // Store partial pricing info for first month
-        if (lessonsBeforeEnrollment > 0 && lessonsAfterEnrollment > 0) {
+        // Store partial pricing info for first month.
+        // Trigger when:
+        //   (1) Student enrolls mid-month (there are lessons before enrollment), OR
+        //   (2) First month has fewer lessons than expected full month
+        //       (e.g. course starts on last Monday of January → only 1 lesson)
+        if ((lessonsBeforeEnrollment > 0 && lessonsAfterEnrollment > 0) ||
+            (lessonsAfterEnrollment > 0 && lessonsAfterEnrollment < expectedLessonsPerMonth)) {
           firstMonthPartial = {
             totalLessons: lessonCount,
             lessonsBeforeEnrollment: lessonsBeforeEnrollment,
@@ -353,8 +361,7 @@ router.post('/calculate-monthly-lessons', async (req, res) => {
 
     // Calculate fee for each month (will be updated after pricing is calculated)
 
-    // Calculate pricing details
-    const expectedLessonsPerMonth = course.weeklyFrequency * 4;
+    // Calculate pricing details (expectedLessonsPerMonth already calculated above)
     const pricePerLesson = course.pricePerLesson || (course.pricePerMonth / expectedLessonsPerMonth);
     const monthlyFee = course.pricePerMonth || (pricePerLesson * expectedLessonsPerMonth);
 
