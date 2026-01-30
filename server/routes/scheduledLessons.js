@@ -34,16 +34,18 @@ router.get('/', async (req, res) => {
         $gte: startOfMonth,
         $lte: endOfMonth
       };
-    } else if (startDate && endDate) {
-      // Date range filter - use UTC dates for consistent comparison
-      // This ensures timezone-safe date matching
-      const start = new Date(startDate + 'T00:00:00.000Z');
-      const end = new Date(endDate + 'T23:59:59.999Z');
-
+    } else if (startDate) {
+      // Date range filter - parse dates first then normalize to UTC day boundaries.
+      // Handles both ISO strings ("2025-01-30T21:00:00.000Z") and plain date strings ("2025-01-30").
+      const startParsed = new Date(startDate);
       filter.date = {
-        $gte: start,
-        $lte: end
+        $gte: new Date(Date.UTC(startParsed.getUTCFullYear(), startParsed.getUTCMonth(), startParsed.getUTCDate(), 0, 0, 0, 0))
       };
+
+      if (endDate) {
+        const endParsed = new Date(endDate);
+        filter.date.$lte = new Date(Date.UTC(endParsed.getUTCFullYear(), endParsed.getUTCMonth(), endParsed.getUTCDate(), 23, 59, 59, 999));
+      }
     }
 
     const scheduledLessons = await ScheduledLesson.find(filter)

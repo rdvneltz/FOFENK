@@ -72,6 +72,12 @@ const generateSchedule = async (params) => {
 
   const start = new Date(startDate);
   const end = new Date(endDate);
+  // Normalize both to noon UTC so the comparison is timezone-safe.
+  // Without this, a DatePicker value from Turkey (UTC+3) arrives as
+  // previous-day 21:00 UTC, and the loop's noon-based currentDate
+  // overshoots it — excluding the last day.
+  start.setUTCHours(12, 0, 0, 0);
+  end.setUTCHours(12, 0, 0, 0);
 
   if (start >= end) {
     throw new Error('Start date must be before end date');
@@ -80,8 +86,6 @@ const generateSchedule = async (params) => {
   // Generate lesson dates
   const lessonDates = [];
   let currentDate = new Date(start);
-  // Normalize to local date to avoid timezone issues
-  currentDate.setHours(12, 0, 0, 0);
   let weekCounter = 0;
 
   while (currentDate <= end) {
@@ -258,13 +262,16 @@ const timeToMinutes = (timeStr) => {
  */
 const calculateMaxPossibleDays = (startDate, endDate, daysOfWeek) => {
   let count = 0;
-  let currentDate = new Date(startDate);
+  const current = new Date(startDate);
+  current.setUTCHours(12, 0, 0, 0);
+  const last = new Date(endDate);
+  last.setUTCHours(12, 0, 0, 0);
 
-  while (currentDate <= endDate) {
-    if (daysOfWeek.includes(currentDate.getDay())) {
+  while (current <= last) {
+    if (daysOfWeek.includes(current.getDay())) {
       count++;
     }
-    currentDate.setDate(currentDate.getDate() + 1);
+    current.setDate(current.getDate() + 1);
   }
 
   return count;

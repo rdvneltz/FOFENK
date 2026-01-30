@@ -138,11 +138,17 @@ const CreateLessonDialog = ({ open, onClose, selectedDate, onSuccess }) => {
       setLoading(true);
 
       // Create scheduled lesson
+      // Normalize date to noon UTC so it doesn't shift to the previous day
+      // when serialized from local midnight (e.g. Turkey UTC+3 midnight
+      // becomes previous-day 21:00 UTC → wrong day in DB).
+      const d = selectedDate;
+      const normalizedDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0));
+
       const lessonData = {
         course: formData.courseId,
         instructor: formData.instructorId || null,
         student: formData.studentId || null,  // For birebir (one-on-one) lessons
-        date: selectedDate,
+        date: normalizedDate,
         startTime: formData.startTime,
         endTime: formData.endTime,
         status: 'scheduled',
