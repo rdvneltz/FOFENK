@@ -237,6 +237,59 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// Update pending/overdue expense amount (safe - no balance changes)
+router.patch('/:id/amount', async (req, res) => {
+  try {
+    const { amount, updatedBy } = req.body;
+
+    // Validate amount
+    const parsedAmount = parseFloat(amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ message: 'Gider tutarı pozitif bir sayı olmalıdır' });
+    }
+    if (parsedAmount > 1000000) {
+      return res.status(400).json({ message: 'Gider tutarı çok yüksek. Lütfen tutarı kontrol edin.' });
+    }
+
+    const expense = await Expense.findById(req.params.id);
+    if (!expense) {
+      return res.status(404).json({ message: 'Gider bulunamadı' });
+    }
+
+    // Only allow editing pending/overdue expenses
+    if (expense.status === 'paid') {
+      return res.status(400).json({ message: 'Ödenmiş giderler bu yöntemle düzenlenemez' });
+    }
+
+    const oldAmount = expense.amount;
+    const cleanAmount = Math.round(parsedAmount * 100) / 100;
+
+    expense.amount = cleanAmount;
+    expense.updatedBy = updatedBy || 'System';
+    expense.updatedAt = new Date();
+    await expense.save();
+
+    // Log activity
+    await ActivityLog.create({
+      user: updatedBy || 'System',
+      action: 'update',
+      entity: 'Expense',
+      entityId: expense._id,
+      description: `Bekleyen gider tutarı güncellendi: ${oldAmount} TL → ${cleanAmount} TL - ${expense.description}`,
+      metadata: {
+        oldAmount,
+        newAmount: cleanAmount
+      },
+      institution: expense.institution,
+      season: expense.season
+    });
+
+    res.json(expense);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
 // Delete expense
 router.delete('/:id', async (req, res) => {
   try {

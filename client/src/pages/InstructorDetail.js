@@ -32,6 +32,9 @@ import {
   TableHead,
   TableRow,
   Alert,
+  IconButton,
+  Tooltip,
+  InputAdornment,
 } from '@mui/material';
 import {
   ArrowBack,
@@ -104,6 +107,13 @@ const InstructorDetail = () => {
     lesson: null,
     newPaymentAmount: '',
     newDuration: '',
+    error: '',
+    saving: false
+  });
+  const [editSalaryDialog, setEditSalaryDialog] = useState({
+    open: false,
+    expense: null,
+    newAmount: '',
     error: '',
     saving: false
   });
@@ -381,6 +391,57 @@ const InstructorDetail = () => {
       loadInstructor();
     } catch (error) {
       alert('Ödeme hatası: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  // Open edit salary expense dialog
+  const handleOpenEditSalary = (expense) => {
+    setEditSalaryDialog({
+      open: true,
+      expense: expense,
+      newAmount: expense.amount?.toString() || '',
+      error: '',
+      saving: false
+    });
+  };
+
+  // Save edited salary expense amount
+  const handleSaveEditSalary = async () => {
+    const { expense, newAmount } = editSalaryDialog;
+    const parsedAmount = parseFloat(newAmount);
+
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setEditSalaryDialog(prev => ({ ...prev, error: 'Lütfen geçerli bir tutar girin' }));
+      return;
+    }
+
+    if (parsedAmount > 1000000) {
+      setEditSalaryDialog(prev => ({ ...prev, error: 'Tutar çok yüksek. Lütfen kontrol edin.' }));
+      return;
+    }
+
+    // No change
+    if (Math.round(parsedAmount * 100) === Math.round(expense.amount * 100)) {
+      setEditSalaryDialog({ open: false, expense: null, newAmount: '', error: '', saving: false });
+      return;
+    }
+
+    setEditSalaryDialog(prev => ({ ...prev, saving: true, error: '' }));
+
+    try {
+      await api.patch(`/expenses/${expense._id}/amount`, {
+        amount: parsedAmount,
+        updatedBy: user || 'System'
+      });
+
+      setEditSalaryDialog({ open: false, expense: null, newAmount: '', error: '', saving: false });
+      loadInstructor();
+    } catch (error) {
+      setEditSalaryDialog(prev => ({
+        ...prev,
+        saving: false,
+        error: error.response?.data?.message || 'Tutar güncellenirken hata oluştu'
+      }));
     }
   };
 
@@ -797,25 +858,36 @@ const InstructorDetail = () => {
                                     </TableCell>
                                     <TableCell>
                                       {expense.status !== 'paid' && (
-                                        <FormControl size="small" sx={{ minWidth: 120 }}>
-                                          <Select
-                                            displayEmpty
-                                            value=""
-                                            onChange={(e) => {
-                                              if (e.target.value) {
-                                                handlePaySalaryExpense(expense, e.target.value);
-                                              }
-                                            }}
-                                            renderValue={() => 'Öde'}
-                                          >
-                                            <MenuItem value="" disabled>Kasa Seç</MenuItem>
-                                            {cashRegisters.map((reg) => (
-                                              <MenuItem key={reg._id} value={reg._id}>
-                                                {reg.name}
-                                              </MenuItem>
-                                            ))}
-                                          </Select>
-                                        </FormControl>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                          <Tooltip title="Tutarı Düzenle">
+                                            <IconButton
+                                              size="small"
+                                              color="primary"
+                                              onClick={() => handleOpenEditSalary(expense)}
+                                            >
+                                              <Edit fontSize="small" />
+                                            </IconButton>
+                                          </Tooltip>
+                                          <FormControl size="small" sx={{ minWidth: 120 }}>
+                                            <Select
+                                              displayEmpty
+                                              value=""
+                                              onChange={(e) => {
+                                                if (e.target.value) {
+                                                  handlePaySalaryExpense(expense, e.target.value);
+                                                }
+                                              }}
+                                              renderValue={() => 'Öde'}
+                                            >
+                                              <MenuItem value="" disabled>Kasa Seç</MenuItem>
+                                              {cashRegisters.map((reg) => (
+                                                <MenuItem key={reg._id} value={reg._id}>
+                                                  {reg.name}
+                                                </MenuItem>
+                                              ))}
+                                            </Select>
+                                          </FormControl>
+                                        </Box>
                                       )}
                                       {expense.status === 'paid' && (
                                         <Typography variant="caption" color="text.secondary">
@@ -1441,6 +1513,70 @@ const InstructorDetail = () => {
             startIcon={<AccountBalance />}
           >
             Şablon Oluştur
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Salary Expense Amount Dialog */}
+      <Dialog
+        open={editSalaryDialog.open}
+        onClose={() => !editSalaryDialog.saving && setEditSalaryDialog({ open: false, expense: null, newAmount: '', error: '', saving: false })}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Maaş Tutarını Düzenle</DialogTitle>
+        <DialogContent>
+          {editSalaryDialog.expense && (
+            <>
+              <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+                <Typography variant="body2">
+                  <strong>{editSalaryDialog.expense.description}</strong>
+                </Typography>
+                <Typography variant="caption">
+                  Mevcut tutar: ₺{editSalaryDialog.expense.amount?.toLocaleString('tr-TR')}
+                </Typography>
+              </Alert>
+
+              {editSalaryDialog.error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {editSalaryDialog.error}
+                </Alert>
+              )}
+
+              <TextField
+                fullWidth
+                label="Yeni Tutar"
+                type="number"
+                value={editSalaryDialog.newAmount}
+                onChange={(e) => setEditSalaryDialog(prev => ({ ...prev, newAmount: e.target.value, error: '' }))}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start">₺</InputAdornment>,
+                }}
+                inputProps={{ min: 0, step: 100 }}
+                autoFocus
+              />
+
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Bu değişiklik sadece bu ayın maaş giderini etkiler. Şablon tutarı değişmez.
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setEditSalaryDialog({ open: false, expense: null, newAmount: '', error: '', saving: false })}
+            disabled={editSalaryDialog.saving}
+          >
+            İptal
+          </Button>
+          <Button
+            onClick={handleSaveEditSalary}
+            variant="contained"
+            color="primary"
+            disabled={editSalaryDialog.saving}
+            startIcon={<Edit />}
+          >
+            {editSalaryDialog.saving ? 'Kaydediliyor...' : 'Tutarı Güncelle'}
           </Button>
         </DialogActions>
       </Dialog>
