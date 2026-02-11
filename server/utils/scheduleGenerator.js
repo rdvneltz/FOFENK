@@ -89,7 +89,8 @@ const generateSchedule = async (params) => {
   let weekCounter = 0;
 
   while (currentDate <= end) {
-    const dayOfWeek = currentDate.getDay();
+    // Use UTC day to avoid timezone issues
+    const dayOfWeek = currentDate.getUTCDay();
 
     // Check if this day is in the selected days
     if (daysOfWeek.includes(dayOfWeek)) {
@@ -105,11 +106,12 @@ const generateSchedule = async (params) => {
           break;
         case 'monthly':
           // Include only the first occurrence in each month
+          // Use UTC methods to avoid timezone issues
           const isFirstOccurrence = !lessonDates.some(date => {
             const d = new Date(date);
-            return d.getMonth() === currentDate.getMonth() &&
-                   d.getFullYear() === currentDate.getFullYear() &&
-                   d.getDay() === dayOfWeek;
+            return d.getUTCMonth() === currentDate.getUTCMonth() &&
+                   d.getUTCFullYear() === currentDate.getUTCFullYear() &&
+                   d.getUTCDay() === dayOfWeek;
           });
           shouldInclude = isFirstOccurrence;
           break;
@@ -124,17 +126,23 @@ const generateSchedule = async (params) => {
       }
 
       if (shouldInclude) {
-        // Create new date with same day, normalized time
-        const lessonDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 12, 0, 0, 0);
+        // Create new date with same day, normalized time - MUST use UTC to avoid timezone shifts
+        // Using local time here caused dates to shift when server runs in different timezone than client
+        const lessonDate = new Date(Date.UTC(
+          currentDate.getUTCFullYear(),
+          currentDate.getUTCMonth(),
+          currentDate.getUTCDate(),
+          12, 0, 0, 0
+        ));
         lessonDates.push(lessonDate);
       }
     }
 
     // Move to next day
-    currentDate.setDate(currentDate.getDate() + 1);
+    currentDate.setUTCDate(currentDate.getUTCDate() + 1);
 
-    // Track weeks for biweekly frequency
-    if (currentDate.getDay() === 0) {
+    // Track weeks for biweekly frequency (use UTC day)
+    if (currentDate.getUTCDay() === 0) {
       weekCounter++;
     }
   }
@@ -268,10 +276,11 @@ const calculateMaxPossibleDays = (startDate, endDate, daysOfWeek) => {
   last.setUTCHours(12, 0, 0, 0);
 
   while (current <= last) {
-    if (daysOfWeek.includes(current.getDay())) {
+    // Use UTC day to avoid timezone issues
+    if (daysOfWeek.includes(current.getUTCDay())) {
       count++;
     }
-    current.setDate(current.getDate() + 1);
+    current.setUTCDate(current.getUTCDate() + 1);
   }
 
   return count;

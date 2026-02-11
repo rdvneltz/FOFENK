@@ -80,6 +80,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   const [showPaymentEdit, setShowPaymentEdit] = useState(false);
   const [editPaymentAmount, setEditPaymentAmount] = useState('');
   const [editDuration, setEditDuration] = useState('');
+  const [editAdditionalPayments, setEditAdditionalPayments] = useState([]);
   const [editingPayment, setEditingPayment] = useState(false);
   const [paymentEditError, setPaymentEditError] = useState('');
 
@@ -120,13 +121,40 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       setInstructorConfirmed(lessonRes.data.instructorConfirmed || false);
       setAdditionalInstructors(lessonRes.data.additionalInstructors || []);
 
-      const enrollmentsRes = await api.get('/enrollments', {
-        params: {
-          courseId: lesson.course._id,
-          isActive: true
+      // For birebir (one-on-one) lessons: only show the specific student assigned to this lesson
+      // For group lessons: show all enrolled students in the course
+      if (lessonRes.data.student && lessonRes.data.student._id) {
+        // Birebir lesson - find or create enrollment data for just this student
+        const enrollmentsRes = await api.get('/enrollments', {
+          params: {
+            courseId: lesson.course._id,
+            studentId: lessonRes.data.student._id,
+            isActive: true
+          }
+        });
+
+        // If enrollment found, use it; otherwise create a mock enrollment object for display
+        if (enrollmentsRes.data.length > 0) {
+          setEnrolledStudents(enrollmentsRes.data);
+        } else {
+          // Student might not have formal enrollment, use lesson's student data
+          setEnrolledStudents([{
+            _id: 'birebir-' + lessonRes.data.student._id,
+            student: lessonRes.data.student,
+            course: lesson.course,
+            isActive: true
+          }]);
         }
-      });
-      setEnrolledStudents(enrollmentsRes.data);
+      } else {
+        // Group lesson - show all enrolled students
+        const enrollmentsRes = await api.get('/enrollments', {
+          params: {
+            courseId: lesson.course._id,
+            isActive: true
+          }
+        });
+        setEnrolledStudents(enrollmentsRes.data);
+      }
 
       const instructorsRes = await api.get('/instructors', {
         params: {
@@ -522,6 +550,11 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
   const handleStartPaymentEdit = () => {
     setEditPaymentAmount(lessonData.instructorPaymentAmount?.toString() || '0');
     setEditDuration(lessonData.actualDuration?.toString() || '');
+    // Initialize additional instructors payment amounts
+    const additionalPaymentAmounts = (lessonData.additionalInstructors || [])
+      .filter(ai => ai.instructor && ai.confirmed)
+      .map(ai => ai.paymentAmount?.toString() || '0');
+    setEditAdditionalPayments(additionalPaymentAmounts);
     setPaymentEditError('');
     setShowPaymentEdit(true);
   };
@@ -532,13 +565,22 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
     const newDuration = parseFloat(editDuration);
 
     if (isNaN(newPayment) || newPayment < 0) {
-      setPaymentEditError('Lütfen geçerli bir ödeme tutarı girin');
+      setPaymentEditError('Lütfen ana eğitmen için geçerli bir ödeme tutarı girin');
       return;
     }
 
     if (editDuration && (isNaN(newDuration) || newDuration <= 0)) {
       setPaymentEditError('Lütfen geçerli bir süre girin');
       return;
+    }
+
+    // Validate additional instructor payments
+    for (let i = 0; i < editAdditionalPayments.length; i++) {
+      const additionalPayment = parseFloat(editAdditionalPayments[i]);
+      if (isNaN(additionalPayment) || additionalPayment < 0) {
+        setPaymentEditError(`Lütfen ${i + 2}. eğitmen için geçerli bir ödeme tutarı girin`);
+        return;
+      }
     }
 
     setEditingPayment(true);
@@ -548,14 +590,27 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
       const oldPayment = lessonData.instructorPaymentAmount || 0;
       const paymentDifference = newPayment - oldPayment;
 
-      // Update the lesson with new payment amount
+      // Prepare updated additional instructors data
+      const confirmedAdditional = (lessonData.additionalInstructors || []).filter(ai => ai.instructor && ai.confirmed);
+      const updatedAdditionalInstructors = confirmedAdditional.map((ai, index) => {
+        const newAdditionalPayment = parseFloat(editAdditionalPayments[index]) || 0;
+        return {
+          ...ai,
+          instructor: ai.instructor._id || ai.instructor,
+          paymentAmount: newAdditionalPayment,
+          paymentCalculated: true
+        };
+      });
+
+      // Update the lesson with new payment amounts
       await api.put(`/scheduled-lessons/${lesson._id}`, {
         instructorPaymentAmount: newPayment,
         actualDuration: newDuration || lessonData.actualDuration,
+        additionalInstructors: updatedAdditionalInstructors,
         updatedBy: user?.username
       });
 
-      // Adjust instructor balance by the difference
+      // Adjust primary instructor balance by the difference
       if (paymentDifference !== 0 && lessonData.instructor?._id) {
         const instructor = instructors.find(i => i._id === lessonData.instructor._id);
         if (instructor) {
@@ -566,7 +621,33 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
         }
       }
 
-      alert(`✅ Ödeme güncellendi!\n\nEski: ₺${oldPayment.toLocaleString('tr-TR')}\nYeni: ₺${newPayment.toLocaleString('tr-TR')}\nFark: ${paymentDifference >= 0 ? '+' : ''}₺${paymentDifference.toLocaleString('tr-TR')}`);
+      // Adjust additional instructors' balances
+      let additionalChanges = [];
+      for (let i = 0; i < confirmedAdditional.length; i++) {
+        const oldAdditionalPayment = confirmedAdditional[i].paymentAmount || 0;
+        const newAdditionalPayment = parseFloat(editAdditionalPayments[i]) || 0;
+        const additionalDifference = newAdditionalPayment - oldAdditionalPayment;
+
+        if (additionalDifference !== 0) {
+          const instructorId = confirmedAdditional[i].instructor._id || confirmedAdditional[i].instructor;
+          const instructor = instructors.find(inst => inst._id === instructorId);
+          if (instructor) {
+            await api.put(`/instructors/${instructorId}`, {
+              balance: (instructor.balance || 0) + additionalDifference,
+              updatedBy: user?.username
+            });
+            additionalChanges.push(`${instructor.firstName} ${instructor.lastName}: ${additionalDifference >= 0 ? '+' : ''}₺${additionalDifference.toLocaleString('tr-TR')}`);
+          }
+        }
+      }
+
+      let alertMessage = `✅ Ödeme güncellendi!\n\nAna Eğitmen:\nEski: ₺${oldPayment.toLocaleString('tr-TR')}\nYeni: ₺${newPayment.toLocaleString('tr-TR')}\nFark: ${paymentDifference >= 0 ? '+' : ''}₺${paymentDifference.toLocaleString('tr-TR')}`;
+
+      if (additionalChanges.length > 0) {
+        alertMessage += `\n\nEk Eğitmenler:\n${additionalChanges.join('\n')}`;
+      }
+
+      alert(alertMessage);
 
       setShowPaymentEdit(false);
       loadLessonDetails();
@@ -1203,7 +1284,7 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
                             <TextField
                               fullWidth
                               type="number"
-                              label="Ödeme Tutarı (₺)"
+                              label="Ana Eğitmen Ödemesi (₺)"
                               value={editPaymentAmount}
                               onChange={(e) => setEditPaymentAmount(e.target.value)}
                               inputProps={{ step: 0.01, min: 0 }}
@@ -1211,6 +1292,31 @@ const LessonDetailDialog = ({ open, onClose, lesson, onUpdated, onDeleted }) => 
                               helperText={`Mevcut: ₺${lessonData.instructorPaymentAmount?.toLocaleString('tr-TR') || 0}`}
                             />
                           </Grid>
+
+                          {/* Additional Instructors Payment Edit */}
+                          {(lessonData.additionalInstructors || [])
+                            .filter(ai => ai.instructor && ai.confirmed)
+                            .map((ai, index) => {
+                              const inst = instructors.find(i => i._id === (ai.instructor._id || ai.instructor));
+                              return (
+                                <Grid item xs={12} sm={6} key={index}>
+                                  <TextField
+                                    fullWidth
+                                    type="number"
+                                    label={`${inst?.firstName || ''} ${inst?.lastName || ''} (${index + 2}. Eğitmen) Ödemesi (₺)`}
+                                    value={editAdditionalPayments[index] || ''}
+                                    onChange={(e) => {
+                                      const newPayments = [...editAdditionalPayments];
+                                      newPayments[index] = e.target.value;
+                                      setEditAdditionalPayments(newPayments);
+                                    }}
+                                    inputProps={{ step: 0.01, min: 0 }}
+                                    size="small"
+                                    helperText={`Mevcut: ₺${ai.paymentAmount?.toLocaleString('tr-TR') || 0}`}
+                                  />
+                                </Grid>
+                              );
+                            })}
                         </Grid>
 
                         {editPaymentAmount && lessonData.instructorPaymentAmount !== undefined && (
