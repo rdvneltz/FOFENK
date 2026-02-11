@@ -17,7 +17,13 @@ router.get('/', async (req, res) => {
     if (institutionId) filter.institution = institutionId;
     if (seasonId) filter.season = seasonId;
     if (courseId) filter.course = courseId;
-    if (instructorId) filter.instructor = instructorId;
+    // instructorId: Search both primary instructor AND additionalInstructors
+    if (instructorId) {
+      filter.$or = [
+        { instructor: instructorId },
+        { 'additionalInstructors.instructor': instructorId }
+      ];
+    }
     if (studentId) filter.student = studentId;
 
     // Month/year filter for calendar view - use UTC for consistent timezone handling

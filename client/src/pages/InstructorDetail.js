@@ -172,24 +172,78 @@ const InstructorDetail = () => {
         }
       }
 
-      // Filter and sort lessons - only confirmed lessons
+      // Filter and sort lessons - lessons where this instructor participated
+      // Check both primary instructor and additional instructors
       const confirmedLessons = lessonsRes.data
-        .filter(l => l.instructorConfirmed)
+        .map(l => {
+          // Primary instructor
+          if (l.instructor?._id === id && l.instructorConfirmed) {
+            return {
+              ...l,
+              isAdditionalInstructor: false,
+              paymentAmountForThisInstructor: l.instructorPaymentAmount,
+              paymentPaidForThisInstructor: l.instructorPaymentPaid,
+              paymentCalculatedForThisInstructor: l.instructorPaymentCalculated
+            };
+          }
+          // Additional instructor - check if confirmed
+          const additionalEntry = l.additionalInstructors?.find(
+            ai => ai.instructor?._id === id || ai.instructor === id
+          );
+          if (additionalEntry && additionalEntry.confirmed) {
+            return {
+              ...l,
+              isAdditionalInstructor: true,
+              paymentAmountForThisInstructor: additionalEntry.paymentAmount,
+              paymentPaidForThisInstructor: additionalEntry.paymentPaid,
+              paymentCalculatedForThisInstructor: additionalEntry.paymentCalculated
+            };
+          }
+          return null;
+        })
+        .filter(l => l !== null)
         .sort((a, b) => new Date(b.date) - new Date(a.date));
 
       setLessonHistory(confirmedLessons);
 
       // Separate unpaid lessons (completed but payment not made yet)
-      const unpaid = lessonsRes.data
-        .filter(l =>
-          l.instructorConfirmed &&
-          l.status === 'completed' &&
-          l.instructorPaymentCalculated === true &&
-          l.instructorPaymentAmount > 0 &&
-          !l.instructorPaymentPaid
-        )
-        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      // Include both primary instructor unpaid lessons AND additional instructor unpaid lessons
+      const unpaid = [];
 
+      lessonsRes.data.forEach(l => {
+        if (l.status !== 'completed') return;
+
+        // Check if this instructor is the primary instructor with unpaid lesson
+        if (l.instructor?._id === id &&
+            l.instructorConfirmed &&
+            l.instructorPaymentCalculated === true &&
+            l.instructorPaymentAmount > 0 &&
+            !l.instructorPaymentPaid) {
+          unpaid.push({
+            ...l,
+            isAdditionalInstructor: false,
+            paymentAmountForThisInstructor: l.instructorPaymentAmount
+          });
+        }
+
+        // Check if this instructor is an additional instructor with unpaid lesson
+        const additionalEntry = l.additionalInstructors?.find(
+          ai => (ai.instructor?._id === id || ai.instructor === id) && ai.confirmed
+        );
+        if (additionalEntry &&
+            additionalEntry.paymentCalculated === true &&
+            additionalEntry.paymentAmount > 0 &&
+            !additionalEntry.paymentPaid) {
+          unpaid.push({
+            ...l,
+            isAdditionalInstructor: true,
+            additionalInstructorEntryId: additionalEntry._id,
+            paymentAmountForThisInstructor: additionalEntry.paymentAmount
+          });
+        }
+      });
+
+      unpaid.sort((a, b) => new Date(b.date) - new Date(a.date));
       setUnpaidLessons(unpaid);
 
       // Calculate total hours from confirmed lessons
@@ -250,16 +304,22 @@ const InstructorDetail = () => {
         return;
       }
 
-      if (!lesson || !lesson.instructorPaymentAmount) {
+      const paymentAmount = lesson.paymentAmountForThisInstructor || lesson.instructorPaymentAmount;
+
+      if (!lesson || !paymentAmount) {
         alert('Ödeme tutarı bulunamadı');
         return;
       }
 
+      // Determine if this is an additional instructor payment
+      const isAdditional = lesson.isAdditionalInstructor;
+      const roleLabel = isAdditional ? '(Ek Eğitmen)' : '';
+
       // Create expense record
       await api.post('/expenses', {
         category: 'Eğitmen Ödemesi',
-        amount: lesson.instructorPaymentAmount,
-        description: `${lesson.course?.name || 'Ders'} - ${new Date(lesson.date).toLocaleDateString('tr-TR')} - ${instructor.firstName} ${instructor.lastName} (${lesson.actualDuration || 0} saat)`,
+        amount: paymentAmount,
+        description: `${lesson.course?.name || 'Ders'} - ${new Date(lesson.date).toLocaleDateString('tr-TR')} - ${instructor.firstName} ${instructor.lastName} ${roleLabel} (${lesson.actualDuration || 0} saat)`,
         expenseDate: payLessonDialog.expenseDate || new Date().toISOString().split('T')[0],
         cashRegister: cashRegisterId,
         instructor: id,
@@ -268,20 +328,44 @@ const InstructorDetail = () => {
         createdBy: user?.username
       });
 
-      // Mark lesson as paid
-      await api.put(`/scheduled-lessons/${lesson._id}`, {
-        instructorPaymentPaid: true,
-        instructorPaymentDate: new Date(),
-        updatedBy: user?.username
-      });
+      if (isAdditional) {
+        // For additional instructor: update the specific entry in additionalInstructors array
+        const updatedAdditionalInstructors = lesson.additionalInstructors.map(ai => {
+          const aiId = ai.instructor?._id || ai.instructor;
+          if (aiId === id) {
+            return {
+              ...ai,
+              instructor: aiId,
+              paymentPaid: true,
+              paymentDate: new Date()
+            };
+          }
+          return {
+            ...ai,
+            instructor: ai.instructor?._id || ai.instructor
+          };
+        });
+
+        await api.put(`/scheduled-lessons/${lesson._id}`, {
+          additionalInstructors: updatedAdditionalInstructors,
+          updatedBy: user?.username
+        });
+      } else {
+        // For primary instructor: mark lesson as paid
+        await api.put(`/scheduled-lessons/${lesson._id}`, {
+          instructorPaymentPaid: true,
+          instructorPaymentDate: new Date(),
+          updatedBy: user?.username
+        });
+      }
 
       // Update instructor balance (subtract paid amount)
       await api.put(`/instructors/${id}`, {
-        balance: instructor.balance - lesson.instructorPaymentAmount,
+        balance: instructor.balance - paymentAmount,
         updatedBy: user?.username
       });
 
-      alert(`Ödeme başarıyla yapıldı! ₺${lesson.instructorPaymentAmount.toFixed(2)}`);
+      alert(`Ödeme başarıyla yapıldı! ₺${paymentAmount.toFixed(2)}`);
       setPayLessonDialog({ open: false, lesson: null, cashRegisterId: '', expenseDate: new Date().toISOString().split('T')[0] });
       loadInstructor(); // Reload to update balance and lesson list
     } catch (error) {
@@ -925,10 +1009,11 @@ const InstructorDetail = () => {
                     <>
                       <Alert severity="warning" sx={{ mb: 2, mt: 2 }}>
                         <Typography variant="subtitle2">
-                          Toplam Borç: <strong>₺{unpaidLessons.reduce((sum, l) => sum + (l.instructorPaymentAmount || 0), 0).toLocaleString('tr-TR')}</strong>
+                          Toplam Borç: <strong>₺{unpaidLessons.reduce((sum, l) => sum + (l.paymentAmountForThisInstructor || l.instructorPaymentAmount || 0), 0).toLocaleString('tr-TR')}</strong>
                         </Typography>
                         <Typography variant="caption">
                           {unpaidLessons.length} adet ders için ödeme bekleniyor
+                          {unpaidLessons.some(l => l.isAdditionalInstructor) && ' (ek eğitmen dersleri dahil)'}
                         </Typography>
                       </Alert>
 
@@ -944,8 +1029,8 @@ const InstructorDetail = () => {
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {unpaidLessons.map((lesson) => (
-                              <TableRow key={lesson._id}>
+                            {unpaidLessons.map((lesson, index) => (
+                              <TableRow key={`${lesson._id}-${lesson.isAdditionalInstructor ? 'add' : 'pri'}`}>
                                 <TableCell>
                                   {new Date(lesson.date).toLocaleDateString('tr-TR', {
                                     day: '2-digit',
@@ -956,6 +1041,9 @@ const InstructorDetail = () => {
                                 <TableCell>
                                   <Typography variant="body2" fontWeight="medium">
                                     {lesson.course?.name || 'Ders'}
+                                    {lesson.isAdditionalInstructor && (
+                                      <Chip label="Ek Eğitmen" size="small" color="secondary" sx={{ ml: 1 }} />
+                                    )}
                                   </Typography>
                                   <Typography variant="caption" color="text.secondary">
                                     {lesson.startTime} - {lesson.endTime}
@@ -968,7 +1056,7 @@ const InstructorDetail = () => {
                                 </TableCell>
                                 <TableCell>
                                   <Typography variant="body2" color="error" fontWeight="bold">
-                                    ₺{(lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
+                                    ₺{(lesson.paymentAmountForThisInstructor || lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
                                   </Typography>
                                 </TableCell>
                                 <TableCell>
@@ -1045,8 +1133,8 @@ const InstructorDetail = () => {
                             </TableRow>
                           </TableHead>
                           <TableBody>
-                            {lessonHistory.map((lesson) => (
-                              <TableRow key={lesson._id}>
+                            {lessonHistory.map((lesson, index) => (
+                              <TableRow key={`${lesson._id}-${lesson.isAdditionalInstructor ? 'add' : 'pri'}-${index}`}>
                                 <TableCell>
                                   {new Date(lesson.date).toLocaleDateString('tr-TR', {
                                     day: '2-digit',
@@ -1057,6 +1145,9 @@ const InstructorDetail = () => {
                                 <TableCell>
                                   <Typography variant="body2" fontWeight="medium">
                                     {lesson.course?.name || 'Ders'}
+                                    {lesson.isAdditionalInstructor && (
+                                      <Chip label="Ek Eğitmen" size="small" color="secondary" sx={{ ml: 1 }} />
+                                    )}
                                   </Typography>
                                 </TableCell>
                                 <TableCell>
@@ -1076,15 +1167,15 @@ const InstructorDetail = () => {
                                       color={lesson.status === 'completed' ? 'success' : 'default'}
                                       size="small"
                                     />
-                                    {lesson.instructorPaymentPaid && (
+                                    {lesson.paymentPaidForThisInstructor && (
                                       <Chip label="Ödendi" color="info" size="small" variant="outlined" />
                                     )}
                                   </Box>
                                 </TableCell>
                                 <TableCell>
-                                  {lesson.instructorPaymentCalculated ? (
+                                  {lesson.paymentCalculatedForThisInstructor ? (
                                     <Typography variant="body2" color="success.main" fontWeight="bold">
-                                      ₺{(lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
+                                      ₺{(lesson.paymentAmountForThisInstructor || 0).toLocaleString('tr-TR')}
                                     </Typography>
                                   ) : (
                                     <Typography variant="body2" color="text.secondary">
@@ -1093,7 +1184,7 @@ const InstructorDetail = () => {
                                   )}
                                 </TableCell>
                                 <TableCell>
-                                  {lesson.status === 'completed' && lesson.instructorPaymentCalculated && !lesson.instructorPaymentPaid && (
+                                  {lesson.status === 'completed' && lesson.paymentCalculatedForThisInstructor && !lesson.paymentPaidForThisInstructor && !lesson.isAdditionalInstructor && (
                                     <Button
                                       variant="outlined"
                                       size="small"
@@ -1103,7 +1194,7 @@ const InstructorDetail = () => {
                                       Düzenle
                                     </Button>
                                   )}
-                                  {lesson.instructorPaymentPaid && (
+                                  {lesson.paymentPaidForThisInstructor && (
                                     <Typography variant="caption" color="text.secondary">
                                       Düzenlenemez
                                     </Typography>
@@ -1137,6 +1228,9 @@ const InstructorDetail = () => {
               <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
                 <Typography variant="subtitle2" gutterBottom>
                   {payLessonDialog.lesson.course?.name || 'Ders'}
+                  {payLessonDialog.lesson.isAdditionalInstructor && (
+                    <Chip label="Ek Eğitmen" size="small" color="secondary" sx={{ ml: 1 }} />
+                  )}
                 </Typography>
                 <Typography variant="body2">
                   Tarih: {new Date(payLessonDialog.lesson.date).toLocaleDateString('tr-TR')}
@@ -1145,7 +1239,7 @@ const InstructorDetail = () => {
                   Süre: {payLessonDialog.lesson.actualDuration || 0} saat
                 </Typography>
                 <Typography variant="h6" sx={{ mt: 1 }}>
-                  Tutar: ₺{(payLessonDialog.lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
+                  Tutar: ₺{(payLessonDialog.lesson.paymentAmountForThisInstructor || payLessonDialog.lesson.instructorPaymentAmount || 0).toLocaleString('tr-TR')}
                 </Typography>
               </Alert>
 
