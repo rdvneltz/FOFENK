@@ -1273,7 +1273,10 @@ router.post('/:id/refund-installment', async (req, res) => {
     installment.isPaid = false;
     installment.paidAmount = 0;
     installment.paidDate = null;
+    installment.lastPaymentDate = null;
     installment.isInvoiced = false;
+    // IMPORTANT: Clear payment history to avoid duplicate dates showing on re-payment
+    installment.payments = [];
 
     // Step 6: Update payment plan totals
     paymentPlan.paidAmount = Math.max(0, (paymentPlan.paidAmount || 0) - refundAmount);
