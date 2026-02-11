@@ -734,7 +734,11 @@ const InstructorDetail = () => {
               {Math.abs(statistics.balance || 0).toLocaleString('tr-TR')}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {statistics.balance < 0 ? `Borcumuz (${statistics.overdueCount || 0} gecikmiş maaş)` : 'Tüm ödemeler yapıldı'}
+              {statistics.balance < 0
+                ? (statistics.unpaidLessonsCount > 0
+                    ? `Borcumuz (${statistics.unpaidLessonsCount} ödenmemiş ders)`
+                    : `Borcumuz (${statistics.overdueCount || 0} gecikmiş maaş)`)
+                : 'Tüm ödemeler yapıldı'}
             </Typography>
           </Paper>
 
