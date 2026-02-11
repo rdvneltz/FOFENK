@@ -38,9 +38,12 @@ router.get('/', async (req, res) => {
 
         // 2. Unpaid completed lessons (for per-lesson instructors)
         // Must match client-side criteria: confirmed, calculated, amount > 0, not paid
+        // Include BOTH primary instructor lessons AND additional instructor lessons
         let unpaidLessonsBalance = 0;
+        let unpaidLessonsCount = 0;
         if (instructor.paymentType === 'perLesson' || instructor.paymentType === 'hourly') {
-          const unpaidLessons = await ScheduledLesson.find({
+          // 2a. Primary instructor unpaid lessons
+          const unpaidPrimaryLessons = await ScheduledLesson.find({
             instructor: instructor._id,
             status: 'completed',
             instructorConfirmed: true,
@@ -49,25 +52,39 @@ router.get('/', async (req, res) => {
             instructorPaymentPaid: { $ne: true }
           });
 
-          unpaidLessonsBalance = unpaidLessons.reduce((sum, lesson) => {
-            // Use the calculated payment amount (already verified > 0 by query)
+          unpaidLessonsBalance = unpaidPrimaryLessons.reduce((sum, lesson) => {
             return sum + lesson.instructorPaymentAmount;
           }, 0);
+          unpaidLessonsCount = unpaidPrimaryLessons.length;
+
+          // 2b. Additional instructor unpaid lessons
+          const additionalInstructorLessons = await ScheduledLesson.find({
+            status: 'completed',
+            'additionalInstructors.instructor': instructor._id,
+            'additionalInstructors.confirmed': true,
+            'additionalInstructors.paymentCalculated': true,
+            'additionalInstructors.paymentPaid': { $ne: true }
+          });
+
+          additionalInstructorLessons.forEach(lesson => {
+            const entry = lesson.additionalInstructors.find(
+              ai => ai.instructor?.toString() === instructor._id.toString() &&
+                    ai.confirmed === true &&
+                    ai.paymentCalculated === true &&
+                    ai.paymentPaid !== true &&
+                    ai.paymentAmount > 0
+            );
+            if (entry) {
+              unpaidLessonsBalance += entry.paymentAmount;
+              unpaidLessonsCount++;
+            }
+          });
         }
 
         // Return instructor with calculated balance (negative = we owe them)
         const instructorObj = instructor.toObject();
         instructorObj.balance = -(overdueBalance + unpaidLessonsBalance);
-        instructorObj.unpaidLessonsCount = instructor.paymentType === 'perLesson' || instructor.paymentType === 'hourly'
-          ? (await ScheduledLesson.countDocuments({
-              instructor: instructor._id,
-              status: 'completed',
-              instructorConfirmed: true,
-              instructorPaymentCalculated: true,
-              instructorPaymentAmount: { $gt: 0 },
-              instructorPaymentPaid: { $ne: true }
-            }))
-          : 0;
+        instructorObj.unpaidLessonsCount = unpaidLessonsCount;
         return instructorObj;
       })
     );
@@ -145,7 +162,10 @@ router.get('/:id/details', async (req, res) => {
 
     // Get unpaid completed lessons (for per-lesson/hourly instructors)
     // Must match client-side criteria: confirmed, calculated, amount > 0, not paid
-    const unpaidLessons = await ScheduledLesson.find({
+    // Include BOTH primary instructor lessons AND additional instructor lessons
+
+    // 1. Primary instructor unpaid lessons
+    const unpaidPrimaryLessons = await ScheduledLesson.find({
       instructor: req.params.id,
       status: 'completed',
       instructorConfirmed: true,
@@ -154,11 +174,33 @@ router.get('/:id/details', async (req, res) => {
       instructorPaymentPaid: { $ne: true }
     });
 
-    const unpaidLessonsCount = unpaidLessons.length;
-    const unpaidLessonsAmount = unpaidLessons.reduce((sum, lesson) => {
-      // Use the calculated payment amount (already verified > 0 by query)
+    let unpaidLessonsCount = unpaidPrimaryLessons.length;
+    let unpaidLessonsAmount = unpaidPrimaryLessons.reduce((sum, lesson) => {
       return sum + lesson.instructorPaymentAmount;
     }, 0);
+
+    // 2. Additional instructor unpaid lessons
+    const additionalInstructorLessons = await ScheduledLesson.find({
+      status: 'completed',
+      'additionalInstructors.instructor': req.params.id,
+      'additionalInstructors.confirmed': true,
+      'additionalInstructors.paymentCalculated': true,
+      'additionalInstructors.paymentPaid': { $ne: true }
+    });
+
+    additionalInstructorLessons.forEach(lesson => {
+      const entry = lesson.additionalInstructors.find(
+        ai => ai.instructor?.toString() === req.params.id &&
+              ai.confirmed === true &&
+              ai.paymentCalculated === true &&
+              ai.paymentPaid !== true &&
+              ai.paymentAmount > 0
+      );
+      if (entry) {
+        unpaidLessonsAmount += entry.paymentAmount;
+        unpaidLessonsCount++;
+      }
+    });
 
     // Calculate total paid (only from paid expenses)
     const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
@@ -196,7 +238,7 @@ router.get('/:id/details', async (req, res) => {
       unpaidLessons: {
         count: unpaidLessonsCount,
         amount: unpaidLessonsAmount,
-        lessons: unpaidLessons
+        lessons: [...unpaidPrimaryLessons, ...additionalInstructorLessons]
       },
       statistics: {
         totalPaid,
