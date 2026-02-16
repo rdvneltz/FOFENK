@@ -197,14 +197,14 @@ function App() {
                       <Route path="/payment-plan/:studentId" element={<ProtectedRoute permission="canManagePayments"><PaymentPlan /></ProtectedRoute>} />
                       <Route path="/payment-plan-detail/:id" element={<ProtectedRoute permission="canManagePayments"><PaymentPlanDetail /></ProtectedRoute>} />
                       <Route path="/expenses" element={<ProtectedRoute permission="canManageExpenses"><Expenses /></ProtectedRoute>} />
-                      <Route path="/cash-registers" element={<ProtectedRoute permission="canManageExpenses"><CashRegisters /></ProtectedRoute>} />
-                      <Route path="/trial-lessons" element={<ProtectedRoute permission="canManageCourses"><TrialLessons /></ProtectedRoute>} />
+                      <Route path="/cash-registers" element={<ProtectedRoute permission="canViewCashRegisters"><CashRegisters /></ProtectedRoute>} />
+                      <Route path="/trial-lessons" element={<ProtectedRoute permission="canManageTrialLessons"><TrialLessons /></ProtectedRoute>} />
                       <Route path="/phone-book" element={<PhoneBook />} />
                       <Route path="/message-templates" element={<MessageTemplates />} />
                       <Route path="/settings" element={<ProtectedRoute permission="canManageSettings"><Settings /></ProtectedRoute>} />
                       <Route path="/reports" element={<ProtectedRoute permission="canViewReports"><Reports /></ProtectedRoute>} />
                       <Route path="/users" element={<ProtectedRoute permission="canManageUsers"><Users /></ProtectedRoute>} />
-                      <Route path="/activity-logs" element={<ProtectedRoute permission="canManageUsers"><ActivityLogs /></ProtectedRoute>} />
+                      <Route path="/activity-logs" element={<ProtectedRoute permission="canViewActivityLogs"><ActivityLogs /></ProtectedRoute>} />
                       <Route path="/backup" element={<ProtectedRoute permission="canManageSettings"><Backup /></ProtectedRoute>} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>

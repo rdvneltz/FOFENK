@@ -160,12 +160,22 @@ router.post('/', async (req, res) => {
     }
 
     // Log activity
+    const populatedForLog = await ScheduledLesson.findById(newScheduledLesson._id)
+      .populate('course', 'name')
+      .populate('instructor', 'firstName lastName')
+      .populate('student', 'firstName lastName');
+    const slCourseName = populatedForLog?.course?.name || '';
+    const slInstructorName = populatedForLog?.instructor ? `${populatedForLog.instructor.firstName} ${populatedForLog.instructor.lastName}` : '';
+    const slStudentName = populatedForLog?.student ? `${populatedForLog.student.firstName} ${populatedForLog.student.lastName}` : '';
+    const slDate = newScheduledLesson.date ? new Date(newScheduledLesson.date).toLocaleDateString('tr-TR') : '';
+
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
       action: 'create',
       entity: 'ScheduledLesson',
       entityId: newScheduledLesson._id,
-      description: `Yeni ders planlandı`,
+      description: `${req.body.createdBy || 'System'} tarafından yeni ders planlandı${slCourseName ? ': ' + slCourseName : ''}${slInstructorName ? ' - Eğitmen: ' + slInstructorName : ''}${slStudentName ? ' - Öğrenci: ' + slStudentName : ''}${slDate ? ' - Tarih: ' + slDate : ''}`,
+      metadata: { courseName: slCourseName, instructorName: slInstructorName, studentName: slStudentName, date: slDate },
       institution: newScheduledLesson.institution,
       season: newScheduledLesson.season
     });
@@ -226,12 +236,18 @@ router.put('/:id', async (req, res) => {
     }
 
     // Log activity
+    const updCourseName = scheduledLesson.course?.name || '';
+    const updInstructorName = scheduledLesson.instructor ? `${scheduledLesson.instructor.firstName} ${scheduledLesson.instructor.lastName}` : '';
+    const updStudentName = scheduledLesson.student ? `${scheduledLesson.student.firstName} ${scheduledLesson.student.lastName}` : '';
+    const updDate = scheduledLesson.date ? new Date(scheduledLesson.date).toLocaleDateString('tr-TR') : '';
+
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'ScheduledLesson',
       entityId: scheduledLesson._id,
-      description: `Planlanmış ders güncellendi`,
+      description: `${req.body.updatedBy || 'System'} tarafından planlanmış ders güncellendi${updCourseName ? ': ' + updCourseName : ''}${updInstructorName ? ' - Eğitmen: ' + updInstructorName : ''}${updStudentName ? ' - Öğrenci: ' + updStudentName : ''}${updDate ? ' - Tarih: ' + updDate : ''}`,
+      metadata: { courseName: updCourseName, instructorName: updInstructorName, studentName: updStudentName, date: updDate },
       institution: scheduledLesson.institution._id,
       season: scheduledLesson.season._id
     });
@@ -308,7 +324,7 @@ router.put('/bulk-update-future', async (req, res) => {
       user: updatedBy || 'System',
       action: 'bulk_update',
       entity: 'ScheduledLesson',
-      description: `${updatedCount} planlanmış ders toplu güncellendi`,
+      description: `${updatedBy || 'System'} tarafından ${updatedCount} planlanmış ders toplu güncellendi`,
       details: { courseId, fromDate, updates }
     });
 
@@ -339,7 +355,7 @@ router.delete('/:id', async (req, res) => {
       action: 'delete',
       entity: 'ScheduledLesson',
       entityId: scheduledLesson._id,
-      description: `Planlanmış ders silindi`,
+      description: `${req.body?.deletedBy || 'System'} tarafından planlanmış ders silindi`,
       institution: scheduledLesson.institution,
       season: scheduledLesson.season
     });
@@ -392,7 +408,7 @@ router.post('/generate-schedule', async (req, res) => {
       user: createdBy || 'System',
       action: 'create',
       entity: 'ScheduledLesson',
-      description: `Otomatik program oluşturuldu: ${result.count} ders`,
+      description: `${createdBy || 'System'} tarafından otomatik program oluşturuldu: ${result.count} ders`,
       institution: institutionId,
       season: seasonId
     });

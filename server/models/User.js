@@ -23,19 +23,36 @@ const userSchema = new mongoose.Schema({
     enum: ['superadmin', 'admin', 'manager', 'accountant', 'instructor', 'staff'],
     default: 'staff'
   },
-  // Yetkiler (basit yetki sistemi)
+  // Yetkiler (detaylı yetki sistemi)
   permissions: {
+    // Temel Yetkiler
+    canViewCalendar: { type: Boolean, default: true },
+    canMarkAttendance: { type: Boolean, default: true },
+    canManageScheduledLessons: { type: Boolean, default: true },
+    // Öğrenci Yönetimi
     canManageStudents: { type: Boolean, default: true },
+    canManageTrialLessons: { type: Boolean, default: true },
+    // Ders & Eğitmen Yönetimi
     canManageCourses: { type: Boolean, default: true },
-    canManagePayments: { type: Boolean, default: true },
-    canManageExpenses: { type: Boolean, default: true },
     canManageInstructors: { type: Boolean, default: true },
+    // Ödeme & Tahsilat İşlemleri
+    canManagePayments: { type: Boolean, default: true },
+    canCreatePaymentPlans: { type: Boolean, default: true },
+    canCollectPayments: { type: Boolean, default: true },
+    // Gider İşlemleri
+    canManageExpenses: { type: Boolean, default: true },
+    canCreateExpenses: { type: Boolean, default: true },
+    // Mali Görünürlük (hassas - kimin neyi görebileceği)
+    canViewCashRegisters: { type: Boolean, default: true },
+    canManageCashRegisters: { type: Boolean, default: true },
     canViewReports: { type: Boolean, default: true },
+    canViewDashboardFinancials: { type: Boolean, default: true },
+    canViewPaymentAmounts: { type: Boolean, default: true },
+    // Sistem Yönetimi
     canManageSettings: { type: Boolean, default: false },
     canManageUsers: { type: Boolean, default: false },
     canManageInstitutions: { type: Boolean, default: false },
-    canViewCalendar: { type: Boolean, default: true },
-    canMarkAttendance: { type: Boolean, default: true }
+    canViewActivityLogs: { type: Boolean, default: false }
   },
   // Kullanıcının erişebildiği kurumlar (superadmin hariç)
   institutions: [{

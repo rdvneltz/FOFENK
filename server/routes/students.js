@@ -213,7 +213,7 @@ router.post('/', async (req, res) => {
       action: 'create',
       entity: 'Student',
       entityId: newStudent._id,
-      description: `Yeni öğrenci oluşturuldu: ${newStudent.firstName} ${newStudent.lastName}`,
+      description: `${req.body.createdBy || 'System'} tarafından yeni öğrenci kaydı oluşturuldu: ${newStudent.firstName} ${newStudent.lastName}`,
       institution: newStudent.institution,
       season: newStudent.season
     });
@@ -269,7 +269,7 @@ router.put('/:id', async (req, res) => {
     }
 
     // Log activity
-    let description = `Öğrenci güncellendi: ${student.firstName} ${student.lastName}`;
+    let description = `${req.body.updatedBy || 'System'} tarafından öğrenci güncellendi: ${student.firstName} ${student.lastName}`;
     if (wasActive && willBePassive) {
       description += ' (Pasif duruma alındı, ders kayıtları deaktive edildi)';
     } else if (wasPassive && willBeActive) {
@@ -460,8 +460,8 @@ router.delete('/:id', async (req, res) => {
 
     // Log activity
     const description = keepPayments
-      ? `Öğrenci silindi (ödeme kayıtları korundu): ${student.firstName} ${student.lastName}`
-      : `Öğrenci ve ilgili tüm kayıtlar silindi: ${student.firstName} ${student.lastName}`;
+      ? `${req.body?.deletedBy || 'System'} tarafından öğrenci silindi (ödeme kayıtları korundu): ${student.firstName} ${student.lastName}`
+      : `${req.body?.deletedBy || 'System'} tarafından öğrenci ve ilgili tüm kayıtlar silindi: ${student.firstName} ${student.lastName}`;
 
     await ActivityLog.create({
       user: req.body?.deletedBy || 'System',
@@ -548,7 +548,7 @@ router.post('/:id/archive', async (req, res) => {
       action: 'archive',
       entity: 'Student',
       entityId: student._id,
-      description: `Öğrenci arşivlendi: ${student.firstName} ${student.lastName}${req.body.reason ? ` - Sebep: ${req.body.reason}` : ''} (Tüm ders kayıtları deaktive edildi)`,
+      description: `${req.body.archivedBy || 'System'} tarafından öğrenci arşivlendi: ${student.firstName} ${student.lastName}${req.body.reason ? ` - Sebep: ${req.body.reason}` : ''} (Tüm ders kayıtları deaktive edildi)`,
       institution: student.institution,
       season: student.season
     });
@@ -578,7 +578,7 @@ router.post('/:id/unarchive', async (req, res) => {
       action: 'unarchive',
       entity: 'Student',
       entityId: student._id,
-      description: `Öğrenci arşivden çıkarıldı: ${student.firstName} ${student.lastName}`,
+      description: `${req.body.unarchivedBy || 'System'} tarafından öğrenci arşivden çıkarıldı: ${student.firstName} ${student.lastName}`,
       institution: student.institution,
       season: student.season
     });
@@ -669,7 +669,7 @@ router.post('/:id/adjust-balance', async (req, res) => {
       action: 'update',
       entity: 'Student',
       entityId: student._id,
-      description: `Manuel bakiye düzenleme: ${adjustment > 0 ? '+' : ''}₺${adjustment.toLocaleString('tr-TR')} (${oldBalance} → ${newBalance}) - Sebep: ${reason}`,
+      description: `${updatedBy || user.username} tarafından manuel bakiye düzenleme: ${student.firstName} ${student.lastName} - ${adjustment > 0 ? '+' : ''}₺${adjustment.toLocaleString('tr-TR')} (${oldBalance} → ${newBalance}) - Sebep: ${reason}`,
       institution: student.institution,
       season: student.season
     });
@@ -800,7 +800,7 @@ router.post('/:id/recalculate-balance', async (req, res) => {
         action: 'recalculate',
         entity: 'Student',
         entityId: student._id,
-        description: `Bakiye yeniden hesaplandı: ₺${oldBalance.toLocaleString('tr-TR')} → ₺${calculatedBalance.toLocaleString('tr-TR')} (${paymentPlans.length} ödeme planı tarandı)`,
+        description: `${updatedBy || user.username} tarafından bakiye yeniden hesaplandı: ${student.firstName} ${student.lastName} - ₺${oldBalance.toLocaleString('tr-TR')} → ₺${calculatedBalance.toLocaleString('tr-TR')} (${paymentPlans.length} ödeme planı tarandı)`,
         institution: student.institution,
         season: student.season
       });

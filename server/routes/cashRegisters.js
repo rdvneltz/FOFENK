@@ -129,7 +129,8 @@ router.post('/', async (req, res) => {
       action: 'create',
       entity: 'CashRegister',
       entityId: newCashRegister._id,
-      description: `Yeni kasa oluşturuldu: ${newCashRegister.name}`,
+      description: `${req.body.createdBy || 'System'} tarafından yeni kasa oluşturuldu: ${newCashRegister.name} (başlangıç bakiyesi: ₺${newCashRegister.initialBalance || 0})`,
+      metadata: { name: newCashRegister.name, initialBalance: newCashRegister.initialBalance || 0 },
       institution: newCashRegister.institution
     });
 
@@ -161,7 +162,8 @@ router.put('/:id', async (req, res) => {
       action: 'update',
       entity: 'CashRegister',
       entityId: cashRegister._id,
-      description: `Kasa güncellendi: ${cashRegister.name}`,
+      description: `${req.body.updatedBy || 'System'} tarafından kasa güncellendi: ${cashRegister.name}`,
+      metadata: { name: cashRegister.name },
       institution: cashRegister.institution._id
     });
 
@@ -197,7 +199,8 @@ router.delete('/:id', async (req, res) => {
       action: 'delete',
       entity: 'CashRegister',
       entityId: cashRegister._id,
-      description: `Kasa silindi: ${cashRegister.name}`,
+      description: `${req.body?.deletedBy || 'System'} tarafından kasa silindi: ${cashRegister.name}`,
+      metadata: { name: cashRegister.name },
       institution: cashRegister.institution
     });
 
@@ -264,7 +267,13 @@ router.post('/:id/adjust-balance', async (req, res) => {
       action: 'update',
       entity: 'CashRegister',
       entityId: cashRegister._id,
-      description: `Kasa bakiyesi ${isIncome ? 'artırıldı' : 'azaltıldı'}: ₺${amount} - ${description || 'Açıklama yok'}`,
+      description: `${createdBy || 'System'} tarafından ${cashRegister.name} kasası bakiyesi ${isIncome ? 'artırıldı' : 'azaltıldı'}: ₺${amount} - ${description || 'Açıklama yok'}`,
+      metadata: {
+        cashRegisterName: cashRegister.name,
+        type: isIncome ? 'income' : 'expense',
+        amount,
+        description: description || ''
+      },
       institution: cashRegister.institution
     });
 
@@ -351,9 +360,15 @@ router.post('/transfer', async (req, res) => {
     // Log activity
     await ActivityLog.create({
       user: userId || 'System',
-      action: 'update',
+      action: 'transfer',
       entity: 'CashRegister',
-      description: `Virman: ${fromCash.name} → ${toCash.name}: ₺${amount} - ${description || 'Açıklama yok'}`,
+      description: `${userId || 'System'} tarafından kasalar arası virman yapıldı: ${fromCash.name} → ${toCash.name}: ₺${amount}${description ? ' - ' + description : ''}`,
+      metadata: {
+        fromCashRegister: fromCash.name,
+        toCashRegister: toCash.name,
+        amount,
+        description: description || ''
+      },
       institution: fromCash.institution
     });
 
@@ -588,7 +603,11 @@ router.post('/transactions/:id/delete', async (req, res) => {
       action: 'delete',
       entity: transactionType,
       entityId: transactionId,
-      description: description + ' | Detaylar: ' + deletionDetails.join(', '),
+      description: `${user.username} (${user.fullName}) tarafından ${transactionType === 'Payment' ? 'ödeme' : 'gider'} kaydı silindi: ${description} | Detaylar: ${deletionDetails.join(', ')}`,
+      metadata: {
+        deletionDetails,
+        transactionType
+      },
       institution: cashRegister.institution
     });
 

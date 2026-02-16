@@ -88,14 +88,32 @@ router.post('/', async (req, res) => {
     const trialLesson = new TrialLesson(trialData);
     const newTrialLesson = await trialLesson.save();
 
-    // Log activity
+    // Log activity - populate course and instructor for detailed description
+    const populatedForLog = await TrialLesson.findById(newTrialLesson._id)
+      .populate('course', 'name')
+      .populate('instructor', 'firstName lastName');
+    const courseName = populatedForLog?.course?.name || '';
+    const instructorName = populatedForLog?.instructor ? `${populatedForLog.instructor.firstName} ${populatedForLog.instructor.lastName}` : '';
+    const schedDate = newTrialLesson.scheduledDate ? new Date(newTrialLesson.scheduledDate).toLocaleDateString('tr-TR') : '';
+    const schedTime = newTrialLesson.scheduledTime || '';
+    const createdBy = req.body.createdBy || 'System';
+
     await ActivityLog.create({
-      user: req.body.createdBy || 'System',
+      user: createdBy,
       action: 'create',
       entity: 'TrialLesson',
       entityId: newTrialLesson._id,
-      description: `Yeni deneme dersi oluşturuldu: ${newTrialLesson.firstName} ${newTrialLesson.lastName}`,
-      institution: newTrialLesson.institution
+      description: `${createdBy} tarafından yeni deneme dersi oluşturuldu: ${newTrialLesson.firstName} ${newTrialLesson.lastName}${courseName ? ' - Kurs: ' + courseName : ''}${instructorName ? ' - Eğitmen: ' + instructorName : ''}${schedDate ? ' - Tarih: ' + schedDate : ''}${schedTime ? ' ' + schedTime : ''}`,
+      metadata: {
+        studentName: `${newTrialLesson.firstName} ${newTrialLesson.lastName}`,
+        courseName,
+        instructorName,
+        scheduledDate: schedDate,
+        scheduledTime: schedTime,
+        phone: newTrialLesson.phone
+      },
+      institution: newTrialLesson.institution,
+      season: newTrialLesson.season
     });
 
     const populatedTrialLesson = await TrialLesson.findById(newTrialLesson._id)
@@ -135,14 +153,28 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Deneme dersi bulunamadı' });
     }
 
-    // Log activity
+    // Log activity with detailed description
+    const updCourseName = trialLesson.course?.name || '';
+    const updInstructorName = trialLesson.instructor ? `${trialLesson.instructor.firstName} ${trialLesson.instructor.lastName}` : '';
+    const updDate = trialLesson.scheduledDate ? new Date(trialLesson.scheduledDate).toLocaleDateString('tr-TR') : '';
+    const updatedBy = req.body.updatedBy || 'System';
+    const statusText = trialLesson.status === 'scheduled' ? 'Planlandı' : trialLesson.status === 'completed' ? 'Tamamlandı' : trialLesson.status === 'cancelled' ? 'İptal' : trialLesson.status === 'converted' ? 'Kesin Kayıt' : trialLesson.status;
+
     await ActivityLog.create({
-      user: req.body.updatedBy || 'System',
+      user: updatedBy,
       action: 'update',
       entity: 'TrialLesson',
       entityId: trialLesson._id,
-      description: `Deneme dersi güncellendi: ${trialLesson.firstName} ${trialLesson.lastName} - ${trialLesson.status}`,
-      institution: trialLesson.institution._id || trialLesson.institution
+      description: `${updatedBy} tarafından deneme dersi güncellendi: ${trialLesson.firstName} ${trialLesson.lastName} - Durum: ${statusText}${updCourseName ? ' - Kurs: ' + updCourseName : ''}${updInstructorName ? ' - Eğitmen: ' + updInstructorName : ''}${updDate ? ' - Tarih: ' + updDate : ''}`,
+      metadata: {
+        studentName: `${trialLesson.firstName} ${trialLesson.lastName}`,
+        status: trialLesson.status,
+        courseName: updCourseName,
+        instructorName: updInstructorName,
+        scheduledDate: updDate
+      },
+      institution: trialLesson.institution._id || trialLesson.institution,
+      season: trialLesson.season?._id || trialLesson.season
     });
 
     res.json(trialLesson);
@@ -232,18 +264,25 @@ router.post('/:id/convert-to-student', async (req, res) => {
     trialLesson.updatedBy = createdBy || 'System';
     await trialLesson.save();
 
-    // Log activity
+    // Log activity with full details
+    const convertCourseName = trialLesson.course?.name || '';
+    const convertCreatedBy = createdBy || 'System';
+
     await ActivityLog.create({
-      user: createdBy || 'System',
+      user: convertCreatedBy,
       action: 'create',
       entity: 'Student',
       entityId: student._id,
-      description: `Deneme dersinden kesin kayıt: ${student.firstName} ${student.lastName}`,
+      description: `${convertCreatedBy} tarafından deneme dersinden kesin kayıt yapıldı: ${student.firstName} ${student.lastName}${convertCourseName ? ' - Kurs: ' + convertCourseName : ''}${enrollment ? ' (kursa kayıt yapıldı)' : ''}`,
       metadata: {
+        studentName: `${student.firstName} ${student.lastName}`,
         trialLessonId: trialLesson._id,
-        enrollmentId: enrollment ? enrollment._id : null
+        courseName: convertCourseName,
+        enrollmentId: enrollment ? enrollment._id : null,
+        enrolledInCourse: !!enrollment
       },
-      institution: trialLesson.institution
+      institution: trialLesson.institution,
+      season: trialLesson.season
     });
 
     res.json({
@@ -267,14 +306,23 @@ router.delete('/:id', async (req, res) => {
 
     await TrialLesson.findByIdAndDelete(req.params.id);
 
-    // Log activity
+    // Log activity with detailed description
+    const deletedBy = req.body?.deletedBy || 'System';
+    const delDate = trialLesson.scheduledDate ? new Date(trialLesson.scheduledDate).toLocaleDateString('tr-TR') : '';
+
     await ActivityLog.create({
-      user: req.body?.deletedBy || 'System',
+      user: deletedBy,
       action: 'delete',
       entity: 'TrialLesson',
       entityId: trialLesson._id,
-      description: `Deneme dersi silindi: ${trialLesson.firstName} ${trialLesson.lastName}`,
-      institution: trialLesson.institution
+      description: `${deletedBy} tarafından deneme dersi silindi: ${trialLesson.firstName} ${trialLesson.lastName}${delDate ? ' - Tarih: ' + delDate : ''}`,
+      metadata: {
+        studentName: `${trialLesson.firstName} ${trialLesson.lastName}`,
+        scheduledDate: delDate,
+        phone: trialLesson.phone
+      },
+      institution: trialLesson.institution,
+      season: trialLesson.season
     });
 
     res.json({ message: 'Deneme dersi silindi' });

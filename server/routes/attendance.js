@@ -74,12 +74,16 @@ router.post('/', async (req, res) => {
       });
 
     // Log activity
+    const studentName = populatedAttendance.student ? `${populatedAttendance.student.firstName} ${populatedAttendance.student.lastName}` : '';
+    const courseName = populatedAttendance.scheduledLesson?.course?.name || '';
+
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
       action: 'create',
       entity: 'Attendance',
       entityId: newAttendance._id,
-      description: `Yoklama kaydı oluşturuldu`,
+      description: `${req.body.createdBy || 'System'} tarafından yoklama kaydı oluşturuldu${studentName ? ': ' + studentName : ''}${courseName ? ' - ' + courseName : ''}`,
+      metadata: { studentName, courseName },
       institution: populatedAttendance.scheduledLesson?.institution?._id,
       season: populatedAttendance.scheduledLesson?.season?._id
     });
@@ -100,7 +104,7 @@ router.post('/bulk', async (req, res) => {
       user: req.body.createdBy || 'System',
       action: 'create',
       entity: 'Attendance',
-      description: `${attendances.length} yoklama kaydı toplu olarak oluşturuldu`,
+      description: `${req.body.createdBy || 'System'} tarafından ${attendances.length} yoklama kaydı toplu olarak oluşturuldu`,
       institution: req.body.institutionId,
       season: req.body.seasonId
     });
@@ -137,12 +141,17 @@ router.put('/:id', async (req, res) => {
       });
 
     // Log activity
+    const attStudentName = attendance.student ? `${attendance.student.firstName} ${attendance.student.lastName}` : '';
+    const attCourseName = attendance.scheduledLesson?.course?.name || '';
+    const attStatus = req.body.status || '';
+
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'Attendance',
       entityId: attendance._id,
-      description: `Yoklama kaydı güncellendi`,
+      description: `${req.body.updatedBy || 'System'} tarafından yoklama güncellendi${attStudentName ? ': ' + attStudentName : ''}${attCourseName ? ' - ' + attCourseName : ''}${attStatus ? ' → ' + attStatus : ''}`,
+      metadata: { studentName: attStudentName, courseName: attCourseName, status: attStatus },
       institution: attendance.scheduledLesson?.institution?._id,
       season: attendance.scheduledLesson?.season?._id
     });
@@ -174,7 +183,7 @@ router.delete('/:id', async (req, res) => {
       action: 'delete',
       entity: 'Attendance',
       entityId: attendance._id,
-      description: `Yoklama kaydı silindi`,
+      description: `${req.body?.deletedBy || 'System'} tarafından yoklama kaydı silindi`,
       institution: attendance.scheduledLesson?.institution,
       season: attendance.scheduledLesson?.season
     });

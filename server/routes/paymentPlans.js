@@ -481,12 +481,21 @@ router.post('/', async (req, res) => {
     }
 
     // Log activity
+    const studentForLog = await Student.findById(req.body.student).select('firstName lastName');
+    const studentNameForLog = studentForLog ? `${studentForLog.firstName} ${studentForLog.lastName}` : 'Bilinmeyen Öğrenci';
+
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
       action: 'create',
       entity: 'PaymentPlan',
       entityId: newPaymentPlan._id,
-      description: `Yeni ödeme planı oluşturuldu`,
+      description: `${req.body.createdBy || 'System'} tarafından ${studentNameForLog} için yeni ödeme planı oluşturuldu (${req.body.discountedAmount || req.body.totalAmount || 0} TL, ${(req.body.installments || []).length} taksit)`,
+      metadata: {
+        studentName: studentNameForLog,
+        totalAmount: req.body.discountedAmount || req.body.totalAmount,
+        installmentCount: (req.body.installments || []).length,
+        paymentType: req.body.paymentType
+      },
       institution: newPaymentPlan.institution,
       season: newPaymentPlan.season
     });
@@ -536,12 +545,15 @@ router.put('/:id', async (req, res) => {
       .populate('course', 'name');
 
     // Log activity
+    const ppStudentName = populatedPaymentPlan.student ? `${populatedPaymentPlan.student.firstName} ${populatedPaymentPlan.student.lastName}` : 'Bilinmeyen Öğrenci';
+
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'PaymentPlan',
       entityId: paymentPlan._id,
-      description: `Ödeme planı güncellendi`,
+      description: `${req.body.updatedBy || 'System'} tarafından ${ppStudentName} için ödeme planı güncellendi`,
+      metadata: { studentName: ppStudentName },
       institution: populatedPaymentPlan.institution._id,
       season: populatedPaymentPlan.season._id
     });
@@ -677,7 +689,11 @@ router.post('/:id/process-credit-card-payment', async (req, res) => {
       action: 'update',
       entity: 'PaymentPlan',
       entityId: paymentPlan._id,
-      description: `Bekleyen kredi kartı ödemesi işlendi (${chargeAmount} TL)`,
+      description: `${createdBy || 'System'} tarafından ${paymentPlan.student.firstName} ${paymentPlan.student.lastName} için bekleyen kredi kartı ödemesi işlendi (${chargeAmount} TL)`,
+      metadata: {
+        studentName: `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}`,
+        amount: chargeAmount
+      },
       institution: paymentPlan.institution,
       season: paymentPlan.season
     });
@@ -985,7 +1001,13 @@ router.post('/:id/pay-installment', async (req, res) => {
       action: 'update',
       entity: 'PaymentPlan',
       entityId: paymentPlan._id,
-      description: `${installmentNumber}. taksit ödendi (${amount} TL)${overpaymentNote}`,
+      description: `${req.body.createdBy || 'System'} tarafından ${paymentPlan.student.firstName} ${paymentPlan.student.lastName} için ${installmentNumber}. taksit ödendi (${amount} TL)${overpaymentNote}`,
+      metadata: {
+        studentName: `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}`,
+        installmentNumber,
+        amount,
+        cashRegisterId
+      },
       institution: paymentPlan.institution,
       season: paymentPlan.season
     });
@@ -1137,12 +1159,20 @@ router.delete('/:id', async (req, res) => {
     await PaymentPlan.findByIdAndDelete(req.params.id);
 
     // Log activity
+    const studentForDeleteLog = paymentPlan.student ? await Student.findById(paymentPlan.student).select('firstName lastName') : null;
+    const ppDeleteStudentName = studentForDeleteLog ? `${studentForDeleteLog.firstName} ${studentForDeleteLog.lastName}` : 'Bilinmeyen Öğrenci';
+
     await ActivityLog.create({
       user: req.body?.deletedBy || 'System',
       action: 'delete',
       entity: 'PaymentPlan',
       entityId: paymentPlan._id,
-      description: `Ödeme planı ve ilgili kayıtlar silindi`,
+      description: `${req.body?.deletedBy || 'System'} tarafından ${ppDeleteStudentName} için ödeme planı ve ilgili ${relatedPayments.length} ödeme kaydı silindi`,
+      metadata: {
+        studentName: ppDeleteStudentName,
+        deletedPaymentsCount: relatedPayments.length,
+        planAmount: paymentPlan.discountedAmount
+      },
       institution: paymentPlan.institution,
       season: paymentPlan.season
     });
@@ -1291,7 +1321,13 @@ router.post('/:id/refund-installment', async (req, res) => {
       action: 'refund',
       entity: 'PaymentPlan',
       entityId: paymentPlan._id,
-      description: `${installmentNumber}. taksit iade edildi (₺${refundAmount})${refundReason ? ' - Sebep: ' + refundReason : ''}`,
+      description: `${createdBy || 'System'} tarafından ${paymentPlan.student.firstName} ${paymentPlan.student.lastName} için ${installmentNumber}. taksit iade edildi (₺${refundAmount})${refundReason ? ' - Sebep: ' + refundReason : ''}`,
+      metadata: {
+        studentName: `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}`,
+        installmentNumber,
+        refundAmount,
+        refundReason
+      },
       institution: paymentPlan.institution,
       season: paymentPlan.season
     });
@@ -1376,12 +1412,15 @@ router.put('/:id/installment/:installmentNumber/payment-dates', async (req, res)
     }
 
     // Log activity
+    const ppForDatesLog = await PaymentPlan.findById(req.params.id).populate('student', 'firstName lastName');
+    const ppDatesStudentName = ppForDatesLog?.student ? `${ppForDatesLog.student.firstName} ${ppForDatesLog.student.lastName}` : '';
+
     await ActivityLog.create({
       user: updatedBy || 'System',
       action: 'update',
       entity: 'PaymentPlan',
       entityId: paymentPlan._id,
-      description: `${installmentNumber}. taksit ödeme tarihleri güncellendi`,
+      description: `${updatedBy || 'System'} tarafından ${ppDatesStudentName ? ppDatesStudentName + ' için ' : ''}${installmentNumber}. taksit ödeme tarihleri güncellendi`,
       institution: paymentPlan.institution,
       season: paymentPlan.season
     });
