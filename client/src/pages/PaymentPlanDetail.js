@@ -82,6 +82,7 @@ const PaymentPlanDetail = () => {
   });
   const [settings, setSettings] = useState(null);
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [defaultIncomeCashRegister, setDefaultIncomeCashRegister] = useState(null);
   const [notificationDialog, setNotificationDialog] = useState(false);
   const [emailDialog, setEmailDialog] = useState({
     open: false,
@@ -260,7 +261,19 @@ const PaymentPlanDetail = () => {
         params: { institution: institutionId }
       });
 
-      setCashRegisters(response.data);
+      // Filter out archived cash registers
+      const activeCashRegisters = response.data.filter(r => r.isActive !== false);
+      setCashRegisters(activeCashRegisters);
+
+      // Load default income cash register
+      try {
+        const defaultsRes = await api.get(`/cash-registers/defaults/${institutionId}`);
+        if (defaultsRes.data.defaultIncomeCashRegister?._id) {
+          setDefaultIncomeCashRegister(defaultsRes.data.defaultIncomeCashRegister._id);
+        }
+      } catch (err) {
+        console.error('Error loading default income cash register:', err);
+      }
     } catch (error) {
       console.error('Cash registers load error:', error);
     }
@@ -1344,6 +1357,7 @@ Fofora Tiyatro`;
         installment={paymentDialog.installment}
         paymentPlan={paymentPlan}
         cashRegisters={cashRegisters}
+        defaultIncomeCashRegister={defaultIncomeCashRegister}
         settings={settings}
         onSubmit={handlePayInstallment}
       />

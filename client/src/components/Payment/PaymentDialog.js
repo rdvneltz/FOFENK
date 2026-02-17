@@ -31,7 +31,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { tr } from 'date-fns/locale';
 
-const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters, settings, onSubmit }) => {
+const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters, defaultIncomeCashRegister, settings, onSubmit }) => {
   const [formData, setFormData] = useState({
     amount: '',
     cashRegisterId: '',
@@ -61,16 +61,26 @@ const PaymentDialog = ({ open, onClose, installment, paymentPlan, cashRegisters,
     if (installment) {
       // Default amount is remaining amount (for partial payments support)
       const remainingAmount = (installment.amount || 0) - (installment.paidAmount || 0);
+
+      // Use default income cash register if available, otherwise fall back to first
+      const activeCashRegisters = cashRegisters.filter(r => r.isActive !== false);
+      let defaultCashRegisterId = '';
+      if (defaultIncomeCashRegister && activeCashRegisters.find(r => r._id === defaultIncomeCashRegister)) {
+        defaultCashRegisterId = defaultIncomeCashRegister;
+      } else if (activeCashRegisters.length > 0) {
+        defaultCashRegisterId = activeCashRegisters[0]._id;
+      }
+
       setFormData({
         amount: remainingAmount.toString(),
-        cashRegisterId: cashRegisters.length > 0 ? cashRegisters[0]._id : '',
+        cashRegisterId: defaultCashRegisterId,
         isInvoiced: installment.isInvoiced || false,
         paymentDate: new Date(),
         customVatRate: settings?.vatRate?.toString() || '10', // Default from settings
       });
       setOverpaymentOption('next');
     }
-  }, [installment, cashRegisters, settings]);
+  }, [installment, cashRegisters, defaultIncomeCashRegister, settings]);
 
   // Calculate overpayment and remaining installments
   const overpaymentInfo = useMemo(() => {
