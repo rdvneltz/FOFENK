@@ -53,6 +53,7 @@ import {
   FileDownload,
   History,
   EventNote,
+  Star,
 } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
@@ -115,6 +116,7 @@ const Expenses = () => {
   const [pendingExpenses, setPendingExpenses] = useState({ overdue: [], thisWeek: [], upcoming: [], totals: {} });
   const [recurringExpenses, setRecurringExpenses] = useState([]);
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [defaultExpenseCashRegister, setDefaultExpenseCashRegister] = useState(null);
   const [instructors, setInstructors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -233,12 +235,31 @@ const Expenses = () => {
       ));
       setPendingExpenses(pendingRes.data);
       setRecurringExpenses(recurringRes.data);
-      setCashRegisters(cashRes.data);
+
+      // Filter out archived cash registers
+      const activeCashRegisters = cashRes.data.filter(r => r.isActive !== false);
+      setCashRegisters(activeCashRegisters);
       setInstructors(instructorsRes.data);
 
-      if (cashRes.data.length > 0) {
-        setFormData(prev => ({ ...prev, cashRegister: cashRes.data[0]._id }));
-        setRecurringFormData(prev => ({ ...prev, defaultCashRegister: cashRes.data[0]._id }));
+      // Load default expense cash register
+      let defaultCashRegisterId = null;
+      try {
+        const defaultsRes = await api.get(`/cash-registers/defaults/${institution._id}`);
+        if (defaultsRes.data.defaultExpenseCashRegister?._id) {
+          defaultCashRegisterId = defaultsRes.data.defaultExpenseCashRegister._id;
+          setDefaultExpenseCashRegister(defaultCashRegisterId);
+        }
+      } catch (err) {
+        console.error('Error loading default expense cash register:', err);
+      }
+
+      // Set cash register - prefer default, fallback to first available
+      if (defaultCashRegisterId && activeCashRegisters.find(r => r._id === defaultCashRegisterId)) {
+        setFormData(prev => ({ ...prev, cashRegister: defaultCashRegisterId }));
+        setRecurringFormData(prev => ({ ...prev, defaultCashRegister: defaultCashRegisterId }));
+      } else if (activeCashRegisters.length > 0) {
+        setFormData(prev => ({ ...prev, cashRegister: activeCashRegisters[0]._id }));
+        setRecurringFormData(prev => ({ ...prev, defaultCashRegister: activeCashRegisters[0]._id }));
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -266,13 +287,17 @@ const Expenses = () => {
       });
     } else {
       setSelectedExpense(null);
+      // Use default expense cash register if available
+      const defaultCashReg = defaultExpenseCashRegister && cashRegisters.find(r => r._id === defaultExpenseCashRegister)
+        ? defaultExpenseCashRegister
+        : cashRegisters[0]?._id || '';
       setFormData({
         description: '',
         amount: '',
         category: '',
         expenseDate: new Date().toISOString().split('T')[0],
         dueDate: '',
-        cashRegister: cashRegisters[0]?._id || '',
+        cashRegister: defaultCashReg,
         instructor: '',
         status: 'paid',
         showInCalendar: false,
@@ -425,9 +450,14 @@ const Expenses = () => {
   // === Pay Dialog Functions ===
   const handleOpenPayDialog = (expense) => {
     setSelectedExpense(expense);
+    // Priority: recurring expense default > global default > first available
+    const cashRegisterId = expense.recurringExpense?.defaultCashRegister
+      || (defaultExpenseCashRegister && cashRegisters.find(r => r._id === defaultExpenseCashRegister) ? defaultExpenseCashRegister : null)
+      || cashRegisters[0]?._id
+      || '';
     setPayFormData({
       amount: expense.amount || expense.estimatedAmount || '',
-      cashRegisterId: expense.recurringExpense?.defaultCashRegister || cashRegisters[0]?._id || '',
+      cashRegisterId,
       notes: '',
       expenseDate: new Date().toISOString().split('T')[0],
     });
@@ -1198,7 +1228,18 @@ const Expenses = () => {
                         label="Kasa"
                       >
                         {cashRegisters.map((reg) => (
-                          <MenuItem key={reg._id} value={reg._id}>{reg.name}</MenuItem>
+                          <MenuItem key={reg._id} value={reg._id}>
+                            {reg.name}
+                            {defaultExpenseCashRegister === reg._id && (
+                              <Chip
+                                label="Varsayılan"
+                                size="small"
+                                color="error"
+                                icon={<Star sx={{ fontSize: 12 }} />}
+                                sx={{ ml: 1, height: 20 }}
+                              />
+                            )}
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
@@ -1422,7 +1463,18 @@ const Expenses = () => {
                 >
                   <MenuItem value="">Seçilmedi</MenuItem>
                   {cashRegisters.map((reg) => (
-                    <MenuItem key={reg._id} value={reg._id}>{reg.name}</MenuItem>
+                    <MenuItem key={reg._id} value={reg._id}>
+                      {reg.name}
+                      {defaultExpenseCashRegister === reg._id && (
+                        <Chip
+                          label="Sistem Vars."
+                          size="small"
+                          color="error"
+                          icon={<Star sx={{ fontSize: 12 }} />}
+                          sx={{ ml: 1, height: 20 }}
+                        />
+                      )}
+                    </MenuItem>
                   ))}
                 </Select>
               </FormControl>
@@ -1488,7 +1540,18 @@ const Expenses = () => {
                   label="Kasa"
                 >
                   {cashRegisters.map((reg) => (
-                    <MenuItem key={reg._id} value={reg._id}>{reg.name}</MenuItem>
+                    <MenuItem key={reg._id} value={reg._id}>
+                      {reg.name}
+                      {defaultExpenseCashRegister === reg._id && (
+                        <Chip
+                          label="Varsayılan"
+                          size="small"
+                          color="error"
+                          icon={<Star sx={{ fontSize: 12 }} />}
+                          sx={{ ml: 1, height: 20 }}
+                        />
+                      )}
+                    </MenuItem>
                   ))}
                 </Select>
               </FormControl>

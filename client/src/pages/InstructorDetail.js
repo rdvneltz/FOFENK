@@ -148,7 +148,8 @@ const InstructorDetail = () => {
       setPayments(detailsRes.data.payments || []);
       setSalaryAccruals(detailsRes.data.salaryAccruals || []);
       setStatistics(detailsRes.data.statistics || {});
-      setCashRegisters(cashRes.data);
+      // Filter out archived cash registers
+      setCashRegisters((cashRes.data || []).filter(r => r.isActive !== false));
 
       // Use salary expenses from API response (includes recurring and overdue)
       const salaryData = detailsRes.data.salaryExpenses || { recurring: null, overdue: [] };

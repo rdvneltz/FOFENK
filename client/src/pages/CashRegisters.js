@@ -32,7 +32,7 @@ import {
   Divider,
   LinearProgress,
 } from '@mui/material';
-import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz, Receipt, Delete, Download, ExpandMore, TrendingUp, TrendingDown, Wallet, AttachMoney } from '@mui/icons-material';
+import { Add, Edit, AccountBalance, AddCircle, RemoveCircle, SwapHoriz, Receipt, Delete, Download, ExpandMore, TrendingUp, TrendingDown, Wallet, AttachMoney, Archive, Unarchive, Star, StarBorder, Visibility, VisibilityOff } from '@mui/icons-material';
 import { useApp } from '../context/AppContext';
 import api from '../api';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
@@ -87,6 +87,15 @@ const CashRegisters = () => {
   // Expanded cash register for accordion
   const [expandedCashRegister, setExpandedCashRegister] = useState(null);
 
+  // Show archived cash registers
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Default cash registers
+  const [defaultCashRegisters, setDefaultCashRegisters] = useState({
+    income: null,
+    expense: null
+  });
+
   // Summary data
   const [summaryData, setSummaryData] = useState({
     totalIncome: 0,
@@ -109,20 +118,42 @@ const CashRegisters = () => {
     if (institution) {
       loadCashRegisters();
       loadSummaryData();
+      loadDefaultCashRegisters();
     }
   }, [institution, season]);
+
+  useEffect(() => {
+    if (institution) {
+      loadCashRegisters();
+    }
+  }, [showArchived]);
 
   const loadCashRegisters = async () => {
     try {
       setLoading(true);
       const response = await api.get('/cash-registers', {
-        params: { institution: institution._id },
+        params: {
+          institution: institution._id,
+          includeArchived: showArchived ? 'true' : 'false'
+        },
       });
       setCashRegisters(response.data);
     } catch (error) {
       console.error('Error loading cash registers:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadDefaultCashRegisters = async () => {
+    try {
+      const response = await api.get(`/cash-registers/defaults/${institution._id}`);
+      setDefaultCashRegisters({
+        income: response.data.defaultIncomeCashRegister?._id || null,
+        expense: response.data.defaultExpenseCashRegister?._id || null
+      });
+    } catch (error) {
+      console.error('Error loading default cash registers:', error);
     }
   };
 
@@ -213,6 +244,51 @@ const CashRegisters = () => {
   // Handle accordion expansion
   const handleAccordionChange = (registerId) => (event, isExpanded) => {
     setExpandedCashRegister(isExpanded ? registerId : null);
+  };
+
+  // Handle archive/unarchive
+  const handleArchive = async (cashRegister, isActive) => {
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      await api.patch(`/cash-registers/${cashRegister._id}/archive`, {
+        isActive,
+        updatedBy: currentUser?.username
+      });
+
+      await loadCashRegisters();
+      await loadDefaultCashRegisters();
+      setSuccess(`Kasa başarıyla ${isActive ? 'aktifleştirildi' : 'arşivlendi'}`);
+    } catch (error) {
+      setError(error.response?.data?.message || 'Bir hata oluştu');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle set default cash register
+  const handleSetDefault = async (cashRegisterId, type) => {
+    try {
+      setLoading(true);
+      setError('');
+      setSuccess('');
+
+      await api.post('/cash-registers/set-default', {
+        institutionId: institution._id,
+        cashRegisterId: cashRegisterId || null,
+        type,
+        updatedBy: currentUser?.username
+      });
+
+      await loadDefaultCashRegisters();
+      setSuccess(`Varsayılan ${type === 'income' ? 'gelir' : 'gider'} kasası güncellendi`);
+    } catch (error) {
+      setError(error.response?.data?.message || 'Bir hata oluştu');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Show summary details
@@ -560,13 +636,83 @@ const CashRegisters = () => {
         </Grid>
       </Grid>
 
+      {/* Default Cash Register Selection */}
+      <Paper sx={{ mb: 2, p: 2 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          <Star sx={{ mr: 1, verticalAlign: 'middle', color: 'warning.main' }} />
+          Varsayılan Kasalar
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Ödeme alırken ve gider kaydederken otomatik seçilecek kasaları belirleyin.
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Varsayılan Gelir Kasası</InputLabel>
+              <Select
+                value={defaultCashRegisters.income || ''}
+                onChange={(e) => handleSetDefault(e.target.value, 'income')}
+                label="Varsayılan Gelir Kasası"
+              >
+                <MenuItem value="">
+                  <em>Seçilmedi</em>
+                </MenuItem>
+                {cashRegisters
+                  .filter(r => r.isActive !== false)
+                  .map((register) => (
+                    <MenuItem key={register._id} value={register._id}>
+                      {register.name}
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+            <Typography variant="caption" color="text.secondary">
+              Ödeme alırken bu kasa otomatik seçilir
+            </Typography>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Varsayılan Gider Kasası</InputLabel>
+              <Select
+                value={defaultCashRegisters.expense || ''}
+                onChange={(e) => handleSetDefault(e.target.value, 'expense')}
+                label="Varsayılan Gider Kasası"
+              >
+                <MenuItem value="">
+                  <em>Seçilmedi</em>
+                </MenuItem>
+                {cashRegisters
+                  .filter(r => r.isActive !== false)
+                  .map((register) => (
+                    <MenuItem key={register._id} value={register._id}>
+                      {register.name}
+                    </MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+            <Typography variant="caption" color="text.secondary">
+              Gider kaydederken bu kasa otomatik seçilir
+            </Typography>
+          </Grid>
+        </Grid>
+      </Paper>
+
       {/* Cash Registers Section */}
       <Paper sx={{ mb: 2 }}>
-        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider' }}>
+        <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">
             <AccountBalance sx={{ mr: 1, verticalAlign: 'middle' }} />
             Kasalar ({cashRegisters.length})
           </Typography>
+          <Button
+            variant="text"
+            size="small"
+            startIcon={showArchived ? <VisibilityOff /> : <Visibility />}
+            onClick={() => setShowArchived(!showArchived)}
+            color={showArchived ? 'warning' : 'inherit'}
+          >
+            {showArchived ? 'Arşivlenmişleri Gizle' : 'Arşivlenmişleri Göster'}
+          </Button>
         </Box>
 
         {cashRegisters.length === 0 ? (
@@ -600,17 +746,30 @@ const CashRegisters = () => {
                     px: 2,
                     '&:hover': { bgcolor: 'action.hover' },
                     borderLeft: 4,
-                    borderColor: register.balance >= 0 ? 'success.main' : 'error.main'
+                    borderColor: register.isActive === false ? 'grey.400' : (register.balance >= 0 ? 'success.main' : 'error.main'),
+                    opacity: register.isActive === false ? 0.7 : 1,
+                    bgcolor: register.isActive === false ? 'grey.100' : 'inherit'
                   }}
                 >
                   <Grid container alignItems="center" spacing={2}>
                     <Grid item xs={12} sm={4}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <AccountBalance color={register.balance >= 0 ? 'success' : 'error'} />
+                        <AccountBalance color={register.isActive === false ? 'disabled' : (register.balance >= 0 ? 'success' : 'error')} />
                         <Box>
-                          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
-                            {register.name}
-                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }}>
+                              {register.name}
+                            </Typography>
+                            {register.isActive === false && (
+                              <Chip label="Arşivlenmiş" size="small" color="default" sx={{ height: 20 }} />
+                            )}
+                            {defaultCashRegisters.income === register._id && (
+                              <Chip label="Varsayılan Gelir" size="small" color="success" sx={{ height: 20 }} icon={<Star sx={{ fontSize: 14 }} />} />
+                            )}
+                            {defaultCashRegisters.expense === register._id && (
+                              <Chip label="Varsayılan Gider" size="small" color="error" sx={{ height: 20 }} icon={<Star sx={{ fontSize: 14 }} />} />
+                            )}
+                          </Box>
                           {register.description && (
                             <Typography variant="caption" color="text.secondary">
                               {register.description}
@@ -658,7 +817,7 @@ const CashRegisters = () => {
                     </Grid>
                   </Grid>
                 </AccordionSummary>
-                <AccordionDetails sx={{ bgcolor: 'grey.50', p: 2 }}>
+                <AccordionDetails sx={{ bgcolor: register.isActive === false ? 'grey.200' : 'grey.50', p: 2 }}>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button
                       variant="contained"
@@ -668,24 +827,28 @@ const CashRegisters = () => {
                     >
                       Hareketler
                     </Button>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      color="success"
-                      startIcon={<AddCircle />}
-                      onClick={() => handleAdjustBalance(register, 'add')}
-                    >
-                      Bakiye Ekle
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      color="error"
-                      startIcon={<RemoveCircle />}
-                      onClick={() => handleAdjustBalance(register, 'subtract')}
-                    >
-                      Bakiye Çıkar
-                    </Button>
+                    {register.isActive !== false && (
+                      <>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="success"
+                          startIcon={<AddCircle />}
+                          onClick={() => handleAdjustBalance(register, 'add')}
+                        >
+                          Bakiye Ekle
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="error"
+                          startIcon={<RemoveCircle />}
+                          onClick={() => handleAdjustBalance(register, 'subtract')}
+                        >
+                          Bakiye Çıkar
+                        </Button>
+                      </>
+                    )}
                     <Button
                       variant="outlined"
                       size="small"
@@ -694,6 +857,17 @@ const CashRegisters = () => {
                     >
                       Düzenle
                     </Button>
+                    <Tooltip title={register.isActive === false ? 'Kasayı tekrar aktifleştir' : 'Kasayı arşivle (işlemleri korunur)'}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color={register.isActive === false ? 'success' : 'warning'}
+                        startIcon={register.isActive === false ? <Unarchive /> : <Archive />}
+                        onClick={() => handleArchive(register, register.isActive === false)}
+                      >
+                        {register.isActive === false ? 'Aktifleştir' : 'Arşivle'}
+                      </Button>
+                    </Tooltip>
                   </Box>
                 </AccordionDetails>
               </Accordion>

@@ -22,7 +22,18 @@ const institutionSchema = new mongoose.Schema({
     default: Date.now
   },
   createdBy: String,
-  updatedBy: String
+  updatedBy: String,
+  // Varsayılan kasalar
+  defaultIncomeCashRegister: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CashRegister',
+    default: null
+  },
+  defaultExpenseCashRegister: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CashRegister',
+    default: null
+  }
 });
 
 institutionSchema.pre('save', function(next) {

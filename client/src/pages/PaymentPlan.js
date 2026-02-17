@@ -182,10 +182,27 @@ const PaymentPlan = () => {
 
       setStudent(studentRes.data);
       setEnrollments(enrollmentsRes.data || []);
-      setCashRegisters(cashRes.data || []);
 
-      if (cashRes.data && cashRes.data.length > 0) {
-        setSelectedCashRegister(cashRes.data[0]._id);
+      // Filter out archived cash registers
+      const activeCashRegisters = (cashRes.data || []).filter(r => r.isActive !== false);
+      setCashRegisters(activeCashRegisters);
+
+      // Load default income cash register
+      let defaultCashRegisterId = null;
+      try {
+        const defaultsRes = await api.get(`/cash-registers/defaults/${institution._id}`);
+        if (defaultsRes.data.defaultIncomeCashRegister?._id) {
+          defaultCashRegisterId = defaultsRes.data.defaultIncomeCashRegister._id;
+        }
+      } catch (err) {
+        console.error('Error loading default cash register:', err);
+      }
+
+      // Set cash register - prefer default, fallback to first available
+      if (defaultCashRegisterId && activeCashRegisters.find(r => r._id === defaultCashRegisterId)) {
+        setSelectedCashRegister(defaultCashRegisterId);
+      } else if (activeCashRegisters.length > 0) {
+        setSelectedCashRegister(activeCashRegisters[0]._id);
       }
 
       if (settingsRes.data && settingsRes.data.length > 0) {
