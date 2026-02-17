@@ -108,7 +108,8 @@ const Calendar = () => {
       const response = await api.get('/cash-registers', {
         params: { institution: institution._id },
       });
-      setCashRegisters(response.data);
+      // Filter out archived cash registers
+      setCashRegisters((response.data || []).filter(r => r.isActive !== false));
     } catch (error) {
       console.error('Error loading cash registers:', error);
     }

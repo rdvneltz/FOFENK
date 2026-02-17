@@ -13,9 +13,15 @@ router.get('/', async (req, res) => {
   try {
     // Accept both 'institution' and 'institutionId' parameters for compatibility
     const institutionId = req.query.institution || req.query.institutionId;
+    const includeArchived = req.query.includeArchived === 'true';
     const filter = {};
 
     if (institutionId) filter.institution = institutionId;
+
+    // By default, only return active cash registers unless includeArchived is true
+    if (!includeArchived) {
+      filter.isActive = true;
+    }
 
     const cashRegisters = await CashRegister.find(filter)
       .populate('institution', 'name')
@@ -719,6 +725,156 @@ router.post('/migrate-old-transfers', async (req, res) => {
     });
   } catch (error) {
     console.error('Error migrating old transfers:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Archive/Unarchive cash register
+router.patch('/:id/archive', async (req, res) => {
+  try {
+    const { isActive, updatedBy } = req.body;
+    const cashRegister = await CashRegister.findById(req.params.id);
+
+    if (!cashRegister) {
+      return res.status(404).json({ message: 'Kasa bulunamadı' });
+    }
+
+    cashRegister.isActive = isActive;
+    cashRegister.updatedBy = updatedBy;
+    await cashRegister.save();
+
+    // If archiving, check if this was a default cash register and clear it
+    if (!isActive) {
+      const Institution = require('../models/Institution');
+      await Institution.updateMany(
+        {
+          $or: [
+            { defaultIncomeCashRegister: cashRegister._id },
+            { defaultExpenseCashRegister: cashRegister._id }
+          ]
+        },
+        {
+          $set: {
+            defaultIncomeCashRegister: null,
+            defaultExpenseCashRegister: null
+          }
+        }
+      );
+    }
+
+    // Log activity
+    await ActivityLog.create({
+      user: updatedBy || 'System',
+      action: isActive ? 'unarchive' : 'archive',
+      entity: 'CashRegister',
+      entityId: cashRegister._id,
+      description: `${updatedBy || 'System'} tarafından kasa ${isActive ? 'aktifleştirildi' : 'arşivlendi'}: ${cashRegister.name}`,
+      metadata: { name: cashRegister.name, isActive },
+      institution: cashRegister.institution
+    });
+
+    const populatedCashRegister = await CashRegister.findById(cashRegister._id)
+      .populate('institution', 'name');
+
+    res.json(populatedCashRegister);
+  } catch (error) {
+    console.error('Error archiving cash register:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Set default cash register for income or expense
+router.post('/set-default', async (req, res) => {
+  try {
+    const { institutionId, cashRegisterId, type, updatedBy } = req.body;
+
+    if (!institutionId || !type) {
+      return res.status(400).json({ message: 'Kurum ID ve tür gereklidir' });
+    }
+
+    if (!['income', 'expense'].includes(type)) {
+      return res.status(400).json({ message: 'Geçersiz tür. income veya expense olmalı' });
+    }
+
+    const Institution = require('../models/Institution');
+    const institution = await Institution.findById(institutionId);
+
+    if (!institution) {
+      return res.status(404).json({ message: 'Kurum bulunamadı' });
+    }
+
+    // If cashRegisterId is provided, verify it exists and is active
+    if (cashRegisterId) {
+      const cashRegister = await CashRegister.findById(cashRegisterId);
+      if (!cashRegister) {
+        return res.status(404).json({ message: 'Kasa bulunamadı' });
+      }
+      if (!cashRegister.isActive) {
+        return res.status(400).json({ message: 'Arşivlenmiş bir kasa varsayılan olarak seçilemez' });
+      }
+    }
+
+    // Update the appropriate default field
+    if (type === 'income') {
+      institution.defaultIncomeCashRegister = cashRegisterId || null;
+    } else {
+      institution.defaultExpenseCashRegister = cashRegisterId || null;
+    }
+
+    institution.updatedBy = updatedBy;
+    await institution.save();
+
+    // Get cash register name for logging
+    let cashRegisterName = 'Yok';
+    if (cashRegisterId) {
+      const cr = await CashRegister.findById(cashRegisterId);
+      cashRegisterName = cr?.name || cashRegisterId;
+    }
+
+    // Log activity
+    await ActivityLog.create({
+      user: updatedBy || 'System',
+      action: 'update',
+      entity: 'Institution',
+      entityId: institution._id,
+      description: `${updatedBy || 'System'} tarafından varsayılan ${type === 'income' ? 'gelir' : 'gider'} kasası değiştirildi: ${cashRegisterName}`,
+      metadata: { type, cashRegisterId, cashRegisterName },
+      institution: institution._id
+    });
+
+    // Return updated institution with populated cash registers
+    const populatedInstitution = await Institution.findById(institution._id)
+      .populate('defaultIncomeCashRegister', 'name')
+      .populate('defaultExpenseCashRegister', 'name');
+
+    res.json({
+      message: `Varsayılan ${type === 'income' ? 'gelir' : 'gider'} kasası güncellendi`,
+      institution: populatedInstitution
+    });
+  } catch (error) {
+    console.error('Error setting default cash register:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get default cash registers for an institution
+router.get('/defaults/:institutionId', async (req, res) => {
+  try {
+    const Institution = require('../models/Institution');
+    const institution = await Institution.findById(req.params.institutionId)
+      .populate('defaultIncomeCashRegister', 'name isActive')
+      .populate('defaultExpenseCashRegister', 'name isActive');
+
+    if (!institution) {
+      return res.status(404).json({ message: 'Kurum bulunamadı' });
+    }
+
+    res.json({
+      defaultIncomeCashRegister: institution.defaultIncomeCashRegister,
+      defaultExpenseCashRegister: institution.defaultExpenseCashRegister
+    });
+  } catch (error) {
+    console.error('Error getting default cash registers:', error);
     res.status(500).json({ message: error.message });
   }
 });

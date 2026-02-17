@@ -13,10 +13,14 @@ import {
   Grid,
   InputAdornment,
   Alert,
+  Chip,
 } from '@mui/material';
+import { Star } from '@mui/icons-material';
 import api from '../../api';
+import { useApp } from '../../context/AppContext';
 
 const PaymentForm = ({ open, onClose, onSuccess, studentId, paymentPlanId }) => {
+  const { institution } = useApp();
   const [formData, setFormData] = useState({
     amount: '',
     paymentMethod: 'cash',
@@ -25,6 +29,7 @@ const PaymentForm = ({ open, onClose, onSuccess, studentId, paymentPlanId }) => 
     receiptNumber: '',
   });
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [defaultIncomeCashRegister, setDefaultIncomeCashRegister] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -36,10 +41,30 @@ const PaymentForm = ({ open, onClose, onSuccess, studentId, paymentPlanId }) => 
 
   const loadCashRegisters = async () => {
     try {
+      // Load active cash registers only
       const response = await api.get('/cash-registers');
-      setCashRegisters(response.data);
-      if (response.data.length > 0) {
-        setFormData((prev) => ({ ...prev, cashRegister: response.data[0]._id }));
+      const activeCashRegisters = response.data.filter(r => r.isActive !== false);
+      setCashRegisters(activeCashRegisters);
+
+      // Load default cash register for income
+      let defaultCashRegisterId = null;
+      if (institution?._id) {
+        try {
+          const defaultsResponse = await api.get(`/cash-registers/defaults/${institution._id}`);
+          if (defaultsResponse.data.defaultIncomeCashRegister?._id) {
+            defaultCashRegisterId = defaultsResponse.data.defaultIncomeCashRegister._id;
+            setDefaultIncomeCashRegister(defaultCashRegisterId);
+          }
+        } catch (err) {
+          console.error('Error loading default cash register:', err);
+        }
+      }
+
+      // Set the cash register - prefer default, fallback to first available
+      if (defaultCashRegisterId && activeCashRegisters.find(r => r._id === defaultCashRegisterId)) {
+        setFormData((prev) => ({ ...prev, cashRegister: defaultCashRegisterId }));
+      } else if (activeCashRegisters.length > 0) {
+        setFormData((prev) => ({ ...prev, cashRegister: activeCashRegisters[0]._id }));
       }
     } catch (error) {
       console.error('Error loading cash registers:', error);
@@ -136,6 +161,15 @@ const PaymentForm = ({ open, onClose, onSuccess, studentId, paymentPlanId }) => 
                   {cashRegisters.map((register) => (
                     <MenuItem key={register._id} value={register._id}>
                       {register.name}
+                      {defaultIncomeCashRegister === register._id && (
+                        <Chip
+                          label="Varsayılan"
+                          size="small"
+                          color="success"
+                          icon={<Star sx={{ fontSize: 12 }} />}
+                          sx={{ ml: 1, height: 20 }}
+                        />
+                      )}
                     </MenuItem>
                   ))}
                 </Select>
