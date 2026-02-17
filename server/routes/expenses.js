@@ -112,13 +112,21 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Log activity
+    // Get cash register name for log
+    const cashRegForLog = newExpense.cashRegister ? await CashRegister.findById(newExpense.cashRegister).select('name') : null;
+
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
       action: 'create',
       entity: 'Expense',
       entityId: newExpense._id,
-      description: `Yeni gider kaydı: ${newExpense.amount} TL - ${newExpense.description}`,
+      description: `${req.body.createdBy || 'System'} tarafından yeni gider kaydı oluşturuldu: ${newExpense.amount} TL - ${newExpense.description}${cashRegForLog ? ' (' + cashRegForLog.name + ' kasasından)' : ''}`,
+      metadata: {
+        amount: newExpense.amount,
+        category: newExpense.category,
+        description: newExpense.description,
+        cashRegisterName: cashRegForLog?.name
+      },
       institution: newExpense.institution,
       season: newExpense.season
     });
@@ -205,27 +213,17 @@ router.put('/:id', async (req, res) => {
     }
 
     // Log activity with old and new values for audit trail
+    const cashRegNameForUpdate = expense.cashRegister ? expense.cashRegister.name : '';
+
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'Expense',
       entityId: expense._id,
-      description: `Gider güncellendi: ${oldExpense.amount} TL → ${expense.amount} TL - ${expense.description}`,
+      description: `${req.body.updatedBy || 'System'} tarafından gider güncellendi: ${oldExpense.amount} TL → ${expense.amount} TL - ${expense.description}${cashRegNameForUpdate ? ' (' + cashRegNameForUpdate + ' kasası)' : ''}`,
       metadata: {
-        oldValues: {
-          amount: oldExpense.amount,
-          category: oldExpense.category,
-          description: oldExpense.description,
-          cashRegister: oldExpense.cashRegister,
-          instructor: oldExpense.instructor
-        },
-        newValues: {
-          amount: expense.amount,
-          category: expense.category,
-          description: expense.description,
-          cashRegister: expense.cashRegister?._id,
-          instructor: expense.instructor?._id
-        }
+        oldValues: { amount: oldExpense.amount, category: oldExpense.category, description: oldExpense.description, cashRegister: oldExpense.cashRegister, instructor: oldExpense.instructor },
+        newValues: { amount: expense.amount, category: expense.category, description: expense.description, cashRegister: expense.cashRegister?._id, instructor: expense.instructor?._id }
       },
       institution: expense.institution._id,
       season: expense.season._id
@@ -275,11 +273,8 @@ router.patch('/:id/amount', async (req, res) => {
       action: 'update',
       entity: 'Expense',
       entityId: expense._id,
-      description: `Bekleyen gider tutarı güncellendi: ${oldAmount} TL → ${cleanAmount} TL - ${expense.description}`,
-      metadata: {
-        oldAmount,
-        newAmount: cleanAmount
-      },
+      description: `${updatedBy || 'System'} tarafından bekleyen gider tutarı güncellendi: ${oldAmount} TL → ${cleanAmount} TL - ${expense.description}`,
+      metadata: { oldAmount, newAmount: cleanAmount },
       institution: expense.institution,
       season: expense.season
     });
@@ -316,12 +311,20 @@ router.delete('/:id', async (req, res) => {
     await Expense.findByIdAndDelete(req.params.id);
 
     // Log activity
+    const cashRegForDeleteLog = expense.cashRegister ? await CashRegister.findById(expense.cashRegister).select('name') : null;
+
     await ActivityLog.create({
       user: req.body?.deletedBy || 'System',
       action: 'delete',
       entity: 'Expense',
       entityId: expense._id,
-      description: `Gider silindi: ${expense.amount} TL - ${expense.description}`,
+      description: `${req.body?.deletedBy || 'System'} tarafından gider silindi: ${expense.amount} TL - ${expense.description}${cashRegForDeleteLog ? ' (' + cashRegForDeleteLog.name + ' kasasından)' : ''}`,
+      metadata: {
+        amount: expense.amount,
+        category: expense.category,
+        description: expense.description,
+        cashRegisterName: cashRegForDeleteLog?.name
+      },
       institution: expense.institution,
       season: expense.season
     });

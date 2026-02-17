@@ -129,9 +129,10 @@ const Dashboard = () => {
     if (currentUser?.role === 'superadmin') return true;
     return currentUser?.permissions?.[permission] !== false;
   };
-  const canSeeFinancials = hasPermission('canManagePayments') || hasPermission('canManageExpenses');
-  const canSeePayments = hasPermission('canManagePayments');
-  const canSeeExpenses = hasPermission('canManageExpenses');
+  const canSeeDashboardFinancials = hasPermission('canViewDashboardFinancials');
+  const canSeeFinancials = canSeeDashboardFinancials;
+  const canSeePayments = canSeeDashboardFinancials && hasPermission('canManagePayments');
+  const canSeeExpenses = canSeeDashboardFinancials && hasPermission('canManageExpenses');
 
   // State
   const [stats, setStats] = useState({

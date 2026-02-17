@@ -91,7 +91,7 @@ router.post('/', async (req, res) => {
       action: 'create',
       entity: 'User',
       entityId: newUser._id,
-      description: `Yeni kullanıcı oluşturuldu: ${newUser.fullName}`,
+      description: `${req.body.createdBy || 'System'} tarafından yeni kullanıcı oluşturuldu: ${newUser.fullName} (${newUser.role})`,
       institution: newUser.institution
     });
 
@@ -125,7 +125,7 @@ router.put('/:id', async (req, res) => {
       action: 'update',
       entity: 'User',
       entityId: user._id,
-      description: `Kullanıcı güncellendi: ${user.fullName}`,
+      description: `${req.body.updatedBy || 'System'} tarafından kullanıcı güncellendi: ${user.fullName}`,
       institution: user.institution
     });
 
@@ -153,7 +153,7 @@ router.delete('/:id', async (req, res) => {
       action: 'delete',
       entity: 'User',
       entityId: user._id,
-      description: `Kullanıcı pasif edildi: ${user.fullName}`,
+      description: `${req.body.deletedBy || 'System'} tarafından kullanıcı pasif edildi: ${user.fullName}`,
       institution: user.institution
     });
 
@@ -187,7 +187,7 @@ router.delete('/:id/permanent', async (req, res) => {
       action: 'delete',
       entity: 'User',
       entityId: req.params.id,
-      description: `Kullanıcı kalıcı olarak silindi: ${userName}`,
+      description: `${req.body.deletedBy || 'System'} tarafından kullanıcı kalıcı olarak silindi: ${userName}`,
       institution: userInstitution
     });
 

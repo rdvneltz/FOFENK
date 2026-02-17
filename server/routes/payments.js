@@ -107,13 +107,25 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Get student name for activity log
+    const studentForLog = newPayment.student ? await Student.findById(newPayment.student).select('firstName lastName') : null;
+    const studentNameForLog = studentForLog ? `${studentForLog.firstName} ${studentForLog.lastName}` : 'Bilinmeyen Öğrenci';
+    const cashRegForLog = newPayment.cashRegister ? await CashRegister.findById(newPayment.cashRegister).select('name') : null;
+    const cashRegNameForLog = cashRegForLog ? cashRegForLog.name : '';
+
     // Log activity
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
       action: 'create',
       entity: 'Payment',
       entityId: newPayment._id,
-      description: `Yeni ödeme kaydı: ${newPayment.amount} TL (${newPayment.paymentType})`,
+      description: `${req.body.createdBy || 'System'} tarafından ${studentNameForLog} için ${newPayment.amount} TL ödeme alındı (${newPayment.paymentType === 'cash' ? 'Nakit' : newPayment.paymentType === 'creditCard' ? 'Kredi Kartı' : newPayment.paymentType})${cashRegNameForLog ? ' → ' + cashRegNameForLog + ' kasası' : ''}`,
+      metadata: {
+        studentName: studentNameForLog,
+        amount: newPayment.amount,
+        paymentType: newPayment.paymentType,
+        cashRegisterName: cashRegNameForLog
+      },
       institution: newPayment.institution,
       season: newPayment.season
     });
@@ -198,25 +210,19 @@ router.put('/:id', async (req, res) => {
     }
 
     // Log activity with old and new values for audit trail
+    const studentName = payment.student ? `${payment.student.firstName} ${payment.student.lastName}` : 'Bilinmeyen Öğrenci';
+    const cashRegName = payment.cashRegister ? payment.cashRegister.name : '';
+
     await ActivityLog.create({
       user: req.body.updatedBy || 'System',
       action: 'update',
       entity: 'Payment',
       entityId: payment._id,
-      description: `Ödeme güncellendi: ${oldPayment.amount} TL → ${payment.amount} TL`,
+      description: `${req.body.updatedBy || 'System'} tarafından ${studentName} için ödeme güncellendi: ${oldPayment.amount} TL → ${payment.amount} TL${cashRegName ? ' (' + cashRegName + ' kasası)' : ''}`,
       metadata: {
-        oldValues: {
-          amount: oldPayment.amount,
-          paymentType: oldPayment.paymentType,
-          cashRegister: oldPayment.cashRegister,
-          student: oldPayment.student
-        },
-        newValues: {
-          amount: payment.amount,
-          paymentType: payment.paymentType,
-          cashRegister: payment.cashRegister?._id,
-          student: payment.student?._id
-        }
+        studentName,
+        oldValues: { amount: oldPayment.amount, paymentType: oldPayment.paymentType, cashRegister: oldPayment.cashRegister, student: oldPayment.student },
+        newValues: { amount: payment.amount, paymentType: payment.paymentType, cashRegister: payment.cashRegister?._id, student: payment.student?._id }
       },
       institution: payment.institution._id,
       season: payment.season._id
@@ -312,12 +318,20 @@ router.post('/:id/refund', async (req, res) => {
     await payment.save();
 
     // Log activity
+    const cashRegForRefund = await CashRegister.findById(refundCashRegisterId).select('name');
+
     await ActivityLog.create({
       user: req.body.createdBy || 'System',
       action: 'refund',
       entity: 'Payment',
       entityId: payment._id,
-      description: `Ödeme iade edildi: ${actualRefundAmount} TL`,
+      description: `${req.body.createdBy || 'System'} tarafından ${payment.student.firstName} ${payment.student.lastName} için ${actualRefundAmount} TL ödeme iade edildi${cashRegForRefund ? ' (' + cashRegForRefund.name + ' kasasından)' : ''}`,
+      metadata: {
+        studentName: `${payment.student.firstName} ${payment.student.lastName}`,
+        refundAmount: actualRefundAmount,
+        originalAmount: payment.amount,
+        cashRegisterName: cashRegForRefund?.name
+      },
       institution: payment.institution,
       season: payment.season
     });
@@ -365,12 +379,21 @@ router.delete('/:id', async (req, res) => {
     await Payment.findByIdAndDelete(req.params.id);
 
     // Log activity
+    const studentForDeleteLog = payment.student ? await Student.findById(payment.student).select('firstName lastName') : null;
+    const studentNameDelete = studentForDeleteLog ? `${studentForDeleteLog.firstName} ${studentForDeleteLog.lastName}` : 'Bilinmeyen Öğrenci';
+    const cashRegForDeleteLog = payment.cashRegister ? await CashRegister.findById(payment.cashRegister).select('name') : null;
+
     await ActivityLog.create({
       user: req.body?.deletedBy || 'System',
       action: 'delete',
       entity: 'Payment',
       entityId: payment._id,
-      description: `Ödeme silindi: ${payment.amount} TL`,
+      description: `${req.body?.deletedBy || 'System'} tarafından ${studentNameDelete} için ${payment.amount} TL ödeme kaydı silindi${cashRegForDeleteLog ? ' (' + cashRegForDeleteLog.name + ' kasasından)' : ''}`,
+      metadata: {
+        studentName: studentNameDelete,
+        amount: payment.amount,
+        cashRegisterName: cashRegForDeleteLog?.name
+      },
       institution: payment.institution,
       season: payment.season
     });
