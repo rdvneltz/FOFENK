@@ -10,6 +10,7 @@ import DayScheduleView from './DayScheduleView';
 import DayDetailDialog from './DayDetailDialog';
 import CreateTrialLessonDialog from './CreateTrialLessonDialog';
 import TrialLessonDetailDialog from './TrialLessonDetailDialog';
+import LessonDetailDialog from './LessonDetailDialog';
 
 // Helper to get local date string (YYYY-MM-DD) without timezone issues
 const getLocalDateStr = (date) => {
@@ -34,6 +35,8 @@ const WeeklyCalendarView = ({
   const [createTrialLessonOpen, setCreateTrialLessonOpen] = useState(false);
   const [selectedTrialLesson, setSelectedTrialLesson] = useState(null);
   const [trialLessonDetailOpen, setTrialLessonDetailOpen] = useState(false);
+  const [selectedLesson, setSelectedLesson] = useState(null);
+  const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
 
   // Get the week's dates (Monday to Sunday)
   const weekDates = useMemo(() => {
@@ -109,6 +112,16 @@ const WeeklyCalendarView = ({
   const handleTrialLessonDetailClose = () => {
     setTrialLessonDetailOpen(false);
     setSelectedTrialLesson(null);
+  };
+
+  const handleLessonClick = (lesson) => {
+    setSelectedLesson(lesson);
+    setLessonDetailOpen(true);
+  };
+
+  const handleLessonDetailClose = () => {
+    setLessonDetailOpen(false);
+    setSelectedLesson(null);
   };
 
   const handleUpdated = () => {
@@ -245,6 +258,7 @@ const WeeklyCalendarView = ({
                       date={date}
                       lessons={dayEvents.lessons}
                       trialLessons={dayEvents.trialLessons}
+                      onLessonClick={handleLessonClick}
                       onTrialLessonClick={handleTrialLessonClick}
                       compact
                     />
@@ -277,6 +291,17 @@ const WeeklyCalendarView = ({
           open={trialLessonDetailOpen}
           onClose={handleTrialLessonDetailClose}
           trialLesson={selectedTrialLesson}
+          onUpdated={handleUpdated}
+          onDeleted={handleUpdated}
+        />
+      )}
+
+      {/* Lesson Detail Dialog */}
+      {selectedLesson && (
+        <LessonDetailDialog
+          open={lessonDetailOpen}
+          onClose={handleLessonDetailClose}
+          lesson={selectedLesson}
           onUpdated={handleUpdated}
           onDeleted={handleUpdated}
         />

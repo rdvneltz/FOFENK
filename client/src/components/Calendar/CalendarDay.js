@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Typography, Paper, Menu, MenuItem, ListItemText } from '@mui/material';
-import { Payment as PaymentIcon } from '@mui/icons-material';
+import { Box, Typography, Paper, Menu, MenuItem, ListItemText, ListItemIcon } from '@mui/material';
+import { Payment as PaymentIcon, Star as StarIcon } from '@mui/icons-material';
 
 const CalendarDay = ({
   date,
@@ -16,6 +16,7 @@ const CalendarDay = ({
   onDayDoubleClick
 }) => {
   const [expenseMenuAnchor, setExpenseMenuAnchor] = useState(null);
+  const [trialMenuAnchor, setTrialMenuAnchor] = useState(null);
 
   const handleDayClick = (e) => {
     // Only allow clicking on current month days
@@ -48,8 +49,25 @@ const CalendarDay = ({
     if (onExpenseClick) onExpenseClick(expense);
   };
 
+  // Handle trial lessons menu
+  const handleTrialGroupClick = (e) => {
+    e.stopPropagation();
+    setTrialMenuAnchor(e.currentTarget);
+  };
+
+  const handleTrialMenuClose = () => {
+    setTrialMenuAnchor(null);
+  };
+
+  const handleTrialSelect = (trial) => {
+    setTrialMenuAnchor(null);
+    if (onTrialLessonClick) onTrialLessonClick(trial);
+  };
+
   // Combine and sort all events by time
+  // If there are 2+ trial lessons, group them into one item
   const allEvents = [];
+  const shouldGroupTrials = trialLessons && trialLessons.length >= 2;
 
   if (lessons) {
     lessons.forEach(lesson => {
@@ -61,14 +79,31 @@ const CalendarDay = ({
     });
   }
 
-  if (trialLessons) {
-    trialLessons.forEach(trial => {
+  if (trialLessons && trialLessons.length > 0) {
+    if (shouldGroupTrials) {
+      // Group all trial lessons into one item
+      // Sort trials by time to get the earliest time for sorting
+      const sortedTrials = [...trialLessons].sort((a, b) =>
+        (a.scheduledTime || '').localeCompare(b.scheduledTime || '')
+      );
       allEvents.push({
-        ...trial,
-        type: 'trial',
-        sortTime: trial.scheduledTime
+        type: 'trialGroup',
+        trials: sortedTrials,
+        count: trialLessons.length,
+        sortTime: sortedTrials[0]?.scheduledTime || '00:00',
+        pendingCount: trialLessons.filter(t => t.status === 'pending').length,
+        completedCount: trialLessons.filter(t => t.status === 'completed').length,
       });
-    });
+    } else {
+      // Single trial lesson - show it normally
+      trialLessons.forEach(trial => {
+        allEvents.push({
+          ...trial,
+          type: 'trial',
+          sortTime: trial.scheduledTime
+        });
+      });
+    }
   }
 
   // Sort by time
@@ -185,8 +220,43 @@ const CalendarDay = ({
       </Box>
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, overflow: 'hidden' }}>
         {visibleEvents.map((event, index) => (
-          event.type === 'trial' ? (
-            // Trial Lesson
+          event.type === 'trialGroup' ? (
+            // Grouped Trial Lessons (2+)
+            <Box
+              key={`trial-group-${index}`}
+              sx={{
+                fontSize: '0.75rem',
+                p: 0.75,
+                borderRadius: 1,
+                backgroundColor: '#ff9800',
+                color: 'white',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontWeight: 500,
+                lineHeight: 1.3,
+                cursor: 'pointer',
+                border: '2px dashed rgba(255,255,255,0.5)',
+                '&:hover': {
+                  opacity: 0.8,
+                  transform: 'scale(1.02)',
+                },
+                transition: 'all 0.2s',
+              }}
+              title={`${event.count} Deneme Dersi\n${event.trials.map(t => `${t.scheduledTime} - ${t.firstName} ${t.lastName}`).join('\n')}`}
+              onClick={handleTrialGroupClick}
+            >
+              <Box sx={{ fontSize: '0.7rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <span>&#9733;</span>
+                {event.count} Deneme Dersi
+              </Box>
+              <Box sx={{ fontSize: '0.65rem', mt: 0.3, display: 'flex', gap: 0.5 }}>
+                {event.pendingCount > 0 && <span>{event.pendingCount} bekliyor</span>}
+                {event.completedCount > 0 && <span style={{ color: '#c8e6c9' }}>{event.completedCount} tamamlandı</span>}
+              </Box>
+            </Box>
+          ) : event.type === 'trial' ? (
+            // Single Trial Lesson
             <Box
               key={`trial-${event._id || index}`}
               sx={{
@@ -289,6 +359,40 @@ const CalendarDay = ({
             <ListItemText
               primary={expense.description || expense.category}
               secondary={`${expense.amount?.toLocaleString('tr-TR')}₺ - ${new Date(expense.dueDate).toLocaleDateString('tr-TR')}`}
+            />
+          </MenuItem>
+        ))}
+      </Menu>
+
+      {/* Trial lessons selection menu for grouped trial lessons */}
+      <Menu
+        anchorEl={trialMenuAnchor}
+        open={Boolean(trialMenuAnchor)}
+        onClose={handleTrialMenuClose}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {trialLessons && trialLessons.map((trial, index) => (
+          <MenuItem
+            key={trial._id || index}
+            onClick={() => handleTrialSelect(trial)}
+            sx={{
+              borderLeft: '3px solid',
+              borderLeftColor: trial.status === 'completed' ? 'success.main' :
+                              trial.status === 'cancelled' ? 'error.main' :
+                              trial.status === 'converted' ? 'info.main' : 'warning.main',
+            }}
+          >
+            <ListItemIcon>
+              <StarIcon sx={{
+                color: trial.status === 'completed' ? 'success.main' :
+                       trial.status === 'cancelled' ? 'error.main' :
+                       trial.status === 'converted' ? 'info.main' : 'warning.main',
+                fontSize: 18
+              }} />
+            </ListItemIcon>
+            <ListItemText
+              primary={`${trial.firstName} ${trial.lastName}`}
+              secondary={`${trial.scheduledTime} - ${trial.course?.name || 'Ders'}`}
             />
           </MenuItem>
         ))}
