@@ -71,6 +71,7 @@ const InstructorDetail = () => {
     paymentAmount: 0
   });
   const [cashRegisters, setCashRegisters] = useState([]);
+  const [defaultExpenseCashRegister, setDefaultExpenseCashRegister] = useState(null);
   const [paymentDialog, setPaymentDialog] = useState({
     open: false,
     amount: '',
@@ -254,8 +255,24 @@ const InstructorDetail = () => {
 
       setStatistics(prev => ({ ...prev, totalHours }));
 
-      if (cashRes.data.length > 0) {
-        setPaymentDialog(prev => ({ ...prev, cashRegisterId: cashRes.data[0]._id }));
+      // Load default expense cash register
+      let defaultCashRegisterId = null;
+      try {
+        const defaultsRes = await api.get(`/cash-registers/defaults/${institution._id}`);
+        if (defaultsRes.data.defaultExpenseCashRegister?._id) {
+          defaultCashRegisterId = defaultsRes.data.defaultExpenseCashRegister._id;
+          setDefaultExpenseCashRegister(defaultCashRegisterId);
+        }
+      } catch (err) {
+        console.error('Error loading default expense cash register:', err);
+      }
+
+      // Set payment dialog cash register - prefer default, fallback to first available
+      const activeCashRegisters = (cashRes.data || []).filter(r => r.isActive !== false);
+      if (defaultCashRegisterId && activeCashRegisters.find(r => r._id === defaultCashRegisterId)) {
+        setPaymentDialog(prev => ({ ...prev, cashRegisterId: defaultCashRegisterId }));
+      } else if (activeCashRegisters.length > 0) {
+        setPaymentDialog(prev => ({ ...prev, cashRegisterId: activeCashRegisters[0]._id }));
       }
     } catch (error) {
       console.error('Error loading instructor:', error);
@@ -1081,10 +1098,18 @@ const InstructorDetail = () => {
                                       size="small"
                                       startIcon={<PaymentIcon />}
                                       onClick={() => {
+                                        // Use default expense cash register if available
+                                        const activeCashRegisters = cashRegisters.filter(r => r.isActive !== false);
+                                        let defaultCashReg = '';
+                                        if (defaultExpenseCashRegister && activeCashRegisters.find(r => r._id === defaultExpenseCashRegister)) {
+                                          defaultCashReg = defaultExpenseCashRegister;
+                                        } else if (activeCashRegisters.length > 0) {
+                                          defaultCashReg = activeCashRegisters[0]._id;
+                                        }
                                         setPayLessonDialog({
                                           open: true,
                                           lesson: lesson,
-                                          cashRegisterId: cashRegisters[0]?._id || ''
+                                          cashRegisterId: defaultCashReg
                                         });
                                       }}
                                     >

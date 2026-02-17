@@ -376,6 +376,14 @@ const Expenses = () => {
       });
     } else {
       setSelectedRecurring(null);
+      // Use default expense cash register if available, otherwise fall back to first
+      const activeCashRegisters = cashRegisters.filter(r => r.isActive !== false);
+      let defaultCashReg = '';
+      if (defaultExpenseCashRegister && activeCashRegisters.find(r => r._id === defaultExpenseCashRegister)) {
+        defaultCashReg = defaultExpenseCashRegister;
+      } else if (activeCashRegisters.length > 0) {
+        defaultCashReg = activeCashRegisters[0]._id;
+      }
       setRecurringFormData({
         title: '',
         category: '',
@@ -389,7 +397,7 @@ const Expenses = () => {
         dueDayRangeEnd: 5,
         startDate: new Date().toISOString().split('T')[0],
         endDate: '',
-        defaultCashRegister: cashRegisters[0]?._id || '',
+        defaultCashRegister: defaultCashReg,
         instructor: '',
         isActive: true,
         notes: '',
