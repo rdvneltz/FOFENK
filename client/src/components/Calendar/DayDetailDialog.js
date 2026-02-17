@@ -27,6 +27,7 @@ import {
 import DayScheduleView from './DayScheduleView';
 import CreateTrialLessonDialog from './CreateTrialLessonDialog';
 import TrialLessonDetailDialog from './TrialLessonDetailDialog';
+import LessonDetailDialog from './LessonDetailDialog';
 
 const DayDetailDialog = ({
   open,
@@ -42,6 +43,8 @@ const DayDetailDialog = ({
   const [createTrialLessonOpen, setCreateTrialLessonOpen] = useState(false);
   const [selectedTrialLesson, setSelectedTrialLesson] = useState(null);
   const [trialLessonDetailOpen, setTrialLessonDetailOpen] = useState(false);
+  const [selectedLesson, setSelectedLesson] = useState(null);
+  const [lessonDetailOpen, setLessonDetailOpen] = useState(false);
   const [addMenuAnchor, setAddMenuAnchor] = useState(null);
   const [selectedTime, setSelectedTime] = useState(null);
 
@@ -98,8 +101,19 @@ const DayDetailDialog = ({
   };
 
   const handleLessonClick = (lesson) => {
-    // For now, just show an alert - can be expanded later
-    console.log('Lesson clicked:', lesson);
+    setSelectedLesson(lesson);
+    setLessonDetailOpen(true);
+  };
+
+  const handleLessonDetailClose = () => {
+    setLessonDetailOpen(false);
+    setSelectedLesson(null);
+  };
+
+  const handleLessonUpdated = () => {
+    setLessonDetailOpen(false);
+    setSelectedLesson(null);
+    if (onUpdated) onUpdated();
   };
 
   const handleTrialLessonCreated = () => {
@@ -305,6 +319,17 @@ const DayDetailDialog = ({
           trialLesson={selectedTrialLesson}
           onUpdated={handleTrialLessonUpdated}
           onDeleted={handleTrialLessonUpdated}
+        />
+      )}
+
+      {/* Lesson Detail Dialog */}
+      {selectedLesson && (
+        <LessonDetailDialog
+          open={lessonDetailOpen}
+          onClose={handleLessonDetailClose}
+          lesson={selectedLesson}
+          onUpdated={handleLessonUpdated}
+          onDeleted={handleLessonUpdated}
         />
       )}
     </>
