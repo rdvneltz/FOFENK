@@ -1149,7 +1149,7 @@ const StudentDetail = () => {
             İptal
           </Button>
           <Button
-            onClick={handleArchive}
+            onClick={() => handleArchive(false)}
             variant="contained"
             color="warning"
           >
