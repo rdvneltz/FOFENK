@@ -522,13 +522,57 @@ router.post('/:id/archive', async (req, res) => {
       }
     }
 
-    // Prevent archiving if there are unpaid installments
+    // Handle unpaid installments
     if (hasUnpaidInstallments) {
-      return res.status(400).json({
-        message: 'Bu öğrencinin ödenmemiş taksitleri var. Arşivlemeden önce tüm ödemelerin tamamlanması gerekiyor.',
-        unpaidInstallments: unpaidDetails,
-        totalUnpaid: unpaidDetails.reduce((sum, d) => sum + d.remaining, 0)
-      });
+      if (!req.body.forceArchive) {
+        // Return info about unpaid installments and offer forceArchive option
+        return res.status(400).json({
+          message: 'Bu öğrencinin ödenmemiş taksitleri var. Taksitleri iptal edip arşivleyebilirsiniz.',
+          unpaidInstallments: unpaidDetails,
+          totalUnpaid: unpaidDetails.reduce((sum, d) => sum + d.remaining, 0),
+          canForceArchive: true
+        });
+      }
+
+      // forceArchive=true: Cancel all unpaid installments across all plans
+      let totalCancelledAmount = 0;
+      let totalCancelledCount = 0;
+
+      for (const plan of paymentPlans) {
+        const keptInstallments = [];
+        let planCancelledAmount = 0;
+
+        for (const inst of plan.installments || []) {
+          if (inst.isPaid || (inst.paidAmount && inst.paidAmount > 0)) {
+            keptInstallments.push(inst);
+          } else {
+            planCancelledAmount += (inst.amount || 0);
+            totalCancelledCount++;
+          }
+        }
+
+        if (planCancelledAmount > 0) {
+          plan.installments = keptInstallments;
+          plan.discountedAmount = (plan.discountedAmount || 0) - planCancelledAmount;
+          plan.paidAmount = keptInstallments.reduce((sum, inst) => sum + (inst.paidAmount || 0), 0);
+          plan.remainingAmount = plan.discountedAmount - plan.paidAmount;
+          plan.isCompleted = keptInstallments.length === 0 || keptInstallments.every(inst => inst.isPaid) || plan.remainingAmount <= 0;
+          await plan.save();
+
+          totalCancelledAmount += planCancelledAmount;
+        }
+      }
+
+      // Adjust student balance (remove cancelled debt)
+      if (totalCancelledAmount > 0) {
+        await Student.findByIdAndUpdate(req.params.id, {
+          $inc: { balance: -totalCancelledAmount }
+        });
+        // Reload student to get updated balance
+        await student.constructor.findById(req.params.id).then(s => {
+          student.balance = s.balance;
+        });
+      }
     }
 
     // Deactivate all enrollments for this student
@@ -543,12 +587,13 @@ router.post('/:id/archive', async (req, res) => {
     student.updatedBy = req.body.archivedBy || 'user';
     await student.save();
 
+    const cancelNote = req.body.forceArchive ? ` (Ödenmemiş taksitler iptal edildi)` : '';
     await ActivityLog.create({
       user: req.body.archivedBy || 'System',
       action: 'archive',
       entity: 'Student',
       entityId: student._id,
-      description: `${req.body.archivedBy || 'System'} tarafından öğrenci arşivlendi: ${student.firstName} ${student.lastName}${req.body.reason ? ` - Sebep: ${req.body.reason}` : ''} (Tüm ders kayıtları deaktive edildi)`,
+      description: `${req.body.archivedBy || 'System'} tarafından öğrenci arşivlendi: ${student.firstName} ${student.lastName}${req.body.reason ? ` - Sebep: ${req.body.reason}` : ''}${cancelNote} (Tüm ders kayıtları deaktive edildi)`,
       institution: student.institution,
       season: student.season
     });
@@ -767,19 +812,33 @@ router.post('/:id/recalculate-balance', async (req, res) => {
     console.log('Found payment plans:', paymentPlans.length);
 
     // Calculate correct balance from payment plans
-    // Balance = sum of (discountedAmount - paidAmount) for all plans
-    // This represents total remaining debt
+    // Balance = sum of (discountedAmount - actualPaidAmount) for all plans
+    // Also fix paidAmount drift on each plan by recalculating from installments
     let calculatedBalance = 0;
     const planDetails = [];
 
     for (const plan of paymentPlans) {
-      const planDebt = (plan.discountedAmount || 0) - (plan.paidAmount || 0);
+      // Recalculate paidAmount from actual installment payments to fix drift
+      const actualPaidAmount = (plan.installments || []).reduce(
+        (sum, inst) => sum + (inst.paidAmount || 0), 0
+      );
+
+      // Fix plan's paidAmount if it has drifted
+      if (Math.abs(actualPaidAmount - (plan.paidAmount || 0)) > 0.01) {
+        plan.paidAmount = actualPaidAmount;
+        plan.remainingAmount = (plan.discountedAmount || 0) - actualPaidAmount;
+        const allPaid = (plan.installments || []).every(inst => inst.isPaid || inst.amount <= 0);
+        plan.isCompleted = allPaid || plan.remainingAmount <= 0;
+        await plan.save();
+      }
+
+      const planDebt = (plan.discountedAmount || 0) - actualPaidAmount;
       calculatedBalance += planDebt;
       planDetails.push({
         planId: plan._id,
         courseName: plan.course?.name || 'Bilinmiyor',
         discountedAmount: plan.discountedAmount || 0,
-        paidAmount: plan.paidAmount || 0,
+        paidAmount: actualPaidAmount,
         remainingDebt: planDebt
       });
     }

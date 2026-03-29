@@ -292,16 +292,31 @@ const StudentDetail = () => {
     });
   };
 
-  const handleArchive = async () => {
+  const handleArchive = async (forceArchive = false) => {
     try {
       await api.post(`/students/${id}/archive`, {
         reason: archiveDialog.reason,
-        archivedBy: user?.username
+        archivedBy: user?.username,
+        forceArchive
       });
       alert('Öğrenci başarıyla arşivlendi');
       navigate('/students');
     } catch (error) {
-      alert('Arşivleme hatası: ' + (error.response?.data?.message || error.message));
+      const data = error.response?.data;
+      if (data?.canForceArchive) {
+        // Show option to force archive with installment cancellation
+        const unpaidTotal = data.totalUnpaid || 0;
+        const unpaidCount = data.unpaidInstallments?.length || 0;
+        if (window.confirm(
+          `Bu öğrencinin ${unpaidCount} adet ödenmemiş taksiti var (Toplam: ₺${unpaidTotal.toLocaleString('tr-TR')}).\n\n` +
+          `Ödenmemiş taksitleri iptal edip öğrenciyi arşivlemek istiyor musunuz?\n\n` +
+          `Bu işlem ödenmemiş taksitleri siler ve bakiyeyi günceller.`
+        )) {
+          handleArchive(true);
+        }
+      } else {
+        alert('Arşivleme hatası: ' + (data?.message || error.message));
+      }
     }
   };
 
