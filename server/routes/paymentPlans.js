@@ -523,6 +523,9 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
     }
 
+    // Save old discountedAmount before updating (for student balance adjustment)
+    const oldDiscountedAmount = paymentPlan.discountedAmount;
+
     // Update fields from request body
     Object.keys(req.body).forEach(key => {
       if (key !== '_id') {
@@ -530,9 +533,30 @@ router.put('/:id', async (req, res) => {
       }
     });
 
-    // Explicitly recalculate remainingAmount if discountedAmount changed
+    // If discountedAmount changed, recalculate paidAmount from installments and adjust student balance
     if (req.body.discountedAmount !== undefined) {
-      paymentPlan.remainingAmount = paymentPlan.discountedAmount - (paymentPlan.paidAmount || 0);
+      const newDiscountedAmount = paymentPlan.discountedAmount;
+
+      // Recalculate paidAmount from actual installment payments to prevent drift
+      const recalculatedPaidAmount = (paymentPlan.installments || []).reduce(
+        (sum, inst) => sum + (inst.paidAmount || 0), 0
+      );
+      paymentPlan.paidAmount = recalculatedPaidAmount;
+
+      // Recalculate remainingAmount
+      paymentPlan.remainingAmount = newDiscountedAmount - recalculatedPaidAmount;
+
+      // Update isCompleted status
+      const allPaid = (paymentPlan.installments || []).every(inst => inst.isPaid || inst.amount <= 0);
+      paymentPlan.isCompleted = allPaid || paymentPlan.remainingAmount <= 0;
+
+      // Adjust student balance by the difference in discountedAmount
+      const difference = newDiscountedAmount - oldDiscountedAmount;
+      if (difference !== 0 && paymentPlan.student) {
+        await Student.findByIdAndUpdate(paymentPlan.student, {
+          $inc: { balance: difference }
+        });
+      }
     }
 
     await paymentPlan.save();
@@ -1022,6 +1046,95 @@ router.post('/:id/pay-installment', async (req, res) => {
   } catch (error) {
     console.error('Error paying installment:', error);
     res.status(400).json({ message: error.message });
+  }
+});
+
+// Cancel future unpaid installments (for students leaving mid-course)
+router.post('/:id/cancel-future-installments', async (req, res) => {
+  try {
+    const paymentPlan = await PaymentPlan.findById(req.params.id)
+      .populate('student', 'firstName lastName')
+      .populate('course', 'name');
+
+    if (!paymentPlan) {
+      return res.status(404).json({ message: 'Ödeme planı bulunamadı' });
+    }
+
+    const keptInstallments = [];
+    const cancelledInstallments = [];
+
+    for (const inst of paymentPlan.installments) {
+      if (inst.isPaid || (inst.paidAmount && inst.paidAmount > 0)) {
+        keptInstallments.push(inst);
+      } else {
+        cancelledInstallments.push(inst);
+      }
+    }
+
+    if (cancelledInstallments.length === 0) {
+      return res.status(400).json({ message: 'İptal edilecek ödenmemiş taksit bulunamadı' });
+    }
+
+    const cancelledAmount = cancelledInstallments.reduce((sum, inst) => sum + (inst.amount || 0), 0);
+    const oldDiscountedAmount = paymentPlan.discountedAmount;
+
+    // Update payment plan
+    paymentPlan.installments = keptInstallments;
+    paymentPlan.discountedAmount = oldDiscountedAmount - cancelledAmount;
+
+    // Recalculate paidAmount from kept installments
+    paymentPlan.paidAmount = keptInstallments.reduce((sum, inst) => sum + (inst.paidAmount || 0), 0);
+    paymentPlan.remainingAmount = paymentPlan.discountedAmount - paymentPlan.paidAmount;
+
+    // Check if all remaining installments are paid
+    const allPaid = keptInstallments.length === 0 || keptInstallments.every(inst => inst.isPaid);
+    paymentPlan.isCompleted = allPaid || paymentPlan.remainingAmount <= 0;
+
+    await paymentPlan.save();
+
+    // Adjust student balance (remove cancelled debt)
+    if (cancelledAmount > 0 && paymentPlan.student) {
+      await Student.findByIdAndUpdate(paymentPlan.student._id || paymentPlan.student, {
+        $inc: { balance: -cancelledAmount }
+      });
+    }
+
+    const studentName = paymentPlan.student
+      ? `${paymentPlan.student.firstName} ${paymentPlan.student.lastName}`
+      : 'Bilinmeyen Öğrenci';
+
+    // Log activity
+    await ActivityLog.create({
+      user: req.body.cancelledBy || 'System',
+      action: 'update',
+      entity: 'PaymentPlan',
+      entityId: paymentPlan._id,
+      description: `${req.body.cancelledBy || 'System'} tarafından ${studentName} için ${cancelledInstallments.length} ödenmemiş taksit iptal edildi (₺${cancelledAmount.toLocaleString('tr-TR')})`,
+      metadata: {
+        studentName,
+        cancelledInstallments: cancelledInstallments.map(i => ({ number: i.installmentNumber, amount: i.amount })),
+        cancelledAmount,
+        reason: req.body.reason || ''
+      },
+      institution: paymentPlan.institution,
+      season: paymentPlan.season
+    });
+
+    const populatedPaymentPlan = await PaymentPlan.findById(paymentPlan._id)
+      .populate('institution', 'name')
+      .populate('season', 'name startDate endDate')
+      .populate('student', 'firstName lastName phone email parentContacts defaultNotificationRecipient')
+      .populate('course', 'name');
+
+    res.json({
+      message: `${cancelledInstallments.length} taksit iptal edildi (₺${cancelledAmount.toLocaleString('tr-TR')})`,
+      paymentPlan: populatedPaymentPlan,
+      cancelledInstallments: cancelledInstallments.length,
+      cancelledAmount
+    });
+  } catch (error) {
+    console.error('Error cancelling future installments:', error);
+    res.status(500).json({ message: error.message });
   }
 });
 

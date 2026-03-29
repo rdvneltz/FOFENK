@@ -70,6 +70,10 @@ const PaymentPlanDetail = () => {
     open: false,
     installment: null
   });
+  const [cancelFutureDialog, setCancelFutureDialog] = useState({
+    open: false,
+    loading: false
+  });
   const [deleteDialog, setDeleteDialog] = useState({
     open: false,
     checkInfo: null,
@@ -414,6 +418,23 @@ const PaymentPlanDetail = () => {
       }
     } catch (error) {
       setError(error.response?.data?.message || 'İade işlemi sırasında hata oluştu');
+    }
+  };
+
+  // Cancel future unpaid installments
+  const handleCancelFutureInstallments = async () => {
+    setCancelFutureDialog(prev => ({ ...prev, loading: true }));
+    try {
+      const response = await api.post(`/payment-plans/${id}/cancel-future-installments`, {
+        cancelledBy: user?.username,
+        reason: 'Eğitimden ayrılma'
+      });
+      setSuccess(response.data.message);
+      setCancelFutureDialog({ open: false, loading: false });
+      loadPaymentPlan();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Taksit iptali sırasında hata oluştu');
+      setCancelFutureDialog(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -840,6 +861,15 @@ Fofora Tiyatro`;
           >
             Bildirim Gönder
           </Button>
+          {paymentPlan && (paymentPlan.installments || []).some(inst => !inst.isPaid && (!inst.paidAmount || inst.paidAmount === 0)) && (
+            <Button
+              variant="outlined"
+              color="warning"
+              onClick={() => setCancelFutureDialog({ open: true, loading: false })}
+            >
+              Ödenmemiş Taksitleri İptal Et
+            </Button>
+          )}
           <Button
             variant="outlined"
             color="error"
@@ -1361,6 +1391,59 @@ Fofora Tiyatro`;
         settings={settings}
         onSubmit={handlePayInstallment}
       />
+
+      {/* Cancel Future Installments Dialog */}
+      <Dialog
+        open={cancelFutureDialog.open}
+        onClose={() => !cancelFutureDialog.loading && setCancelFutureDialog({ open: false, loading: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Ödenmemiş Taksitleri İptal Et</DialogTitle>
+        <DialogContent>
+          {paymentPlan && (() => {
+            const unpaidInstallments = (paymentPlan.installments || []).filter(
+              inst => !inst.isPaid && (!inst.paidAmount || inst.paidAmount === 0)
+            );
+            const totalCancelAmount = unpaidInstallments.reduce((sum, inst) => sum + (inst.amount || 0), 0);
+            return (
+              <>
+                <Alert severity="warning" sx={{ mb: 2 }}>
+                  Bu işlem geri alınamaz. Aşağıdaki ödenmemiş taksitler iptal edilecek ve öğrencinin bakiyesinden düşülecektir.
+                </Alert>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <strong>İptal edilecek taksitler:</strong>
+                </Typography>
+                {unpaidInstallments.map(inst => (
+                  <Typography key={inst.installmentNumber} variant="body2" sx={{ ml: 2 }}>
+                    • {inst.installmentNumber}. Taksit - ₺{(inst.amount || 0).toLocaleString('tr-TR')}
+                    {inst.dueDate && ` (Vade: ${new Date(inst.dueDate).toLocaleDateString('tr-TR')})`}
+                  </Typography>
+                ))}
+                <Typography variant="body1" sx={{ mt: 2, fontWeight: 'bold' }}>
+                  Toplam iptal tutarı: ₺{totalCancelAmount.toLocaleString('tr-TR')}
+                </Typography>
+              </>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setCancelFutureDialog({ open: false, loading: false })}
+            disabled={cancelFutureDialog.loading}
+          >
+            Vazgeç
+          </Button>
+          <Button
+            onClick={handleCancelFutureInstallments}
+            color="warning"
+            variant="contained"
+            disabled={cancelFutureDialog.loading}
+          >
+            {cancelFutureDialog.loading ? 'İptal Ediliyor...' : 'Taksitleri İptal Et'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Delete Confirmation with Warning */}
       <Dialog
