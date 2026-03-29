@@ -74,6 +74,11 @@ const PaymentPlanDetail = () => {
     open: false,
     loading: false
   });
+  const [deleteInstallmentDialog, setDeleteInstallmentDialog] = useState({
+    open: false,
+    installment: null,
+    loading: false
+  });
   const [deleteDialog, setDeleteDialog] = useState({
     open: false,
     checkInfo: null,
@@ -435,6 +440,23 @@ const PaymentPlanDetail = () => {
     } catch (error) {
       setError(error.response?.data?.message || 'Taksit iptali sırasında hata oluştu');
       setCancelFutureDialog(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  // Delete a single installment
+  const handleDeleteInstallment = async () => {
+    setDeleteInstallmentDialog(prev => ({ ...prev, loading: true }));
+    try {
+      const response = await api.post(`/payment-plans/${id}/delete-installment`, {
+        installmentNumber: deleteInstallmentDialog.installment.installmentNumber,
+        deletedBy: user?.username
+      });
+      setSuccess(response.data.message);
+      setDeleteInstallmentDialog({ open: false, installment: null, loading: false });
+      loadPaymentPlan();
+    } catch (error) {
+      setError(error.response?.data?.message || 'Taksit silinirken hata oluştu');
+      setDeleteInstallmentDialog(prev => ({ ...prev, loading: false }));
     }
   };
 
@@ -1219,6 +1241,21 @@ Fofora Tiyatro`;
                             </Tooltip>
                           </>
                         )}
+                        {paymentPlan.installments.length > 1 && (
+                          <Tooltip title="Taksiti Sil">
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() => setDeleteInstallmentDialog({
+                                open: true,
+                                installment: installment,
+                                loading: false
+                              })}
+                            >
+                              <Delete fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -1391,6 +1428,67 @@ Fofora Tiyatro`;
         settings={settings}
         onSubmit={handlePayInstallment}
       />
+
+      {/* Delete Single Installment Dialog */}
+      <Dialog
+        open={deleteInstallmentDialog.open}
+        onClose={() => !deleteInstallmentDialog.loading && setDeleteInstallmentDialog({ open: false, installment: null, loading: false })}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Taksit Sil</DialogTitle>
+        <DialogContent>
+          {deleteInstallmentDialog.installment && (() => {
+            const inst = deleteInstallmentDialog.installment;
+            const wasPaid = inst.isPaid || (inst.paidAmount && inst.paidAmount > 0);
+            return (
+              <>
+                {wasPaid ? (
+                  <Alert severity="warning" sx={{ mb: 2 }}>
+                    Bu taksit ödenmiş. Silme işlemi ödemeyi geri alacak, kasa bakiyesini düzeltecek ve öğrenci bakiyesini güncelleyecektir.
+                  </Alert>
+                ) : (
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    Bu taksit silinecek ve öğrencinin borcu buna göre düzeltilecektir.
+                  </Alert>
+                )}
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  <strong>{inst.installmentNumber}. Taksit</strong>
+                </Typography>
+                <Typography variant="body2">
+                  Tutar: ₺{(inst.amount || 0).toLocaleString('tr-TR')}
+                </Typography>
+                {inst.dueDate && (
+                  <Typography variant="body2">
+                    Vade: {new Date(inst.dueDate).toLocaleDateString('tr-TR')}
+                  </Typography>
+                )}
+                {wasPaid && (
+                  <Typography variant="body2" color="success.main">
+                    Ödenen: ₺{(inst.paidAmount || 0).toLocaleString('tr-TR')}
+                  </Typography>
+                )}
+              </>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setDeleteInstallmentDialog({ open: false, installment: null, loading: false })}
+            disabled={deleteInstallmentDialog.loading}
+          >
+            Vazgeç
+          </Button>
+          <Button
+            onClick={handleDeleteInstallment}
+            color="error"
+            variant="contained"
+            disabled={deleteInstallmentDialog.loading}
+          >
+            {deleteInstallmentDialog.loading ? 'Siliniyor...' : 'Taksiti Sil'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Cancel Future Installments Dialog */}
       <Dialog
